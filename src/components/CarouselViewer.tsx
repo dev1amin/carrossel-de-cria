@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search, Play } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search, Play, Crop } from 'lucide-react';
 
 interface CarouselData {
   dados_gerais: {
@@ -57,13 +57,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<Record<number, string>>({});
+  const [cropMode, setCropMode] = useState<{ slideIndex: number; videoId: string } | null>(null);
+  const [videoDimensions, setVideoDimensions] = useState<Record<string, { width: number; height: number }>>({});
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (selectedElement.element !== null) {
+        if (cropMode) {
+          setCropMode(null);
+        } else if (selectedElement.element !== null) {
           setSelectedElement({ slideIndex: selectedElement.slideIndex, element: null });
         } else {
           onClose();
@@ -73,7 +77,158 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElement, onClose]);
+  }, [selectedElement, cropMode, onClose]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'enterCropMode') {
+        setCropMode({ slideIndex: event.data.slideIndex, videoId: event.data.videoId });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!cropMode) return;
+
+    const iframe = iframeRefs.current[cropMode.slideIndex];
+    if (!iframe || !iframe.contentWindow) return;
+
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    if (!iframeDoc) return;
+
+    const container = iframeDoc.querySelector(`[data-video-id="${cropMode.videoId}"]`) as HTMLElement;
+    if (!container) return;
+
+    const video = container.querySelector('video') as HTMLVideoElement;
+    if (!video) return;
+
+    const currentWidth = videoDimensions[cropMode.videoId]?.width || video.offsetWidth;
+    const currentHeight = videoDimensions[cropMode.videoId]?.height || video.offsetHeight;
+
+    container.style.width = `${currentWidth}px`;
+    container.style.height = `${currentHeight}px`;
+    container.style.border = '3px solid #3B82F6';
+    container.style.boxShadow = '0 0 20px rgba(59, 130, 246, 0.5)';
+
+    const handles = ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'];
+    const handleElements: HTMLElement[] = [];
+
+    handles.forEach(position => {
+      const handle = iframeDoc.createElement('div');
+      handle.className = `resize-handle resize-handle-${position}`;
+      handle.style.cssText = `position: absolute; background: #3B82F6; border: 2px solid white; z-index: 1000;`;
+
+      if (position === 'nw' || position === 'ne' || position === 'sw' || position === 'se') {
+        handle.style.width = '12px';
+        handle.style.height = '12px';
+        handle.style.borderRadius = '50%';
+        handle.style.cursor = `${position}-resize`;
+      } else {
+        if (position === 'n' || position === 's') {
+          handle.style.width = '40px';
+          handle.style.height = '8px';
+          handle.style.borderRadius = '4px';
+          handle.style.cursor = `${position}-resize`;
+          handle.style.left = '50%';
+          handle.style.transform = 'translateX(-50%)';
+        } else {
+          handle.style.width = '8px';
+          handle.style.height = '40px';
+          handle.style.borderRadius = '4px';
+          handle.style.cursor = `${position}-resize`;
+          handle.style.top = '50%';
+          handle.style.transform = 'translateY(-50%)';
+        }
+      }
+
+      switch(position) {
+        case 'nw': handle.style.top = '-6px'; handle.style.left = '-6px'; break;
+        case 'ne': handle.style.top = '-6px'; handle.style.right = '-6px'; break;
+        case 'sw': handle.style.bottom = '-6px'; handle.style.left = '-6px'; break;
+        case 'se': handle.style.bottom = '-6px'; handle.style.right = '-6px'; break;
+        case 'n': handle.style.top = '-4px'; break;
+        case 's': handle.style.bottom = '-4px'; break;
+        case 'e': handle.style.right = '-4px'; break;
+        case 'w': handle.style.left = '-4px'; break;
+      }
+
+      let isResizing = false;
+      let startX = 0;
+      let startY = 0;
+      let startWidth = 0;
+      let startHeight = 0;
+
+      const onMouseDown = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = container.offsetWidth;
+        startHeight = container.offsetHeight;
+
+        const onMouseMove = (e: MouseEvent) => {
+          if (!isResizing) return;
+
+          const deltaX = e.clientX - startX;
+          const deltaY = e.clientY - startY;
+          let newWidth = startWidth;
+          let newHeight = startHeight;
+
+          if (position.includes('e')) newWidth = startWidth + deltaX / zoom;
+          if (position.includes('w')) newWidth = startWidth - deltaX / zoom;
+          if (position.includes('s')) newHeight = startHeight + deltaY / zoom;
+          if (position.includes('n')) newHeight = startHeight - deltaY / zoom;
+
+          if (newWidth > 50) {
+            container.style.width = `${newWidth}px`;
+            video.style.width = `${newWidth}px`;
+          }
+          if (newHeight > 50) {
+            container.style.height = `${newHeight}px`;
+            video.style.height = `${newHeight}px`;
+          }
+
+          setVideoDimensions(prev => ({
+            ...prev,
+            [cropMode.videoId]: { width: newWidth, height: newHeight }
+          }));
+        };
+
+        const onMouseUp = () => {
+          isResizing = false;
+          iframeDoc.removeEventListener('mousemove', onMouseMove);
+          iframeDoc.removeEventListener('mouseup', onMouseUp);
+        };
+
+        iframeDoc.addEventListener('mousemove', onMouseMove);
+        iframeDoc.addEventListener('mouseup', onMouseUp);
+      };
+
+      handle.addEventListener('mousedown', onMouseDown);
+      container.appendChild(handle);
+      handleElements.push(handle);
+    });
+
+    const exitBtn = iframeDoc.createElement('button');
+    exitBtn.className = 'crop-exit-btn';
+    exitBtn.style.cssText = 'position: absolute; top: -40px; right: 0; padding: 8px 16px; background: #3B82F6; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; z-index: 1001;';
+    exitBtn.textContent = 'Done';
+    exitBtn.onclick = () => setCropMode(null);
+    container.appendChild(exitBtn);
+
+    return () => {
+      handleElements.forEach(h => h.remove());
+      exitBtn.remove();
+      container.style.border = '';
+      container.style.boxShadow = '';
+      container.style.width = '';
+      container.style.height = '';
+    };
+  }, [cropMode, zoom, videoDimensions]);
 
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = html;
@@ -160,6 +315,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
+      Object.entries(videoDimensions).forEach(([videoId, dims]) => {
+        const container = iframeDoc.querySelector(`[data-video-id="${videoId}"]`) as HTMLElement;
+        if (container) {
+          container.style.width = `${dims.width}px`;
+          container.style.height = `${dims.height}px`;
+          const video = container.querySelector('video') as HTMLVideoElement;
+          if (video) {
+            video.style.width = `${dims.width}px`;
+            video.style.height = `${dims.height}px`;
+          }
+        }
+      });
+
       const updateElement = (elementId: string, styles?: ElementStyles, content?: string) => {
         const element = iframeDoc.getElementById(elementId);
         if (!element) return;
@@ -241,14 +409,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
               if (isVideoUrl) {
+                const videoId = `video-${index}-${Date.now()}`;
                 const container = iframeDoc.createElement('div');
                 container.className = 'video-container';
                 container.setAttribute('data-bg-container', 'true');
+                container.setAttribute('data-video-id', videoId);
                 container.style.cssText = `position: relative; display: inline-block; ${imgElement.style.cssText}`;
 
                 const video = iframeDoc.createElement('video');
                 video.src = bgImage;
                 video.className = imgElement.className;
+                video.id = videoId;
                 video.style.cssText = `width: 100%; border-radius: 24px; ${imgElement.style.cssText}`;
                 video.setAttribute('data-video-src', bgImage);
 
@@ -257,26 +428,41 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
                 playBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-left: 3px;"><path d="M8 5v14l11-7z"/></svg>';
 
+                const cropBtn = iframeDoc.createElement('button');
+                cropBtn.className = 'video-crop-btn';
+                cropBtn.style.cssText = 'position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 8px; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 11;';
+                cropBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>';
+
                 playBtn.onclick = (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   video.play();
                   playBtn.style.display = 'none';
+                  cropBtn.style.display = 'flex';
 
                   video.onended = () => {
                     playBtn.style.display = 'flex';
+                    cropBtn.style.display = 'none';
                   };
 
                   video.onclick = () => {
                     if (!video.paused) {
                       video.pause();
                       playBtn.style.display = 'flex';
+                      cropBtn.style.display = 'none';
                     }
                   };
                 };
 
+                cropBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.parent.postMessage({ type: 'enterCropMode', slideIndex: index, videoId: videoId }, '*');
+                };
+
                 container.appendChild(video);
                 container.appendChild(playBtn);
+                container.appendChild(cropBtn);
 
                 if (imgElement.parentNode) {
                   imgElement.parentNode.replaceChild(container, imgElement);
@@ -489,7 +675,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         (el as HTMLElement).style.pointerEvents = 'auto';
       });
     });
-  }, [elementStyles, editedContent]);
+  }, [elementStyles, editedContent, videoDimensions]);
 
   useEffect(() => {
     const setupIframeInteraction = (iframe: HTMLIFrameElement, slideIndex: number) => {
