@@ -227,6 +227,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
         const allElements = iframeDoc.querySelectorAll('*');
         const conteudo = carouselData.conteudos[index];
+        const currentBgImage = editedContent[`${index}-background`] || conteudo?.imagem_fundo;
 
         allElements.forEach(el => {
           const element = el as HTMLElement;
@@ -234,14 +235,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (element.tagName === 'IMG') {
             const imgElement = element as HTMLImageElement;
             const imgSrc = imgElement.src;
+            const imgWidth = imgElement.width;
+            const imgHeight = imgElement.height;
 
-            if (conteudo && imgSrc && (
+            const isLargeImage = imgWidth > 100 || imgHeight > 100;
+
+            if (conteudo && imgSrc && isLargeImage && (
               imgSrc.includes(conteudo.imagem_fundo) ||
               (conteudo.imagem_fundo2 && imgSrc.includes(conteudo.imagem_fundo2)) ||
               (conteudo.imagem_fundo3 && imgSrc.includes(conteudo.imagem_fundo3)) ||
-              (conteudo.imagem_fundo4 && imgSrc.includes(conteudo.imagem_fundo4)) ||
-              (conteudo.imagem_fundo5 && imgSrc.includes(conteudo.imagem_fundo5)) ||
-              (conteudo.imagem_fundo6 && imgSrc.includes(conteudo.imagem_fundo6))
+              imgSrc === currentBgImage
             )) {
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -300,9 +303,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 videoSrc.includes(conteudo.imagem_fundo) ||
                 (conteudo.imagem_fundo2 && videoSrc.includes(conteudo.imagem_fundo2)) ||
                 (conteudo.imagem_fundo3 && videoSrc.includes(conteudo.imagem_fundo3)) ||
-                (conteudo.imagem_fundo4 && videoSrc.includes(conteudo.imagem_fundo4)) ||
-                (conteudo.imagem_fundo5 && videoSrc.includes(conteudo.imagem_fundo5)) ||
-                (conteudo.imagem_fundo6 && videoSrc.includes(conteudo.imagem_fundo6))
+                videoSrc === currentBgImage
               )) {
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -348,9 +349,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   bgUrl.includes(conteudo.imagem_fundo) ||
                   (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
                   (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3)) ||
-                  (conteudo.imagem_fundo4 && bgUrl.includes(conteudo.imagem_fundo4)) ||
-                  (conteudo.imagem_fundo5 && bgUrl.includes(conteudo.imagem_fundo5)) ||
-                  (conteudo.imagem_fundo6 && bgUrl.includes(conteudo.imagem_fundo6))
+                  bgUrl === currentBgImage
                 )) {
                   const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -689,15 +688,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
 
       const data = await response.json();
-      if (data && data.length > 0) {
-        const images = data[0];
+      if (data) {
         const imageUrls = [
-          images.imagem_fundo,
-          images.imagem_fundo2,
-          images.imagem_fundo3,
-          images.imagem_fundo4,
-          images.imagem_fundo5,
-          images.imagem_fundo6,
+          data.imagem_fundo,
+          data.imagem_fundo2,
+          data.imagem_fundo3,
+          data.imagem_fundo4,
+          data.imagem_fundo5,
+          data.imagem_fundo6,
         ].filter(Boolean);
         setSearchResults(imageUrls);
       }
@@ -716,6 +714,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     reader.onload = (e) => {
       const imageUrl = e.target?.result as string;
       setUploadedImages(prev => ({ ...prev, [slideIndex]: imageUrl }));
+      handleBackgroundImageChange(slideIndex, imageUrl);
     };
     reader.readAsDataURL(file);
   };
