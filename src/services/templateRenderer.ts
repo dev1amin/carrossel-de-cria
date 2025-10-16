@@ -141,6 +141,50 @@ export class TemplateRenderer {
     return result;
   }
 
+  private replaceAllImages(html: string, imageUrl: string): string {
+    let result = html;
+
+    if (this.isVideoUrl(imageUrl)) {
+      result = result.replace(
+        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/gi,
+        (match, attrs) => {
+          if (match.includes('avatar')) {
+            return match;
+          }
+
+          const classMatch = match.match(/class\s*=\s*["']([^"']*)["']/);
+          const styleMatch = match.match(/style\s*=\s*["']([^"']*)["']/);
+          const altMatch = match.match(/alt\s*=\s*["']([^"']*)["']/);
+
+          const className = classMatch ? classMatch[1] : '';
+          const style = styleMatch ? styleMatch[1] : '';
+          const alt = altMatch ? altMatch[1] : '';
+
+          return `<div class="video-container" style="position: relative; display: inline-block; ${style}">
+            <video class="${className}" style="${style}" src="${imageUrl}" data-video-src="${imageUrl}"></video>
+            <button class="video-play-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-left: 3px;">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </button>
+          </div>`;
+        }
+      );
+    } else {
+      result = result.replace(
+        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/gi,
+        (match) => {
+          if (match.includes('avatar')) {
+            return match;
+          }
+          return match.replace(/src\s*=\s*["'][^"']*["']/, `src="${imageUrl}"`);
+        }
+      );
+    }
+
+    return result;
+  }
+
   renderSlide(templateHtml: string, data: CarouselData, slideIndex: number): string {
     let rendered = templateHtml;
     const conteudo = data.conteudos[slideIndex];
@@ -160,7 +204,7 @@ export class TemplateRenderer {
       const bgUrl = conteudo.imagem_fundo || '';
       rendered = rendered.replace(/\{\{bg\}\}/g, bgUrl);
       rendered = this.replaceBackgroundImages(rendered, bgUrl);
-      rendered = this.replaceTextBoxImages(rendered, bgUrl);
+      rendered = this.replaceAllImages(rendered, bgUrl);
       rendered = this.replacePlaceholderImages(rendered, bgUrl);
     }
 

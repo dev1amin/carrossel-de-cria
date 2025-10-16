@@ -236,20 +236,80 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
               if (isVideoUrl) {
+                const container = iframeDoc.createElement('div');
+                container.className = 'video-container';
+                container.style.cssText = `position: relative; display: inline-block; ${imgElement.style.cssText}`;
+
                 const video = iframeDoc.createElement('video');
-                video.autoplay = true;
-                video.loop = true;
-                video.muted = true;
-                video.playsInline = true;
                 video.src = bgImage;
                 video.className = imgElement.className;
                 video.style.cssText = imgElement.style.cssText;
+                video.setAttribute('data-video-src', bgImage);
+
+                const playBtn = iframeDoc.createElement('button');
+                playBtn.className = 'video-play-btn';
+                playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
+                playBtn.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-left: 3px;"><path d="M8 5v14l11-7z"/></svg>';
+
+                playBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  video.play();
+                  playBtn.style.display = 'none';
+
+                  video.onended = () => {
+                    playBtn.style.display = 'flex';
+                  };
+
+                  video.onclick = () => {
+                    if (!video.paused) {
+                      video.pause();
+                      playBtn.style.display = 'flex';
+                    }
+                  };
+                };
+
+                container.appendChild(video);
+                container.appendChild(playBtn);
 
                 if (imgElement.parentNode) {
-                  imgElement.parentNode.replaceChild(video, imgElement);
+                  imgElement.parentNode.replaceChild(container, imgElement);
                 }
               } else {
                 imgElement.src = bgImage;
+              }
+            }
+          }
+
+          if (element.classList && element.classList.contains('video-container')) {
+            const video = element.querySelector('video') as HTMLVideoElement;
+            if (video) {
+              const videoSrc = video.getAttribute('data-video-src') || video.src;
+
+              if (conteudo && videoSrc && (
+                videoSrc.includes(conteudo.imagem_fundo) ||
+                (conteudo.imagem_fundo2 && videoSrc.includes(conteudo.imagem_fundo2)) ||
+                (conteudo.imagem_fundo3 && videoSrc.includes(conteudo.imagem_fundo3))
+              )) {
+                const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
+
+                if (isVideoUrl) {
+                  video.src = bgImage;
+                  video.setAttribute('data-video-src', bgImage);
+                  const playBtn = element.querySelector('.video-play-btn') as HTMLButtonElement;
+                  if (playBtn) {
+                    playBtn.style.display = 'flex';
+                  }
+                } else {
+                  const img = iframeDoc.createElement('img');
+                  img.src = bgImage;
+                  img.className = video.className;
+                  img.style.cssText = video.style.cssText;
+
+                  if (element.parentNode) {
+                    element.parentNode.replaceChild(img, element);
+                  }
+                }
               }
             }
           }
@@ -273,18 +333,49 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                   if (isVideoUrl) {
                     let video = element.querySelector('video');
+                    let playBtn = element.querySelector('.video-play-btn-bg') as HTMLButtonElement;
+
                     if (!video) {
                       video = iframeDoc.createElement('video');
-                      video.autoplay = true;
                       video.loop = true;
                       video.muted = true;
                       video.playsInline = true;
                       video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
                       video.src = bgImage;
+                      video.setAttribute('data-video-src', bgImage);
+
+                      playBtn = iframeDoc.createElement('button');
+                      playBtn.className = 'video-play-btn-bg';
+                      playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
+                      playBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="white" style="margin-left: 4px;"><path d="M8 5v14l11-7z"/></svg>';
+
+                      playBtn.onclick = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        video!.play();
+                        playBtn!.style.display = 'none';
+
+                        video!.onended = () => {
+                          playBtn!.style.display = 'flex';
+                        };
+
+                        video!.onclick = () => {
+                          if (!video!.paused) {
+                            video!.pause();
+                            playBtn!.style.display = 'flex';
+                          }
+                        };
+                      };
+
                       element.style.position = 'relative';
                       element.insertBefore(video, element.firstChild);
+                      element.appendChild(playBtn);
                     } else {
                       video.src = bgImage;
+                      video.setAttribute('data-video-src', bgImage);
+                      if (playBtn) {
+                        playBtn.style.display = 'flex';
+                      }
                     }
                     element.style.setProperty('background-image', 'none', 'important');
                   } else {
@@ -315,14 +406,39 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               let video = element.querySelector('video');
               if (!video) {
                 video = iframeDoc.createElement('video');
-                video.autoplay = true;
                 video.loop = true;
                 video.muted = true;
                 video.playsInline = true;
                 video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
                 video.src = videoBgUrl;
+                video.setAttribute('data-video-src', videoBgUrl);
+
+                const playBtn = iframeDoc.createElement('button');
+                playBtn.className = 'video-play-btn-bg';
+                playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
+                playBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="white" style="margin-left: 4px;"><path d="M8 5v14l11-7z"/></svg>';
+
+                playBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  video!.play();
+                  playBtn.style.display = 'none';
+
+                  video!.onended = () => {
+                    playBtn.style.display = 'flex';
+                  };
+
+                  video!.onclick = () => {
+                    if (!video!.paused) {
+                      video!.pause();
+                      playBtn.style.display = 'flex';
+                    }
+                  };
+                };
+
                 element.style.position = 'relative';
                 element.insertBefore(video, element.firstChild);
+                element.appendChild(playBtn);
               }
             }
           }
@@ -356,6 +472,35 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
+
+      const playButtons = iframeDoc.querySelectorAll('.video-play-btn');
+      playButtons.forEach(btn => {
+        const button = btn as HTMLButtonElement;
+        button.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const container = button.parentElement;
+          if (container) {
+            const video = container.querySelector('video') as HTMLVideoElement;
+            if (video) {
+              video.play();
+              button.style.display = 'none';
+
+              video.onended = () => {
+                button.style.display = 'flex';
+              };
+
+              video.onclick = () => {
+                if (!video.paused) {
+                  video.pause();
+                  button.style.display = 'flex';
+                }
+              };
+            }
+          }
+        };
+      });
 
       const editableElements = iframeDoc.querySelectorAll('[data-editable]');
 
