@@ -52,7 +52,7 @@ const MainContent: React.FC<MainContentProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [testSlides, setTestSlides] = useState<string[] | null>(null);
-  const [testCarouselData, setTestCarouselData] = useState<CarouselData | null>(null);
+  const [currentCarouselData, setCurrentCarouselData] = useState<CarouselData | null>(null);
 
   const handleTestEditor = async () => {
     try {
@@ -67,7 +67,7 @@ const MainContent: React.FC<MainContentProps> = ({
       const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 
       setTestSlides(rendered);
-      setTestCarouselData(carouselData);
+      setCurrentCarouselData(carouselData);
     } catch (error) {
       console.error('Failed to load test editor:', error);
       alert('Erro ao carregar editor de teste. Verifique o console.');
@@ -112,13 +112,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
   return (
     <>
-      {testSlides && testCarouselData && (
+      {testSlides && currentCarouselData && (
         <CarouselViewer
           slides={testSlides}
-          carouselData={testCarouselData}
+          carouselData={currentCarouselData}
           onClose={() => {
             setTestSlides(null);
-            setTestCarouselData(null);
+            setCurrentCarouselData(null);
           }}
         />
       )}
