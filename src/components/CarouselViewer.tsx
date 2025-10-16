@@ -219,19 +219,51 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
 
         const allElements = iframeDoc.querySelectorAll('*');
+        const conteudo = carouselData.conteudos[index];
+
         allElements.forEach(el => {
           const element = el as HTMLElement;
-          const bgImageStyle = element.style.backgroundImage;
-          if (bgImageStyle && bgImageStyle.includes('url')) {
-            const originalBg = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
-            if (originalBg && originalBg[1]) {
-              const conteudo = carouselData.conteudos[index];
-              if (conteudo && (
-                originalBg[1].includes(conteudo.imagem_fundo) ||
-                (conteudo.imagem_fundo2 && originalBg[1].includes(conteudo.imagem_fundo2)) ||
-                (conteudo.imagem_fundo3 && originalBg[1].includes(conteudo.imagem_fundo3))
-              )) {
-                element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
+          const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
+
+          if (computedStyle) {
+            const bgImageStyle = computedStyle.backgroundImage;
+
+            if (bgImageStyle && bgImageStyle !== 'none' && bgImageStyle.includes('url')) {
+              const matches = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
+              if (matches && matches[1]) {
+                const bgUrl = matches[1];
+
+                if (conteudo && (
+                  bgUrl.includes(conteudo.imagem_fundo) ||
+                  (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
+                  (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3))
+                )) {
+                  const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
+
+                  if (isVideoUrl) {
+                    let video = element.querySelector('video');
+                    if (!video) {
+                      video = iframeDoc.createElement('video');
+                      video.autoplay = true;
+                      video.loop = true;
+                      video.muted = true;
+                      video.playsInline = true;
+                      video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
+                      video.src = bgImage;
+                      element.style.position = 'relative';
+                      element.insertBefore(video, element.firstChild);
+                    } else {
+                      video.src = bgImage;
+                    }
+                    element.style.setProperty('background-image', 'none', 'important');
+                  } else {
+                    const existingVideo = element.querySelector('video');
+                    if (existingVideo) {
+                      existingVideo.remove();
+                    }
+                    element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
+                  }
+                }
               }
             }
           }
