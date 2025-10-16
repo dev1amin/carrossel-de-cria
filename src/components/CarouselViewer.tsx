@@ -43,7 +43,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [expandedLayers, setExpandedLayers] = useState<Set<number>>(new Set([0]));
   const [editedContent, setEditedContent] = useState<Record<string, any>>({});
   const [elementStyles, setElementStyles] = useState<Record<string, ElementStyles>>({});
+  const [originalStyles, setOriginalStyles] = useState<Record<string, ElementStyles>>({});
   const [renderedSlides, setRenderedSlides] = useState<string[]>(slides);
+  const [isEditingInline, setIsEditingInline] = useState<{ slideIndex: number; element: ElementType } | null>(null);
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -70,25 +72,31 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const subtitleText = conteudo?.subtitle || '';
 
     if (titleText) {
-      const escapedTitle = titleText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      result = result.replace(
-        new RegExp(`(<[^>]*>)(${escapedTitle})(<\/[^>]*>)`, 'gi'),
-        `$1<span id="slide-${slideIndex}-title" data-editable="title" data-original-content="${titleText.replace(/"/g, '&quot;')}" style="display: inline-block;">$2</span>$3`
-      );
+      const lines = titleText.split('\n').filter(line => line.trim());
+      lines.forEach(line => {
+        const escapedLine = line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(>[^<]*)(${escapedLine})([^<]*<)`, 'gi');
+        result = result.replace(regex, (match, before, text, after) => {
+          return `${before}<span id="slide-${slideIndex}-title" data-editable="title" contenteditable="false">${text}</span>${after}`;
+        });
+      });
     }
 
     if (subtitleText) {
-      const escapedSubtitle = subtitleText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      result = result.replace(
-        new RegExp(`(<[^>]*>)(${escapedSubtitle})(<\/[^>]*>)`, 'gi'),
-        `$1<span id="slide-${slideIndex}-subtitle" data-editable="subtitle" data-original-content="${subtitleText.replace(/"/g, '&quot;')}" style="display: inline-block;">$2</span>$3`
-      );
+      const lines = subtitleText.split('\n').filter(line => line.trim());
+      lines.forEach(line => {
+        const escapedLine = line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(>[^<]*)(${escapedLine})([^<]*<)`, 'gi');
+        result = result.replace(regex, (match, before, text, after) => {
+          return `${before}<span id="slide-${slideIndex}-subtitle" data-editable="subtitle" contenteditable="false">${text}</span>${after}`;
+        });
+      });
     }
 
     result = result.replace(
       /<style>/i,
       `<style>
-        [data-editable] { cursor: pointer !important; position: relative; }
+        [data-editable] { cursor: pointer !important; position: relative; display: inline-block !important; }
         [data-editable].selected {
           outline: 3px solid #3B82F6 !important;
           outline-offset: 2px;
@@ -98,6 +106,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           outline: 2px solid rgba(59, 130, 246, 0.5) !important;
           outline-offset: 2px;
         }
+        [data-editable][contenteditable="true"] {
+          outline: 3px solid #10B981 !important;
+          outline-offset: 2px;
+          background: rgba(16, 185, 129, 0.1) !important;
+        }
         body[data-editable].selected {
           outline: 3px solid #3B82F6 !important;
           outline-offset: -3px;
@@ -106,12 +119,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           outline: 2px solid rgba(59, 130, 246, 0.5) !important;
           outline-offset: -2px;
         }
+        img[data-editable] {
+          display: block !important;
+        }
+        img[data-editable].selected {
+          outline: 3px solid #3B82F6 !important;
+          outline-offset: 2px;
+        }
       `
     );
 
     result = result.replace(
       /<body([^>]*)>/i,
       `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
+    );
+
+    result = result.replace(
+      /<img([^>]*)src="([^"]*)"([^>]*)>/gi,
+      `<img$1src="$2"$3 data-editable="image" id="slide-${slideIndex}-image" data-original-src="$2">`
     );
 
     return result;
@@ -141,8 +166,22 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
 
         if (content !== undefined) {
-          element.textContent = content;
+          if (element.getAttribute('contenteditable') !== 'true') {
+            element.textContent = content;
+          }
         }
+      };
+
+      const extractOriginalStyles = (element: HTMLElement): ElementStyles => {
+        const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
+        if (!computedStyle) return { fontSize: '16px', fontWeight: '400', textAlign: 'left', color: '#FFFFFF' };
+
+        return {
+          fontSize: computedStyle.fontSize || '16px',
+          fontWeight: computedStyle.fontWeight || '400',
+          textAlign: computedStyle.textAlign || 'left',
+          color: computedStyle.color || '#FFFFFF'
+        };
       };
 
       const slideKey = getElementKey(index, 'title');
@@ -167,6 +206,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         if (body) {
           body.style.setProperty('background-image', `url('${bgImage}')`, 'important');
         }
+
+        const allImages = iframeDoc.querySelectorAll('img[data-editable="image"]');
+        allImages.forEach(img => {
+          (img as HTMLImageElement).src = bgImage;
+        });
+      }
+
+      const titleElement = iframeDoc.getElementById(`slide-${index}-title`);
+      if (titleElement && !originalStyles[`${index}-title`]) {
+        const styles = extractOriginalStyles(titleElement as HTMLElement);
+        setOriginalStyles(prev => ({ ...prev, [`${index}-title`]: styles }));
+      }
+
+      const subtitleElement = iframeDoc.getElementById(`slide-${index}-subtitle`);
+      if (subtitleElement && !originalStyles[`${index}-subtitle`]) {
+        const styles = extractOriginalStyles(subtitleElement as HTMLElement);
+        setOriginalStyles(prev => ({ ...prev, [`${index}-subtitle`]: styles }));
       }
 
       const allElements = iframeDoc.querySelectorAll('[data-editable]');
@@ -196,14 +252,60 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           e.preventDefault();
           e.stopPropagation();
 
+          if (htmlElement.getAttribute('contenteditable') === 'true') {
+            return;
+          }
+
           iframeDoc.querySelectorAll('[data-editable]').forEach(el => {
             el.classList.remove('selected');
+            if (el.getAttribute('contenteditable') === 'true') {
+              el.setAttribute('contenteditable', 'false');
+            }
           });
 
           element.classList.add('selected');
 
           handleElementClick(slideIndex, editableType as ElementType);
         };
+
+        if (editableType === 'title' || editableType === 'subtitle') {
+          htmlElement.ondblclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            htmlElement.setAttribute('contenteditable', 'true');
+            htmlElement.focus();
+            setIsEditingInline({ slideIndex, element: editableType as ElementType });
+
+            const range = iframeDoc.createRange();
+            range.selectNodeContents(htmlElement);
+            const selection = iframe.contentWindow?.getSelection();
+            if (selection) {
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+          };
+
+          htmlElement.onblur = () => {
+            if (htmlElement.getAttribute('contenteditable') === 'true') {
+              htmlElement.setAttribute('contenteditable', 'false');
+              const newContent = htmlElement.textContent || '';
+              updateEditedValue(slideIndex, editableType, newContent);
+              setIsEditingInline(null);
+            }
+          };
+
+          htmlElement.onkeydown = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              htmlElement.blur();
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              htmlElement.blur();
+            }
+          };
+        }
       });
     };
 
@@ -320,7 +422,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
     const key = getElementKey(slideIndex, element);
-    return elementStyles[key] || {
+    if (elementStyles[key]) {
+      return elementStyles[key];
+    }
+    if (originalStyles[key]) {
+      return originalStyles[key];
+    }
+    return {
       fontSize: element === 'title' ? '24px' : '16px',
       fontWeight: element === 'title' ? '700' : '400',
       textAlign: 'left',
