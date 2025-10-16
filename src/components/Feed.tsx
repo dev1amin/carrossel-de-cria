@@ -2,8 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
 import { Post, SortOption } from '../types';
 import PostCard from './PostCard';
+import CarouselViewer from './CarouselViewer';
 import { Scale } from 'lucide-react';
 import { generateCarousel } from '../services/carousel';
+import { templateService } from '../services/template';
+import { templateRenderer } from '../services/templateRenderer';
 
 interface FeedProps {
   posts: Post[];
@@ -14,6 +17,7 @@ interface FeedProps {
 const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
   const [filteredPosts, setFilteredPosts] = useState<Post[]>(posts);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [renderedSlides, setRenderedSlides] = useState<string[] | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const isMobile = window.innerWidth <= 768;
   const sortingInProgress = useRef(false);
@@ -25,8 +29,22 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
       console.log(`Generating carousel for post: ${code}`);
       const result = await generateCarousel(code);
       console.log('Carousel generated successfully:', result);
+
+      if (result && result.length > 0) {
+        const carouselData = result[0];
+        const templateId = carouselData.dados_gerais.template;
+
+        console.log(`Fetching template ${templateId}...`);
+        const templateSlides = await templateService.fetchTemplate(templateId);
+
+        console.log('Rendering slides with data...');
+        const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+
+        setRenderedSlides(rendered);
+      }
     } catch (error) {
       console.error('Failed to generate carousel:', error);
+      alert('Erro ao gerar carrossel. Verifique o console para mais detalhes.');
     }
   };
 
@@ -126,7 +144,14 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
   };
 
   return (
-    <div className="min-h-screen bg-black">
+    <>
+      {renderedSlides && (
+        <CarouselViewer
+          slides={renderedSlides}
+          onClose={() => setRenderedSlides(null)}
+        />
+      )}
+      <div className="min-h-screen bg-black">
       {filteredPosts.length > 0 ? (
         <div 
           ref={feedRef} 
@@ -195,6 +220,7 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
         </div>
       )}
     </div>
+    </>
   );
 };
 
