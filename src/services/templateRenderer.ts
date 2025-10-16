@@ -72,6 +72,17 @@ export class TemplateRenderer {
     return result;
   }
 
+  private replacePlaceholderImages(html: string, imageUrl: string): string {
+    let result = html;
+
+    result = result.replace(
+      /https:\/\/admin\.cnnbrasil\.com\.br\/wp-content\/uploads\/sites\/12\/2025\/01\/Santos-Neymar-braco-Cruzado\.jpg/gi,
+      imageUrl
+    );
+
+    return result;
+  }
+
   renderSlide(templateHtml: string, data: CarouselData, slideIndex: number): string {
     let rendered = templateHtml;
     const conteudo = data.conteudos[slideIndex];
@@ -92,6 +103,7 @@ export class TemplateRenderer {
       rendered = rendered.replace(/\{\{bg\}\}/g, bgUrl);
       rendered = this.replaceBackgroundImages(rendered, bgUrl);
       rendered = this.replaceTextBoxImages(rendered, bgUrl);
+      rendered = this.replacePlaceholderImages(rendered, bgUrl);
     }
 
     return rendered;
