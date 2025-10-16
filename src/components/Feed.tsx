@@ -14,10 +14,28 @@ interface FeedProps {
   activeSort: SortOption;
 }
 
+interface CarouselData {
+  dados_gerais: {
+    nome: string;
+    arroba: string;
+    foto_perfil: string;
+    template: string;
+  };
+  conteudos: Array<{
+    title: string;
+    subtitle?: string;
+    imagem_fundo: string;
+    thumbnail_url?: string;
+    imagem_fundo2?: string;
+    imagem_fundo3?: string;
+  }>;
+}
+
 const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
   const [filteredPosts, setFilteredPosts] = useState<Post[]>(posts);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [renderedSlides, setRenderedSlides] = useState<string[] | null>(null);
+  const [carouselData, setCarouselData] = useState<CarouselData | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const isMobile = window.innerWidth <= 768;
   const sortingInProgress = useRef(false);
@@ -41,6 +59,7 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
         const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 
         setRenderedSlides(rendered);
+        setCarouselData(carouselData);
       }
     } catch (error) {
       console.error('Failed to generate carousel:', error);
@@ -145,10 +164,14 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
 
   return (
     <>
-      {renderedSlides && (
+      {renderedSlides && carouselData && (
         <CarouselViewer
           slides={renderedSlides}
-          onClose={() => setRenderedSlides(null)}
+          carouselData={carouselData}
+          onClose={() => {
+            setRenderedSlides(null);
+            setCarouselData(null);
+          }}
         />
       )}
       <div className="min-h-screen bg-black">
