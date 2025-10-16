@@ -25,6 +25,38 @@ export class TemplateRenderer {
     return `${months[date.getMonth()]} ${date.getFullYear()}`;
   }
 
+  private replaceBackgroundImages(html: string, imageUrl: string): string {
+    let result = html;
+
+    result = result.replace(
+      /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+      `background-image: url('${imageUrl}')`
+    );
+
+    result = result.replace(
+      /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+      `background: url('${imageUrl}')`
+    );
+
+    return result;
+  }
+
+  private replaceAvatarImages(html: string, avatarUrl: string): string {
+    let result = html;
+
+    result = result.replace(
+      /<img([^>]*class\s*=\s*["'][^"']*avatar[^"']*["'][^>]*)\bsrc\s*=\s*["'][^"']*["']/gi,
+      `<img$1src="${avatarUrl}"`
+    );
+
+    result = result.replace(
+      /<img([^>]*)\bsrc\s*=\s*["'][^"']*\{\{avatar\}\}[^"']*["']/gi,
+      `<img$1src="${avatarUrl}"`
+    );
+
+    return result;
+  }
+
   renderSlide(templateHtml: string, data: CarouselData, slideIndex: number): string {
     let rendered = templateHtml;
     const conteudo = data.conteudos[slideIndex];
@@ -34,23 +66,16 @@ export class TemplateRenderer {
     rendered = rendered.replace(/\{\{arroba\}\}/g, data.dados_gerais.arroba);
     rendered = rendered.replace(/\{\{mesano\}\}/g, mesano);
 
+    rendered = rendered.replace(/\{\{avatar\}\}/g, data.dados_gerais.foto_perfil);
+    rendered = this.replaceAvatarImages(rendered, data.dados_gerais.foto_perfil);
+
     if (conteudo) {
       rendered = rendered.replace(/\{\{title\}\}/g, conteudo.title || '');
       rendered = rendered.replace(/\{\{subtitle\}\}/g, conteudo.subtitle || '');
 
       const bgUrl = conteudo.imagem_fundo || '';
       rendered = rendered.replace(/\{\{bg\}\}/g, bgUrl);
-
-      rendered = rendered.replace(
-        /background-image:\s*url\(['"]?\{\{bg\}\}['"]?\)/gi,
-        `background-image: url('${bgUrl}')`
-      );
-
-      rendered = rendered.replace(/\{\{avatar\}\}/g, data.dados_gerais.foto_perfil);
-      rendered = rendered.replace(
-        /<img([^>]*class=["'][^"']*avatar[^"']*["'][^>]*)src=["'][^"']*["']/gi,
-        `<img$1src="${data.dados_gerais.foto_perfil}"`
-      );
+      rendered = this.replaceBackgroundImages(rendered, bgUrl);
     }
 
     return rendered;
