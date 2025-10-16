@@ -340,12 +340,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               if (matches && matches[1]) {
                 const bgUrl = matches[1];
 
-                if (conteudo && (
-                  bgUrl.includes(conteudo.imagem_fundo) ||
-                  (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
-                  (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3)) ||
-                  bgUrl === currentBgImage
-                )) {
+                const isOriginalBgUrl = originalBgImages.some(bg => bgUrl.includes(bg));
+
+                if (conteudo && isOriginalBgUrl) {
                   const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
                   if (isVideoUrl) {
