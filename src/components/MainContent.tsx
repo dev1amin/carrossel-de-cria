@@ -5,7 +5,11 @@ import Feed from './Feed';
 import Navigation from './Navigation';
 import SettingsPage from './SettingsPage';
 import LoadingBar from './LoadingBar';
+import CarouselViewer from './CarouselViewer';
 import { getFeed } from '../services/feed';
+import { templateService } from '../services/template';
+import { templateRenderer } from '../services/templateRenderer';
+import { testCarouselData } from '../data/testCarouselData';
 
 interface MainContentProps {
   searchTerm: string;
@@ -30,6 +34,28 @@ const MainContent: React.FC<MainContentProps> = ({
 }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [testSlides, setTestSlides] = useState<string[] | null>(null);
+
+  const handleTestEditor = async () => {
+    try {
+      setIsLoading(true);
+      const carouselData = testCarouselData[0];
+      const templateId = carouselData.dados_gerais.template;
+
+      console.log(`Fetching template ${templateId}...`);
+      const templateSlides = await templateService.fetchTemplate(templateId);
+
+      console.log('Rendering slides with test data...');
+      const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+
+      setTestSlides(rendered);
+    } catch (error) {
+      console.error('Failed to load test editor:', error);
+      alert('Erro ao carregar editor de teste. Verifique o console.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const loadFeed = async () => {
@@ -66,15 +92,23 @@ const MainContent: React.FC<MainContentProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-black pb-20 md:pb-0 md:pl-16">
-      <LoadingBar isLoading={isLoading} />
-      {currentPage === 'feed' && (
-        <>
-          <Header 
-            onSearch={onSearch}
-            activeSort={activeSort}
-            onSortChange={onSortChange}
-          />
+    <>
+      {testSlides && (
+        <CarouselViewer
+          slides={testSlides}
+          onClose={() => setTestSlides(null)}
+        />
+      )}
+      <div className="min-h-screen bg-black pb-20 md:pb-0 md:pl-16">
+        <LoadingBar isLoading={isLoading} />
+        {currentPage === 'feed' && (
+          <>
+            <Header
+              onSearch={onSearch}
+              activeSort={activeSort}
+              onSortChange={onSortChange}
+              onTestEditor={handleTestEditor}
+            />
           <main className="pt-14">
             <Feed 
               posts={posts} 
@@ -92,11 +126,12 @@ const MainContent: React.FC<MainContentProps> = ({
         />
       )}
       
-      <Navigation 
+      <Navigation
         currentPage={currentPage}
         onPageChange={onPageChange}
       />
     </div>
+    </>
   );
 };
 
