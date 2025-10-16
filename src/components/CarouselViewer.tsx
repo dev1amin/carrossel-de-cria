@@ -99,11 +99,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
     if (!iframeDoc) return;
 
-    const container = iframeDoc.querySelector(`[data-video-id="${cropMode.videoId}"]`) as HTMLElement;
-    if (!container) return;
+    let container = iframeDoc.querySelector(`[data-video-id="${cropMode.videoId}"]`) as HTMLElement;
+    let video = container?.querySelector('video') as HTMLVideoElement;
 
-    const video = container.querySelector('video') as HTMLVideoElement;
-    if (!video) return;
+    if (!container) {
+      video = iframeDoc.getElementById(cropMode.videoId) as HTMLVideoElement;
+      if (video) {
+        container = video.parentElement as HTMLElement;
+      }
+    }
+
+    if (!container || !video) return;
 
     const currentWidth = videoDimensions[cropMode.videoId]?.width || video.offsetWidth;
     const currentHeight = videoDimensions[cropMode.videoId]?.height || video.offsetHeight;
@@ -517,14 +523,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
                 if (isVideoUrl) {
+                  const videoId = `video-bg-${index}-${Date.now()}`;
                   let video = element.querySelector('video');
                   let playBtn = element.querySelector('.video-play-btn-bg') as HTMLButtonElement;
+                  let cropBtn = element.querySelector('.video-crop-btn') as HTMLButtonElement;
 
                   if (!video) {
                     video = iframeDoc.createElement('video');
                     video.loop = true;
                     video.muted = true;
                     video.playsInline = true;
+                    video.id = videoId;
                     video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
                     video.src = bgImage;
                     video.setAttribute('data-video-src', bgImage);
@@ -534,27 +543,43 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
                     playBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="white" style="margin-left: 4px;"><path d="M8 5v14l11-7z"/></svg>';
 
+                    cropBtn = iframeDoc.createElement('button');
+                    cropBtn.className = 'video-crop-btn';
+                    cropBtn.style.cssText = 'position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 8px; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 11;';
+                    cropBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>';
+
                     playBtn.onclick = (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       video!.play();
                       playBtn!.style.display = 'none';
+                      cropBtn!.style.display = 'flex';
 
                       video!.onended = () => {
                         playBtn!.style.display = 'flex';
+                        cropBtn!.style.display = 'none';
                       };
 
                       video!.onclick = () => {
                         if (!video!.paused) {
                           video!.pause();
                           playBtn!.style.display = 'flex';
+                          cropBtn!.style.display = 'none';
                         }
                       };
                     };
 
+                    cropBtn.onclick = (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.parent.postMessage({ type: 'enterCropMode', slideIndex: index, videoId: videoId }, '*');
+                    };
+
                     element.style.position = 'relative';
+                    element.setAttribute('data-video-id', videoId);
                     element.insertBefore(video, element.firstChild);
                     element.appendChild(playBtn);
+                    element.appendChild(cropBtn);
                   } else {
                     video.src = bgImage;
                     video.setAttribute('data-video-src', bgImage);
@@ -616,10 +641,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             if (hasBackgroundProperty) {
               let video = element.querySelector('video');
               if (!video) {
+                const videoId = `video-bg-attr-${index}-${Date.now()}`;
                 video = iframeDoc.createElement('video');
                 video.loop = true;
                 video.muted = true;
                 video.playsInline = true;
+                video.id = videoId;
                 video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
                 video.src = videoBgUrl;
                 video.setAttribute('data-video-src', videoBgUrl);
@@ -629,27 +656,43 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 playBtn.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;';
                 playBtn.innerHTML = '<svg width="32" height="32" viewBox="0 0 24 24" fill="white" style="margin-left: 4px;"><path d="M8 5v14l11-7z"/></svg>';
 
+                const cropBtn = iframeDoc.createElement('button');
+                cropBtn.className = 'video-crop-btn';
+                cropBtn.style.cssText = 'position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 8px; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 11;';
+                cropBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>';
+
                 playBtn.onclick = (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   video!.play();
                   playBtn.style.display = 'none';
+                  cropBtn.style.display = 'flex';
 
                   video!.onended = () => {
                     playBtn.style.display = 'flex';
+                    cropBtn.style.display = 'none';
                   };
 
                   video!.onclick = () => {
                     if (!video!.paused) {
                       video!.pause();
                       playBtn.style.display = 'flex';
+                      cropBtn.style.display = 'none';
                     }
                   };
                 };
 
+                cropBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.parent.postMessage({ type: 'enterCropMode', slideIndex: index, videoId: videoId }, '*');
+                };
+
                 element.style.position = 'relative';
+                element.setAttribute('data-video-id', videoId);
                 element.insertBefore(video, element.firstChild);
                 element.appendChild(playBtn);
+                element.appendChild(cropBtn);
               }
             }
           }
