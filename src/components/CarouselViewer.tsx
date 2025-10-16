@@ -43,6 +43,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [expandedLayers, setExpandedLayers] = useState<Set<number>>(new Set([0]));
   const [editedContent, setEditedContent] = useState<Record<string, any>>({});
   const [elementStyles, setElementStyles] = useState<Record<string, ElementStyles>>({});
+  const [renderedSlides, setRenderedSlides] = useState<string[]>(slides);
+  const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,7 +60,144 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElement]);
+  }, [selectedElement, onClose]);
+
+  const injectEditableIds = (html: string, slideIndex: number): string => {
+    let result = html;
+
+    result = result.replace(
+      /(<[^>]*\{\{title\}\}[^>]*>)/gi,
+      `<span id="slide-${slideIndex}-title" data-editable="title" style="display: inline-block;">`
+    );
+
+    result = result.replace(/\{\{title\}\}/g, (match) => {
+      return `${carouselData.conteudos[slideIndex]?.title || ''}</span>`;
+    });
+
+    result = result.replace(
+      /(<[^>]*\{\{subtitle\}\}[^>]*>)/gi,
+      `<span id="slide-${slideIndex}-subtitle" data-editable="subtitle" style="display: inline-block;">`
+    );
+
+    result = result.replace(/\{\{subtitle\}\}/g, (match) => {
+      return `${carouselData.conteudos[slideIndex]?.subtitle || ''}</span>`;
+    });
+
+    result = result.replace(
+      /<style>/i,
+      `<style>
+        [data-editable] { cursor: pointer; position: relative; }
+        [data-editable].selected {
+          outline: 2px solid #3B82F6 !important;
+          outline-offset: 2px;
+        }
+        [data-editable]:hover:not(.selected) {
+          outline: 2px solid rgba(59, 130, 246, 0.5) !important;
+          outline-offset: 2px;
+        }
+        .bg-element.selected {
+          outline: 2px solid #3B82F6 !important;
+          outline-offset: -2px;
+        }
+      `
+    );
+
+    result = result.replace(
+      /<body([^>]*)>/i,
+      `<body$1 id="slide-${slideIndex}-background" data-editable="background" class="bg-element">`
+    );
+
+    return result;
+  };
+
+  useEffect(() => {
+    const newSlides = slides.map((slide, index) => injectEditableIds(slide, index));
+    setRenderedSlides(newSlides);
+  }, [slides]);
+
+  useEffect(() => {
+    iframeRefs.current.forEach((iframe, index) => {
+      if (!iframe || !iframe.contentWindow) return;
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      if (!iframeDoc) return;
+
+      const updateElement = (elementId: string, styles?: ElementStyles, content?: string) => {
+        const element = iframeDoc.getElementById(elementId);
+        if (!element) return;
+
+        if (styles) {
+          if (styles.fontSize) element.style.fontSize = styles.fontSize;
+          if (styles.fontWeight) element.style.fontWeight = styles.fontWeight;
+          if (styles.textAlign) element.style.textAlign = styles.textAlign;
+          if (styles.color) element.style.color = styles.color;
+        }
+
+        if (content !== undefined) {
+          element.textContent = content;
+        }
+      };
+
+      const slideKey = getElementKey(index, 'title');
+      const titleStyles = elementStyles[slideKey];
+      const titleContent = editedContent[`${index}-title`];
+
+      if (titleStyles || titleContent !== undefined) {
+        updateElement(`slide-${index}-title`, titleStyles, titleContent);
+      }
+
+      const subtitleKey = getElementKey(index, 'subtitle');
+      const subtitleStyles = elementStyles[subtitleKey];
+      const subtitleContent = editedContent[`${index}-subtitle`];
+
+      if (subtitleStyles || subtitleContent !== undefined) {
+        updateElement(`slide-${index}-subtitle`, subtitleStyles, subtitleContent);
+      }
+
+      const bgImage = editedContent[`${index}-background`];
+      if (bgImage) {
+        const body = iframeDoc.body;
+        if (body) {
+          body.style.backgroundImage = `url('${bgImage}')`;
+        }
+      }
+    });
+  }, [elementStyles, editedContent]);
+
+  useEffect(() => {
+    const setupIframeInteraction = (iframe: HTMLIFrameElement, slideIndex: number) => {
+      if (!iframe.contentWindow) return;
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      if (!iframeDoc) return;
+
+      iframeDoc.querySelectorAll('[data-editable]').forEach((element) => {
+        const editableType = element.getAttribute('data-editable');
+
+        (element as HTMLElement).onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          iframeDoc.querySelectorAll('[data-editable]').forEach(el => {
+            el.classList.remove('selected');
+          });
+
+          element.classList.add('selected');
+
+          handleElementClick(slideIndex, editableType as ElementType);
+        };
+      });
+    };
+
+    iframeRefs.current.forEach((iframe, index) => {
+      if (iframe) {
+        iframe.onload = () => setupIframeInteraction(iframe, index);
+        if (iframe.contentDocument?.readyState === 'complete') {
+          setupIframeInteraction(iframe, index);
+        }
+      }
+    });
+  }, [renderedSlides]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -95,7 +234,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   const handleDownloadAll = () => {
-    slides.forEach((slide, index) => {
+    renderedSlides.forEach((slide, index) => {
       const blob = new Blob([slide], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -106,6 +245,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     });
+  };
+
+  const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
+    updateEditedValue(slideIndex, 'background', imageUrl);
   };
 
   const toggleLayer = (index: number) => {
@@ -184,7 +327,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-neutral-900 flex">
+    <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <Layers className="w-4 h-4 text-neutral-400 mr-2" />
@@ -327,7 +470,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             }}
           >
             <div className="flex items-start" style={{ gap: `${gap}px` }}>
-              {slides.map((slide, index) => (
+              {renderedSlides.map((slide, index) => (
                 <div
                   key={index}
                   className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${
@@ -342,73 +485,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     {index + 1}
                   </div>
                   <iframe
+                    ref={(el) => (iframeRefs.current[index] = el)}
                     srcDoc={slide}
                     className="w-full h-full border-0"
                     title={`Slide ${index + 1}`}
-                    sandbox="allow-same-origin"
-                    style={{ pointerEvents: 'none' }}
+                    sandbox="allow-same-origin allow-scripts"
                   />
-
-                  <div className="absolute inset-0 z-10 pointer-events-auto">
-                    <div
-                      className={`absolute top-0 left-0 right-0 h-1/6 cursor-pointer transition-all group ${
-                        selectedElement.slideIndex === index && selectedElement.element === 'background'
-                          ? 'ring-2 ring-inset ring-blue-500'
-                          : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleElementClick(index, 'background');
-                      }}
-                      title="Background Image"
-                    >
-                      {selectedElement.slideIndex === index && selectedElement.element === 'background' && (
-                        <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
-                          Background
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      className={`absolute top-1/4 left-0 right-0 h-1/3 cursor-pointer transition-all group ${
-                        selectedElement.slideIndex === index && selectedElement.element === 'title'
-                          ? 'ring-2 ring-inset ring-blue-500'
-                          : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleElementClick(index, 'title');
-                      }}
-                      title="Title"
-                    >
-                      {selectedElement.slideIndex === index && selectedElement.element === 'title' && (
-                        <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
-                          Title
-                        </div>
-                      )}
-                    </div>
-
-                    {carouselData.conteudos[index]?.subtitle && (
-                      <div
-                        className={`absolute bottom-1/4 left-0 right-0 h-1/4 cursor-pointer transition-all group ${
-                          selectedElement.slideIndex === index && selectedElement.element === 'subtitle'
-                            ? 'ring-2 ring-inset ring-blue-500'
-                            : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleElementClick(index, 'subtitle');
-                        }}
-                        title="Subtitle"
-                      >
-                        {selectedElement.slideIndex === index && selectedElement.element === 'subtitle' && (
-                          <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
-                            Subtitle
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
@@ -536,36 +618,56 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   <div>
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
                     <div className="space-y-2">
-                      <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
-                        <div className="text-neutral-400 text-xs mb-1">Image 1</div>
-                        <img
-                          src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
-                          alt="Background 1"
-                          className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
-                          onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo')}
-                        />
-                      </div>
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (
+                        <div
+                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo
+                              ? 'border-blue-500'
+                              : 'border-neutral-800 hover:border-blue-400'
+                          }`}
+                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo)}
+                        >
+                          <div className="text-neutral-400 text-xs mb-1">Image 1</div>
+                          <img
+                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
+                            alt="Background 1"
+                            className="w-full h-24 object-cover rounded"
+                          />
+                        </div>
+                      )}
 
                       {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (
-                        <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
+                        <div
+                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2
+                              ? 'border-blue-500'
+                              : 'border-neutral-800 hover:border-blue-400'
+                          }`}
+                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2!)}
+                        >
                           <div className="text-neutral-400 text-xs mb-1">Image 2</div>
                           <img
                             src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2}
                             alt="Background 2"
-                            className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
-                            onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo2')}
+                            className="w-full h-24 object-cover rounded"
                           />
                         </div>
                       )}
 
                       {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (
-                        <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
+                        <div
+                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3
+                              ? 'border-blue-500'
+                              : 'border-neutral-800 hover:border-blue-400'
+                          }`}
+                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3!)}
+                        >
                           <div className="text-neutral-400 text-xs mb-1">Image 3</div>
                           <img
                             src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3}
                             alt="Background 3"
-                            className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
-                            onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo3')}
+                            className="w-full h-24 object-cover rounded"
                           />
                         </div>
                       )}
