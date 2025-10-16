@@ -134,11 +134,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
     );
 
-    result = result.replace(
-      /<img([^>]*)src="([^"]*)"([^>]*)>/gi,
-      `<img$1src="$2"$3 data-editable="image" id="slide-${slideIndex}-image" data-original-src="$2">`
-    );
-
     return result;
   };
 
@@ -176,11 +171,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
         if (!computedStyle) return { fontSize: '16px', fontWeight: '400', textAlign: 'left', color: '#FFFFFF' };
 
+        const rgbToHex = (rgb: string): string => {
+          const result = rgb.match(/\d+/g);
+          if (!result || result.length < 3) return rgb;
+          const r = parseInt(result[0]).toString(16).padStart(2, '0');
+          const g = parseInt(result[1]).toString(16).padStart(2, '0');
+          const b = parseInt(result[2]).toString(16).padStart(2, '0');
+          return `#${r}${g}${b}`.toUpperCase();
+        };
+
+        const color = computedStyle.color || '#FFFFFF';
+        const hexColor = color.startsWith('rgb') ? rgbToHex(color) : color;
+
         return {
           fontSize: computedStyle.fontSize || '16px',
           fontWeight: computedStyle.fontWeight || '400',
-          textAlign: computedStyle.textAlign || 'left',
-          color: computedStyle.color || '#FFFFFF'
+          textAlign: (computedStyle.textAlign as any) || 'left',
+          color: hexColor
         };
       };
 
@@ -213,17 +220,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         });
       }
 
-      const titleElement = iframeDoc.getElementById(`slide-${index}-title`);
-      if (titleElement && !originalStyles[`${index}-title`]) {
-        const styles = extractOriginalStyles(titleElement as HTMLElement);
-        setOriginalStyles(prev => ({ ...prev, [`${index}-title`]: styles }));
-      }
+      setTimeout(() => {
+        const titleElement = iframeDoc.getElementById(`slide-${index}-title`);
+        if (titleElement && !originalStyles[`${index}-title`]) {
+          const styles = extractOriginalStyles(titleElement as HTMLElement);
+          setOriginalStyles(prev => ({ ...prev, [`${index}-title`]: styles }));
+        }
 
-      const subtitleElement = iframeDoc.getElementById(`slide-${index}-subtitle`);
-      if (subtitleElement && !originalStyles[`${index}-subtitle`]) {
-        const styles = extractOriginalStyles(subtitleElement as HTMLElement);
-        setOriginalStyles(prev => ({ ...prev, [`${index}-subtitle`]: styles }));
-      }
+        const subtitleElement = iframeDoc.getElementById(`slide-${index}-subtitle`);
+        if (subtitleElement && !originalStyles[`${index}-subtitle`]) {
+          const styles = extractOriginalStyles(subtitleElement as HTMLElement);
+          setOriginalStyles(prev => ({ ...prev, [`${index}-subtitle`]: styles }));
+        }
+      }, 100);
 
       const allElements = iframeDoc.querySelectorAll('[data-editable]');
       allElements.forEach(el => {
@@ -674,23 +683,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                   <div>
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Size</label>
-                    <select
+                    <input
+                      type="text"
                       className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                       value={getElementStyle(selectedElement.slideIndex, selectedElement.element).fontSize}
                       onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'fontSize', e.target.value)}
-                    >
-                      <option value="12px">12px</option>
-                      <option value="14px">14px</option>
-                      <option value="16px">16px</option>
-                      <option value="18px">18px</option>
-                      <option value="20px">20px</option>
-                      <option value="24px">24px</option>
-                      <option value="28px">28px</option>
-                      <option value="32px">32px</option>
-                      <option value="36px">36px</option>
-                      <option value="42px">42px</option>
-                      <option value="48px">48px</option>
-                    </select>
+                      placeholder="e.g. 24px, 1.5rem"
+                    />
                   </div>
 
                   <div>
