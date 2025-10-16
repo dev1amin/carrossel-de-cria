@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search } from 'lucide-react';
 
 interface CarouselData {
   dados_gerais: {
@@ -26,6 +26,13 @@ interface CarouselViewerProps {
 
 type ElementType = 'title' | 'subtitle' | 'background' | null;
 
+interface ElementStyles {
+  fontSize: string;
+  fontWeight: string;
+  textAlign: string;
+  color: string;
+}
+
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
   const [zoom, setZoom] = useState(0.35);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -34,18 +41,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [focusedSlide, setFocusedSlide] = useState<number | null>(null);
   const [selectedElement, setSelectedElement] = useState<{ slideIndex: number; element: ElementType }>({ slideIndex: 0, element: null });
   const [expandedLayers, setExpandedLayers] = useState<Set<number>>(new Set([0]));
+  const [editedContent, setEditedContent] = useState<Record<string, any>>({});
+  const [elementStyles, setElementStyles] = useState<Record<string, ElementStyles>>({});
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (selectedElement.element !== null) {
+          setSelectedElement({ slideIndex: selectedElement.slideIndex, element: null });
+        } else {
+          onClose();
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [selectedElement]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -124,6 +137,41 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }
   };
 
+  const getElementKey = (slideIndex: number, element: ElementType) => {
+    return `${slideIndex}-${element}`;
+  };
+
+  const getEditedValue = (slideIndex: number, field: string, defaultValue: any) => {
+    const key = `${slideIndex}-${field}`;
+    return editedContent[key] !== undefined ? editedContent[key] : defaultValue;
+  };
+
+  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
+    const key = `${slideIndex}-${field}`;
+    setEditedContent(prev => ({ ...prev, [key]: value }));
+  };
+
+  const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
+    const key = getElementKey(slideIndex, element);
+    return elementStyles[key] || {
+      fontSize: element === 'title' ? '24px' : '16px',
+      fontWeight: element === 'title' ? '700' : '400',
+      textAlign: 'left',
+      color: '#FFFFFF'
+    };
+  };
+
+  const updateElementStyle = (slideIndex: number, element: ElementType, property: keyof ElementStyles, value: string) => {
+    const key = getElementKey(slideIndex, element);
+    setElementStyles(prev => ({
+      ...prev,
+      [key]: {
+        ...getElementStyle(slideIndex, element),
+        [property]: value
+      }
+    }));
+  };
+
   const slideWidth = 1080;
   const slideHeight = 1350;
   const gap = 40;
@@ -136,7 +184,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-neutral-900 flex">
+    <div className="fixed inset-0 z-[200] bg-neutral-900 flex">
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <Layers className="w-4 h-4 text-neutral-400 mr-2" />
@@ -282,16 +330,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               {slides.map((slide, index) => (
                 <div
                   key={index}
-                  className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 cursor-pointer transition-all ${
+                  className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${
                     focusedSlide === index ? 'ring-4 ring-blue-500' : ''
                   }`}
                   style={{
                     width: `${slideWidth}px`,
                     height: `${slideHeight}px`,
                   }}
-                  onClick={() => handleSlideClick(index)}
                 >
-                  <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs font-medium z-10">
+                  <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs font-medium z-20">
                     {index + 1}
                   </div>
                   <iframe
@@ -301,6 +348,67 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     sandbox="allow-same-origin"
                     style={{ pointerEvents: 'none' }}
                   />
+
+                  <div className="absolute inset-0 z-10 pointer-events-auto">
+                    <div
+                      className={`absolute top-0 left-0 right-0 h-1/6 cursor-pointer transition-all group ${
+                        selectedElement.slideIndex === index && selectedElement.element === 'background'
+                          ? 'ring-2 ring-inset ring-blue-500'
+                          : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleElementClick(index, 'background');
+                      }}
+                      title="Background Image"
+                    >
+                      {selectedElement.slideIndex === index && selectedElement.element === 'background' && (
+                        <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+                          Background
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      className={`absolute top-1/4 left-0 right-0 h-1/3 cursor-pointer transition-all group ${
+                        selectedElement.slideIndex === index && selectedElement.element === 'title'
+                          ? 'ring-2 ring-inset ring-blue-500'
+                          : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleElementClick(index, 'title');
+                      }}
+                      title="Title"
+                    >
+                      {selectedElement.slideIndex === index && selectedElement.element === 'title' && (
+                        <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+                          Title
+                        </div>
+                      )}
+                    </div>
+
+                    {carouselData.conteudos[index]?.subtitle && (
+                      <div
+                        className={`absolute bottom-1/4 left-0 right-0 h-1/4 cursor-pointer transition-all group ${
+                          selectedElement.slideIndex === index && selectedElement.element === 'subtitle'
+                            ? 'ring-2 ring-inset ring-blue-500'
+                            : 'hover:ring-2 hover:ring-inset hover:ring-blue-300'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleElementClick(index, 'subtitle');
+                        }}
+                        title="Subtitle"
+                      >
+                        {selectedElement.slideIndex === index && selectedElement.element === 'subtitle' && (
+                          <div className="absolute top-1 left-1 bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium">
+                            Subtitle
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -334,64 +442,91 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             </div>
           ) : (
             <div className="space-y-4">
-              <div>
-                <label className="text-neutral-400 text-xs mb-2 block">Element Type</label>
-                <div className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm capitalize">
-                  {selectedElement.element}
-                </div>
-              </div>
-
-              {selectedElement.element === 'title' && (
+              {(selectedElement.element === 'title' || selectedElement.element === 'subtitle') && (
                 <>
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Content</label>
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Text Content</label>
                     <textarea
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm resize-none"
-                      rows={4}
-                      value={carouselData.conteudos[selectedElement.slideIndex]?.title || ''}
-                      readOnly
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm resize-none focus:outline-none focus:border-blue-500 transition-colors"
+                      rows={selectedElement.element === 'title' ? 4 : 3}
+                      value={getEditedValue(
+                        selectedElement.slideIndex,
+                        selectedElement.element,
+                        carouselData.conteudos[selectedElement.slideIndex]?.[selectedElement.element] || ''
+                      )}
+                      onChange={(e) => updateEditedValue(selectedElement.slideIndex, selectedElement.element!, e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Font Size</label>
-                    <input
-                      type="text"
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
-                      placeholder="24px"
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Color</label>
-                    <input
-                      type="text"
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
-                      placeholder="#FFFFFF"
-                      readOnly
-                    />
-                  </div>
-                </>
-              )}
 
-              {selectedElement.element === 'subtitle' && (
-                <>
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Content</label>
-                    <textarea
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm resize-none"
-                      rows={3}
-                      value={carouselData.conteudos[selectedElement.slideIndex]?.subtitle || ''}
-                      readOnly
-                    />
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Size</label>
+                    <select
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={getElementStyle(selectedElement.slideIndex, selectedElement.element).fontSize}
+                      onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'fontSize', e.target.value)}
+                    >
+                      <option value="12px">12px</option>
+                      <option value="14px">14px</option>
+                      <option value="16px">16px</option>
+                      <option value="18px">18px</option>
+                      <option value="20px">20px</option>
+                      <option value="24px">24px</option>
+                      <option value="28px">28px</option>
+                      <option value="32px">32px</option>
+                      <option value="36px">36px</option>
+                      <option value="42px">42px</option>
+                      <option value="48px">48px</option>
+                    </select>
                   </div>
+
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Font Size</label>
-                    <input
-                      type="text"
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
-                      placeholder="16px"
-                      readOnly
-                    />
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Weight</label>
+                    <select
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={getElementStyle(selectedElement.slideIndex, selectedElement.element).fontWeight}
+                      onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'fontWeight', e.target.value)}
+                    >
+                      <option value="300">Light (300)</option>
+                      <option value="400">Regular (400)</option>
+                      <option value="500">Medium (500)</option>
+                      <option value="600">Semi Bold (600)</option>
+                      <option value="700">Bold (700)</option>
+                      <option value="800">Extra Bold (800)</option>
+                      <option value="900">Black (900)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Text Align</label>
+                    <select
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                      value={getElementStyle(selectedElement.slideIndex, selectedElement.element).textAlign}
+                      onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'textAlign', e.target.value)}
+                    >
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                      <option value="justify">Justify</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Color</label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="color"
+                        className="w-12 h-10 bg-neutral-900 border border-neutral-800 rounded cursor-pointer"
+                        value={getElementStyle(selectedElement.slideIndex, selectedElement.element).color}
+                        onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'color', e.target.value)}
+                      />
+                      <input
+                        type="text"
+                        className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        value={getElementStyle(selectedElement.slideIndex, selectedElement.element).color}
+                        onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'color', e.target.value)}
+                        placeholder="#FFFFFF"
+                      />
+                    </div>
                   </div>
                 </>
               )}
@@ -399,28 +534,74 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               {selectedElement.element === 'background' && (
                 <>
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Image URL</label>
-                    <input
-                      type="text"
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
-                      value={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo || ''}
-                      readOnly
-                    />
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
+                    <div className="space-y-2">
+                      <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
+                        <div className="text-neutral-400 text-xs mb-1">Image 1</div>
+                        <img
+                          src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
+                          alt="Background 1"
+                          className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
+                          onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo')}
+                        />
+                      </div>
+
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (
+                        <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
+                          <div className="text-neutral-400 text-xs mb-1">Image 2</div>
+                          <img
+                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2}
+                            alt="Background 2"
+                            className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
+                            onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo2')}
+                          />
+                        </div>
+                      )}
+
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (
+                        <div className="bg-neutral-900 border border-neutral-800 rounded p-2">
+                          <div className="text-neutral-400 text-xs mb-1">Image 3</div>
+                          <img
+                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3}
+                            alt="Background 3"
+                            className="w-full h-24 object-cover rounded border border-neutral-700 cursor-pointer hover:border-blue-500 transition-colors"
+                            onClick={() => updateEditedValue(selectedElement.slideIndex, 'activeBackground', 'imagem_fundo3')}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
+
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Preview</label>
-                    <img
-                      src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
-                      alt="Background"
-                      className="w-full h-32 object-cover rounded border border-neutral-800"
-                    />
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Search Images</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        placeholder="Search for images..."
+                      />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    </div>
                   </div>
+
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block">Size</label>
-                    <select className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm">
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Upload Image</label>
+                    <label className="flex items-center justify-center w-full h-24 bg-neutral-900 border-2 border-dashed border-neutral-800 rounded cursor-pointer hover:border-blue-500 transition-colors">
+                      <div className="flex flex-col items-center">
+                        <Upload className="w-6 h-6 text-neutral-500 mb-1" />
+                        <span className="text-neutral-500 text-xs">Click to upload</span>
+                      </div>
+                      <input type="file" className="hidden" accept="image/*" />
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Image Size</label>
+                    <select className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors">
                       <option>Cover</option>
                       <option>Contain</option>
                       <option>Auto</option>
+                      <option>Stretch</option>
                     </select>
                   </div>
                 </>
