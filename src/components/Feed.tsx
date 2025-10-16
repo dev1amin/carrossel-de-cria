@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-mo
 import { Post, SortOption } from '../types';
 import PostCard from './PostCard';
 import { Scale } from 'lucide-react';
+import { generateCarousel } from '../services/carousel';
 
 interface FeedProps {
   posts: Post[];
@@ -18,6 +19,16 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
   const sortingInProgress = useRef(false);
   const dragY = useMotionValue(0);
   const controls = useAnimation();
+
+  const handleGenerateCarousel = async (code: string) => {
+    try {
+      console.log(`Generating carousel for post: ${code}`);
+      const result = await generateCarousel(code);
+      console.log('Carousel generated successfully:', result);
+    } catch (error) {
+      console.error('Failed to generate carousel:', error);
+    }
+  };
 
   useEffect(() => {
     console.log(`[Sort] Applying sort: ${activeSort}`);
@@ -134,12 +145,13 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
                   onDragEnd={handleDragEnd}
                   animate={controls}
                 >
-                  <PostCard 
-                    post={post} 
+                  <PostCard
+                    post={post}
                     index={index}
                     onHover={() => {}}
                     onLeave={() => {}}
                     onAIClick={() => {}}
+                    onGenerateCarousel={handleGenerateCarousel}
                   />
                 </motion.div>
               ))}
@@ -157,12 +169,13 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
                     transition={{ duration: 0.3 }}
                     className="w-full flex justify-center"
                   >
-                    <PostCard 
-                      post={post} 
+                    <PostCard
+                      post={post}
                       index={index}
                       onHover={() => {}}
                       onLeave={() => {}}
                       onAIClick={() => {}}
+                      onGenerateCarousel={handleGenerateCarousel}
                     />
                   </motion.div>
                 ))}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, Play, Trophy, Medal, Award, ExternalLink } from 'lucide-react';
+import { Heart, Play, Trophy, Medal, Award, ExternalLink, Sparkles } from 'lucide-react';
 import { Post } from '../types';
 import { formatNumber } from '../utils/formatters';
 
@@ -9,9 +9,22 @@ interface PostCardProps {
   onHover: () => void;
   onLeave: () => void;
   onAIClick: () => void;
+  onGenerateCarousel?: (code: string) => void;
 }
 
-const PostCard: React.FC<PostCardProps> = ({ post, index }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, index, onGenerateCarousel }) => {
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGenerateCarousel = async () => {
+    if (isGenerating || !onGenerateCarousel) return;
+
+    setIsGenerating(true);
+    try {
+      await onGenerateCarousel(post.code);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
   const formatTimeAgo = (timestamp: number) => {
     const now = Math.floor(Date.now() / 1000);
     const diff = now - timestamp;
@@ -83,9 +96,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, index }) => {
           <ExternalLink className="w-4 h-4" />
           <span>See Content</span>
         </button>
-        <div className="absolute bottom-4 right-4 z-50 bg-black/70 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-sm flex items-center space-x-2">
-          {getRankIcon(index)}
-          <span>#{index + 1}</span>
+        <div className="absolute bottom-4 right-4 z-50 flex flex-col items-end space-y-2">
+          <div className="bg-black/70 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-sm flex items-center space-x-2">
+            {getRankIcon(index)}
+            <span>#{index + 1}</span>
+          </div>
+          {onGenerateCarousel && (
+            <button
+              onClick={handleGenerateCarousel}
+              disabled={isGenerating}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-full text-sm flex items-center space-x-2 transition-all shadow-lg hover:shadow-xl"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{isGenerating ? 'Gerando...' : 'Gerar'}</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
