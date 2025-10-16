@@ -15,6 +15,9 @@ interface CarouselData {
     thumbnail_url?: string;
     imagem_fundo2?: string;
     imagem_fundo3?: string;
+    imagem_fundo4?: string;
+    imagem_fundo5?: string;
+    imagem_fundo6?: string;
   }>;
 }
 
@@ -50,6 +53,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [originalStyles, setOriginalStyles] = useState<Record<string, ElementStyles>>({});
   const [renderedSlides, setRenderedSlides] = useState<string[]>(slides);
   const [isEditingInline, setIsEditingInline] = useState<{ slideIndex: number; element: ElementType } | null>(null);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchResults, setSearchResults] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<Record<number, string>>({});
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -231,7 +238,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             if (conteudo && imgSrc && (
               imgSrc.includes(conteudo.imagem_fundo) ||
               (conteudo.imagem_fundo2 && imgSrc.includes(conteudo.imagem_fundo2)) ||
-              (conteudo.imagem_fundo3 && imgSrc.includes(conteudo.imagem_fundo3))
+              (conteudo.imagem_fundo3 && imgSrc.includes(conteudo.imagem_fundo3)) ||
+              (conteudo.imagem_fundo4 && imgSrc.includes(conteudo.imagem_fundo4)) ||
+              (conteudo.imagem_fundo5 && imgSrc.includes(conteudo.imagem_fundo5)) ||
+              (conteudo.imagem_fundo6 && imgSrc.includes(conteudo.imagem_fundo6))
             )) {
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -289,7 +299,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               if (conteudo && videoSrc && (
                 videoSrc.includes(conteudo.imagem_fundo) ||
                 (conteudo.imagem_fundo2 && videoSrc.includes(conteudo.imagem_fundo2)) ||
-                (conteudo.imagem_fundo3 && videoSrc.includes(conteudo.imagem_fundo3))
+                (conteudo.imagem_fundo3 && videoSrc.includes(conteudo.imagem_fundo3)) ||
+                (conteudo.imagem_fundo4 && videoSrc.includes(conteudo.imagem_fundo4)) ||
+                (conteudo.imagem_fundo5 && videoSrc.includes(conteudo.imagem_fundo5)) ||
+                (conteudo.imagem_fundo6 && videoSrc.includes(conteudo.imagem_fundo6))
               )) {
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -334,7 +347,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 if (conteudo && (
                   bgUrl.includes(conteudo.imagem_fundo) ||
                   (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
-                  (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3))
+                  (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3)) ||
+                  (conteudo.imagem_fundo4 && bgUrl.includes(conteudo.imagem_fundo4)) ||
+                  (conteudo.imagem_fundo5 && bgUrl.includes(conteudo.imagem_fundo5)) ||
+                  (conteudo.imagem_fundo6 && bgUrl.includes(conteudo.imagem_fundo6))
                 )) {
                   const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
@@ -653,6 +669,55 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     updateEditedValue(slideIndex, 'background', imageUrl);
+  };
+
+  const handleSearchImages = async () => {
+    if (!searchKeyword.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const response = await fetch('https://webhook.workez.online/webhook/searchImages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ keyword: searchKeyword }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to search images');
+      }
+
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const images = data[0];
+        const imageUrls = [
+          images.imagem_fundo,
+          images.imagem_fundo2,
+          images.imagem_fundo3,
+          images.imagem_fundo4,
+          images.imagem_fundo5,
+          images.imagem_fundo6,
+        ].filter(Boolean);
+        setSearchResults(imageUrls);
+      }
+    } catch (error) {
+      console.error('Error searching images:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleImageUpload = (slideIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string;
+      setUploadedImages(prev => ({ ...prev, [slideIndex]: imageUrl }));
+    };
+    reader.readAsDataURL(file);
   };
 
   const toggleLayer = (index: number) => {
@@ -1085,6 +1150,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           />
                         </div>
                       )}
+
+                      {uploadedImages[selectedElement.slideIndex] && (
+                        <div
+                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === uploadedImages[selectedElement.slideIndex]
+                              ? 'border-blue-500'
+                              : 'border-neutral-800 hover:border-blue-400'
+                          }`}
+                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, uploadedImages[selectedElement.slideIndex])}
+                        >
+                          <div className="text-neutral-400 text-xs mb-1">Image 4 (Uploaded)</div>
+                          <img
+                            src={uploadedImages[selectedElement.slideIndex]}
+                            alt="Background 4 (Uploaded)"
+                            className="w-full h-24 object-cover rounded"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1093,21 +1176,62 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     <div className="relative">
                       <input
                         type="text"
-                        className="w-full bg-neutral-900 border border-neutral-800 rounded pl-10 pr-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        className="w-full bg-neutral-900 border border-neutral-800 rounded pl-10 pr-20 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                         placeholder="Search for images..."
+                        value={searchKeyword}
+                        onChange={(e) => setSearchKeyword(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSearchImages();
+                          }
+                        }}
                       />
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                      <button
+                        onClick={handleSearchImages}
+                        disabled={isSearching || !searchKeyword.trim()}
+                        className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 hover:bg-blue-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white px-3 py-1 rounded text-xs transition-colors"
+                      >
+                        {isSearching ? 'Searching...' : 'Search'}
+                      </button>
                     </div>
+                    {searchResults.length > 0 && (
+                      <div className="mt-3 space-y-2 max-h-96 overflow-y-auto">
+                        {searchResults.map((imageUrl, index) => (
+                          <div
+                            key={index}
+                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                              getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === imageUrl
+                                ? 'border-blue-500'
+                                : 'border-neutral-800 hover:border-blue-400'
+                            }`}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, imageUrl)}
+                          >
+                            <div className="text-neutral-400 text-xs mb-1">Search Result {index + 1}</div>
+                            <img
+                              src={imageUrl}
+                              alt={`Search result ${index + 1}`}
+                              className="w-full h-24 object-cover rounded"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div>
-                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Upload Image</label>
+                    <label className="text-neutral-400 text-xs mb-2 block font-medium">Upload Image (Image 4)</label>
                     <label className="flex items-center justify-center w-full h-24 bg-neutral-900 border-2 border-dashed border-neutral-800 rounded cursor-pointer hover:border-blue-500 transition-colors">
                       <div className="flex flex-col items-center">
                         <Upload className="w-6 h-6 text-neutral-500 mb-1" />
                         <span className="text-neutral-500 text-xs">Click to upload</span>
                       </div>
-                      <input type="file" className="hidden" accept="image/*" />
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(selectedElement.slideIndex, e)}
+                      />
                     </label>
                   </div>
 
