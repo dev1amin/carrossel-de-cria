@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search, Play } from 'lucide-react';
 
 interface CarouselData {
   dados_gerais: {
@@ -17,6 +17,10 @@ interface CarouselData {
     imagem_fundo3?: string;
   }>;
 }
+
+const isVideoUrl = (url: string): boolean => {
+  return url.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/) !== null;
+};
 
 interface CarouselViewerProps {
   slides: string[];
@@ -214,9 +218,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           body.style.setProperty('background-image', `url('${bgImage}')`, 'important');
         }
 
-        const allImages = iframeDoc.querySelectorAll('img[data-editable="image"]');
-        allImages.forEach(img => {
-          (img as HTMLImageElement).src = bgImage;
+        const allElements = iframeDoc.querySelectorAll('*');
+        allElements.forEach(el => {
+          const element = el as HTMLElement;
+          const bgImageStyle = element.style.backgroundImage;
+          if (bgImageStyle && bgImageStyle.includes('url')) {
+            const originalBg = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
+            if (originalBg && originalBg[1]) {
+              const conteudo = carouselData.conteudos[index];
+              if (conteudo && (
+                originalBg[1].includes(conteudo.imagem_fundo) ||
+                (conteudo.imagem_fundo2 && originalBg[1].includes(conteudo.imagem_fundo2)) ||
+                (conteudo.imagem_fundo3 && originalBg[1].includes(conteudo.imagem_fundo3))
+              )) {
+                element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
+              }
+            }
+          }
         });
       }
 
@@ -336,8 +354,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-    setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
+
+    if (e.ctrlKey) {
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
+    } else {
+      setPan((prev) => ({
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY
+      }));
+    }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -622,9 +648,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     height: `${slideHeight}px`,
                   }}
                 >
-                  <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs font-medium z-20">
-                    {index + 1}
-                  </div>
                   <iframe
                     ref={(el) => (iframeRefs.current[index] = el)}
                     srcDoc={slide}
@@ -749,23 +772,40 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   <div>
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
                     <div className="space-y-2">
-                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (
-                        <div
-                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo
-                              ? 'border-blue-500'
-                              : 'border-neutral-800 hover:border-blue-400'
-                          }`}
-                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo)}
-                        >
-                          <div className="text-neutral-400 text-xs mb-1">Image 1</div>
-                          <img
-                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
-                            alt="Background 1"
-                            className="w-full h-24 object-cover rounded"
-                          />
-                        </div>
-                      )}
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (() => {
+                        const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo;
+                        const isVideo = isVideoUrl(bgUrl);
+                        const thumbnailUrl = carouselData.conteudos[selectedElement.slideIndex]?.thumbnail_url;
+                        const displayUrl = isVideo && thumbnailUrl ? thumbnailUrl : bgUrl;
+
+                        return (
+                          <div
+                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                              getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo
+                                ? 'border-blue-500'
+                                : 'border-neutral-800 hover:border-blue-400'
+                            }`}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo)}
+                          >
+                            <div className="text-neutral-400 text-xs mb-1 flex items-center justify-between">
+                              <span>{isVideo ? 'Video 1' : 'Image 1'}</span>
+                              {isVideo && <Play className="w-3 h-3" />}
+                            </div>
+                            <div className="relative">
+                              <img
+                                src={displayUrl}
+                                alt="Background 1"
+                                className="w-full h-24 object-cover rounded"
+                              />
+                              {isVideo && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded">
+                                  <Play className="w-8 h-8 text-white" fill="white" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (
                         <div
