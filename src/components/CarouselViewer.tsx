@@ -1084,15 +1084,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         const isVideo = isVideoUrl(bgUrl);
                         const thumbnailUrl = carouselData.conteudos[selectedElement.slideIndex]?.thumbnail_url;
                         const displayUrl = isVideo && thumbnailUrl ? thumbnailUrl : bgUrl;
+                        const currentBg = getEditedValue(selectedElement.slideIndex, 'background', bgUrl);
 
                         return (
                           <div
                             className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                              getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo
+                              currentBg === bgUrl
                                 ? 'border-blue-500'
                                 : 'border-neutral-800 hover:border-blue-400'
                             }`}
-                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo)}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
                           >
                             <div className="text-neutral-400 text-xs mb-1 flex items-center justify-between">
                               <span>{isVideo ? 'Video 1' : 'Image 1'}</span>
@@ -1114,59 +1115,74 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         );
                       })()}
 
-                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (
-                        <div
-                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2
-                              ? 'border-blue-500'
-                              : 'border-neutral-800 hover:border-blue-400'
-                          }`}
-                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2!)}
-                        >
-                          <div className="text-neutral-400 text-xs mb-1">Image 2</div>
-                          <img
-                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2}
-                            alt="Background 2"
-                            className="w-full h-24 object-cover rounded"
-                          />
-                        </div>
-                      )}
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (() => {
+                        const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2!;
+                        const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
 
-                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (
-                        <div
-                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3
-                              ? 'border-blue-500'
-                              : 'border-neutral-800 hover:border-blue-400'
-                          }`}
-                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3!)}
-                        >
-                          <div className="text-neutral-400 text-xs mb-1">Image 3</div>
-                          <img
-                            src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3}
-                            alt="Background 3"
-                            className="w-full h-24 object-cover rounded"
-                          />
-                        </div>
-                      )}
+                        return (
+                          <div
+                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                              currentBg === bgUrl
+                                ? 'border-blue-500'
+                                : 'border-neutral-800 hover:border-blue-400'
+                            }`}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                          >
+                            <div className="text-neutral-400 text-xs mb-1">Image 2</div>
+                            <img
+                              src={bgUrl}
+                              alt="Background 2"
+                              className="w-full h-24 object-cover rounded"
+                            />
+                          </div>
+                        );
+                      })()}
 
-                      {uploadedImages[selectedElement.slideIndex] && (
-                        <div
-                          className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                            getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === uploadedImages[selectedElement.slideIndex]
-                              ? 'border-blue-500'
-                              : 'border-neutral-800 hover:border-blue-400'
-                          }`}
-                          onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, uploadedImages[selectedElement.slideIndex])}
-                        >
-                          <div className="text-neutral-400 text-xs mb-1">Image 4 (Uploaded)</div>
-                          <img
-                            src={uploadedImages[selectedElement.slideIndex]}
-                            alt="Background 4 (Uploaded)"
-                            className="w-full h-24 object-cover rounded"
-                          />
-                        </div>
-                      )}
+                      {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (() => {
+                        const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3!;
+                        const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+
+                        return (
+                          <div
+                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                              currentBg === bgUrl
+                                ? 'border-blue-500'
+                                : 'border-neutral-800 hover:border-blue-400'
+                            }`}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                          >
+                            <div className="text-neutral-400 text-xs mb-1">Image 3</div>
+                            <img
+                              src={bgUrl}
+                              alt="Background 3"
+                              className="w-full h-24 object-cover rounded"
+                            />
+                          </div>
+                        );
+                      })()}
+
+                      {uploadedImages[selectedElement.slideIndex] && (() => {
+                        const bgUrl = uploadedImages[selectedElement.slideIndex];
+                        const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+
+                        return (
+                          <div
+                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                              currentBg === bgUrl
+                                ? 'border-blue-500'
+                                : 'border-neutral-800 hover:border-blue-400'
+                            }`}
+                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                          >
+                            <div className="text-neutral-400 text-xs mb-1">Image 4 (Uploaded)</div>
+                            <img
+                              src={bgUrl}
+                              alt="Background 4 (Uploaded)"
+                              className="w-full h-24 object-cover rounded"
+                            />
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1196,24 +1212,28 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     </div>
                     {searchResults.length > 0 && (
                       <div className="mt-3 space-y-2 max-h-96 overflow-y-auto">
-                        {searchResults.map((imageUrl, index) => (
-                          <div
-                            key={index}
-                            className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
-                              getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo) === imageUrl
-                                ? 'border-blue-500'
-                                : 'border-neutral-800 hover:border-blue-400'
-                            }`}
-                            onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, imageUrl)}
-                          >
-                            <div className="text-neutral-400 text-xs mb-1">Search Result {index + 1}</div>
-                            <img
-                              src={imageUrl}
-                              alt={`Search result ${index + 1}`}
-                              className="w-full h-24 object-cover rounded"
-                            />
-                          </div>
-                        ))}
+                        {searchResults.map((imageUrl, index) => {
+                          const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+
+                          return (
+                            <div
+                              key={index}
+                              className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${
+                                currentBg === imageUrl
+                                  ? 'border-blue-500'
+                                  : 'border-neutral-800 hover:border-blue-400'
+                              }`}
+                              onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, imageUrl)}
+                            >
+                              <div className="text-neutral-400 text-xs mb-1">Search Result {index + 1}</div>
+                              <img
+                                src={imageUrl}
+                                alt={`Search result ${index + 1}`}
+                                className="w-full h-24 object-cover rounded"
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
