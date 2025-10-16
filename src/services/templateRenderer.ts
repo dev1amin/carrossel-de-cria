@@ -160,13 +160,29 @@ export class TemplateRenderer {
           const style = styleMatch ? styleMatch[1] : '';
           const alt = altMatch ? altMatch[1] : '';
 
-          return `<div class="video-container" style="position: relative; display: inline-block; ${style}">
-            <video class="${className}" style="width: 100%; border-radius: 24px; ${style}" src="${imageUrl}" data-video-src="${imageUrl}"></video>
+          return `<div class="video-mask-wrapper" style="position: relative; display: inline-block; ${style}" data-mask-height="300" data-video-offset="0">
+            <div class="video-background" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; border-radius: 24px; z-index: 1;">
+              <video class="${className}" style="width: 100%; height: auto; position: relative; top: 0px;" src="${imageUrl}" data-video-src="${imageUrl}"></video>
+            </div>
+            <div class="video-mask-front" style="position: relative; width: 100%; height: 300px; background: white; z-index: 2; pointer-events: none; border-radius: 24px;">
+              <div class="mask-hole" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); background: transparent;"></div>
+            </div>
             <button class="video-play-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-left: 3px;">
                 <path d="M8 5v14l11-7z"/>
               </svg>
             </button>
+            <div class="video-mask-controls" style="position: absolute; top: 10px; right: 10px; z-index: 11; display: flex; flex-direction: column; gap: 5px;">
+              <button class="mask-height-up" style="width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Aumentar altura">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M7 14l5-5 5 5z"/></svg>
+              </button>
+              <button class="mask-height-down" style="width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Diminuir altura">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M7 10l5 5 5-5z"/></svg>
+              </button>
+              <button class="video-drag-handle" style="width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: move; display: flex; align-items: center; justify-content: center;" title="Arrastar v\u00eddeo">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 8l-4 4h8l-4-4zm0 8l4-4H8l4 4z"/></svg>
+              </button>
+            </div>
           </div>`;
         }
       );

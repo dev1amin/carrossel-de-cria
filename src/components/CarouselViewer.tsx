@@ -236,15 +236,32 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
               if (isVideoUrl) {
-                const container = iframeDoc.createElement('div');
-                container.className = 'video-container';
-                container.style.cssText = `position: relative; display: inline-block; ${imgElement.style.cssText}`;
+                const wrapper = iframeDoc.createElement('div');
+                wrapper.className = 'video-mask-wrapper';
+                wrapper.style.cssText = `position: relative; display: inline-block; ${imgElement.style.cssText}`;
+                wrapper.setAttribute('data-mask-height', '300');
+                wrapper.setAttribute('data-video-offset', '0');
+
+                const videoBackground = iframeDoc.createElement('div');
+                videoBackground.className = 'video-background';
+                videoBackground.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden; border-radius: 24px; z-index: 1;';
 
                 const video = iframeDoc.createElement('video');
                 video.src = bgImage;
                 video.className = imgElement.className;
-                video.style.cssText = `width: 100%; border-radius: 24px; ${imgElement.style.cssText}`;
+                video.style.cssText = 'width: 100%; height: auto; position: relative; top: 0px;';
                 video.setAttribute('data-video-src', bgImage);
+
+                videoBackground.appendChild(video);
+
+                const maskFront = iframeDoc.createElement('div');
+                maskFront.className = 'video-mask-front';
+                maskFront.style.cssText = 'position: relative; width: 100%; height: 300px; background: white; z-index: 2; pointer-events: none; border-radius: 24px;';
+
+                const maskHole = iframeDoc.createElement('div');
+                maskHole.className = 'mask-hole';
+                maskHole.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); background: transparent;';
+                maskFront.appendChild(maskHole);
 
                 const playBtn = iframeDoc.createElement('button');
                 playBtn.className = 'video-play-btn';
@@ -269,19 +286,94 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   };
                 };
 
-                container.appendChild(video);
-                container.appendChild(playBtn);
+                const controls = iframeDoc.createElement('div');
+                controls.className = 'video-mask-controls';
+                controls.style.cssText = 'position: absolute; top: 10px; right: 10px; z-index: 11; display: flex; flex-direction: column; gap: 5px;';
+
+                const heightUpBtn = iframeDoc.createElement('button');
+                heightUpBtn.className = 'mask-height-up';
+                heightUpBtn.style.cssText = 'width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center;';
+                heightUpBtn.title = 'Aumentar altura';
+                heightUpBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M7 14l5-5 5 5z"/></svg>';
+
+                const heightDownBtn = iframeDoc.createElement('button');
+                heightDownBtn.className = 'mask-height-down';
+                heightDownBtn.style.cssText = 'width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center;';
+                heightDownBtn.title = 'Diminuir altura';
+                heightDownBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M7 10l5 5 5-5z"/></svg>';
+
+                const dragHandle = iframeDoc.createElement('button');
+                dragHandle.className = 'video-drag-handle';
+                dragHandle.style.cssText = 'width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 2px solid white; cursor: move; display: flex; align-items: center; justify-content: center;';
+                dragHandle.title = 'Arrastar vídeo';
+                dragHandle.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 8l-4 4h8l-4-4zm0 8l4-4H8l4 4z"/></svg>';
+
+                controls.appendChild(heightUpBtn);
+                controls.appendChild(heightDownBtn);
+                controls.appendChild(dragHandle);
+
+                wrapper.appendChild(videoBackground);
+                wrapper.appendChild(maskFront);
+                wrapper.appendChild(playBtn);
+                wrapper.appendChild(controls);
 
                 if (imgElement.parentNode) {
-                  imgElement.parentNode.replaceChild(container, imgElement);
+                  imgElement.parentNode.replaceChild(wrapper, imgElement);
                 }
+
+                heightUpBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const currentHeight = parseInt(wrapper.getAttribute('data-mask-height') || '300');
+                  const newHeight = Math.min(currentHeight + 20, 800);
+                  wrapper.setAttribute('data-mask-height', newHeight.toString());
+                  maskFront.style.height = `${newHeight}px`;
+                };
+
+                heightDownBtn.onclick = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const currentHeight = parseInt(wrapper.getAttribute('data-mask-height') || '300');
+                  const newHeight = Math.max(currentHeight - 20, 100);
+                  wrapper.setAttribute('data-mask-height', newHeight.toString());
+                  maskFront.style.height = `${newHeight}px`;
+                };
+
+                let isDragging = false;
+                let startY = 0;
+                let startOffset = 0;
+
+                dragHandle.onmousedown = (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  isDragging = true;
+                  startY = e.clientY;
+                  startOffset = parseInt(wrapper.getAttribute('data-video-offset') || '0');
+                  dragHandle.style.background = 'rgba(0,0,0,0.9)';
+                };
+
+                iframeDoc.onmousemove = (e) => {
+                  if (isDragging) {
+                    const deltaY = e.clientY - startY;
+                    const newOffset = startOffset + deltaY;
+                    wrapper.setAttribute('data-video-offset', newOffset.toString());
+                    video.style.top = `${newOffset}px`;
+                  }
+                };
+
+                iframeDoc.onmouseup = () => {
+                  if (isDragging) {
+                    isDragging = false;
+                    dragHandle.style.background = 'rgba(0,0,0,0.7)';
+                  }
+                };
               } else {
                 imgElement.src = bgImage;
               }
             }
           }
 
-          if (element.classList && element.classList.contains('video-container')) {
+          if (element.classList && element.classList.contains('video-mask-wrapper')) {
             const video = element.querySelector('video') as HTMLVideoElement;
             if (video) {
               const videoSrc = video.getAttribute('data-video-src') || video.src;
@@ -296,7 +388,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 if (isVideoUrl) {
                   video.src = bgImage;
                   video.setAttribute('data-video-src', bgImage);
-                  video.style.cssText = `width: 100%; border-radius: 24px; ${video.style.cssText.replace(/width:\s*[^;]+;?/gi, '').replace(/border-radius:\s*[^;]+;?/gi, '')}`;
                   const playBtn = element.querySelector('.video-play-btn') as HTMLButtonElement;
                   if (playBtn) {
                     playBtn.style.display = 'flex';
@@ -306,12 +397,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   img.src = bgImage;
                   img.className = video.className;
 
-                  const containerStyle = element.style.cssText;
-                  const videoStyles = video.style.cssText
-                    .replace(/width:\s*[^;]+;?/gi, '')
-                    .replace(/border-radius:\s*[^;]+;?/gi, '');
-
-                  img.style.cssText = containerStyle || videoStyles;
+                  const wrapperStyle = element.style.cssText;
+                  img.style.cssText = wrapperStyle;
 
                   if (element.parentNode) {
                     element.parentNode.replaceChild(img, element);
@@ -507,6 +594,73 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             }
           }
         };
+      });
+
+      const maskWrappers = iframeDoc.querySelectorAll('.video-mask-wrapper');
+      maskWrappers.forEach(wrapper => {
+        const wrapperEl = wrapper as HTMLElement;
+        const video = wrapperEl.querySelector('video') as HTMLVideoElement;
+        const maskFront = wrapperEl.querySelector('.video-mask-front') as HTMLElement;
+        const heightUpBtn = wrapperEl.querySelector('.mask-height-up') as HTMLButtonElement;
+        const heightDownBtn = wrapperEl.querySelector('.mask-height-down') as HTMLButtonElement;
+        const dragHandle = wrapperEl.querySelector('.video-drag-handle') as HTMLButtonElement;
+
+        if (heightUpBtn) {
+          heightUpBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const currentHeight = parseInt(wrapperEl.getAttribute('data-mask-height') || '300');
+            const newHeight = Math.min(currentHeight + 20, 800);
+            wrapperEl.setAttribute('data-mask-height', newHeight.toString());
+            if (maskFront) {
+              maskFront.style.height = `${newHeight}px`;
+            }
+          };
+        }
+
+        if (heightDownBtn) {
+          heightDownBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const currentHeight = parseInt(wrapperEl.getAttribute('data-mask-height') || '300');
+            const newHeight = Math.max(currentHeight - 20, 100);
+            wrapperEl.setAttribute('data-mask-height', newHeight.toString());
+            if (maskFront) {
+              maskFront.style.height = `${newHeight}px`;
+            }
+          };
+        }
+
+        if (dragHandle && video) {
+          let isDragging = false;
+          let startY = 0;
+          let startOffset = 0;
+
+          dragHandle.onmousedown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isDragging = true;
+            startY = e.clientY;
+            startOffset = parseInt(wrapperEl.getAttribute('data-video-offset') || '0');
+            dragHandle.style.background = 'rgba(0,0,0,0.9)';
+          };
+
+          iframeDoc.onmousemove = (e) => {
+            if (isDragging) {
+              const deltaY = e.clientY - startY;
+              const newOffset = startOffset + deltaY;
+              wrapperEl.setAttribute('data-video-offset', newOffset.toString());
+              video.style.top = `${newOffset}px`;
+            }
+          };
+
+          iframeDoc.onmouseup = () => {
+            if (isDragging) {
+              isDragging = false;
+              dragHandle.style.background = 'rgba(0,0,0,0.7)';
+            }
+          };
+        }
       });
 
       const editableElements = iframeDoc.querySelectorAll('[data-editable]');
