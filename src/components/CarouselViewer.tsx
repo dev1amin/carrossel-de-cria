@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Image as ImageIcon, Type } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type } from 'lucide-react';
 
 interface CarouselData {
   dados_gerais: {
@@ -24,13 +24,16 @@ interface CarouselViewerProps {
   onClose: () => void;
 }
 
+type ElementType = 'title' | 'subtitle' | 'background' | null;
+
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
-  const [zoom, setZoom] = useState(0.6);
+  const [zoom, setZoom] = useState(0.35);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [focusedSlide, setFocusedSlide] = useState<number | null>(null);
-  const [expandedLayers, setExpandedLayers] = useState<Set<number>>(new Set());
+  const [selectedElement, setSelectedElement] = useState<{ slideIndex: number; element: ElementType }>({ slideIndex: 0, element: null });
+  const [expandedLayers, setExpandedLayers] = useState<Set<number>>(new Set([0]));
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,8 +49,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((prev) => Math.min(Math.max(0.2, prev + delta), 2));
+    const delta = e.deltaY > 0 ? -0.05 : 0.05;
+    setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -71,11 +74,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 0.2, 2));
+    setZoom((prev) => Math.min(prev + 0.1, 2));
   };
 
   const handleZoomOut = () => {
-    setZoom((prev) => Math.max(prev - 0.2, 0.2));
+    setZoom((prev) => Math.max(prev - 0.1, 0.1));
   };
 
   const handleDownloadAll = () => {
@@ -104,6 +107,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleSlideClick = (index: number) => {
     setFocusedSlide(index);
+    setSelectedElement({ slideIndex: index, element: null });
     const slideWidth = 1080;
     const gap = 40;
     const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
@@ -112,61 +116,149 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setPan({ x: -slidePosition * zoom, y: 0 });
   };
 
+  const handleElementClick = (slideIndex: number, element: ElementType) => {
+    setSelectedElement({ slideIndex, element });
+    setFocusedSlide(slideIndex);
+    if (!expandedLayers.has(slideIndex)) {
+      toggleLayer(slideIndex);
+    }
+  };
+
   const slideWidth = 1080;
   const slideHeight = 1350;
   const gap = 40;
 
+  const getElementIcon = (element: string) => {
+    if (element.includes('title') || element.includes('subtitle')) {
+      return <Type className="w-4 h-4 text-neutral-500" />;
+    }
+    return <ImageIcon className="w-4 h-4 text-neutral-500" />;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-neutral-800 flex">
+    <div className="fixed inset-0 z-50 bg-neutral-900 flex">
+      <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
+        <div className="h-14 border-b border-neutral-800 flex items-center px-4">
+          <Layers className="w-4 h-4 text-neutral-400 mr-2" />
+          <h3 className="text-white font-medium text-sm">Layers</h3>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {slides.map((_, index) => {
+            const conteudo = carouselData.conteudos[index];
+            const isExpanded = expandedLayers.has(index);
+            const isFocused = focusedSlide === index;
+
+            return (
+              <div key={index} className={`border-b border-neutral-800 ${isFocused ? 'bg-neutral-900' : ''}`}>
+                <button
+                  onClick={() => {
+                    toggleLayer(index);
+                    handleSlideClick(index);
+                  }}
+                  className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-900 transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    {isExpanded ? (
+                      <ChevronDown className="w-3 h-3 text-neutral-500" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3 text-neutral-500" />
+                    )}
+                    <Layers className="w-3 h-3 text-blue-400" />
+                    <span className="text-white text-sm">Slide {index + 1}</span>
+                  </div>
+                </button>
+
+                {isExpanded && conteudo && (
+                  <div className="ml-3 border-l border-neutral-800">
+                    <button
+                      onClick={() => handleElementClick(index, 'background')}
+                      className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${
+                        selectedElement.slideIndex === index && selectedElement.element === 'background' ? 'bg-neutral-800' : ''
+                      }`}
+                    >
+                      {getElementIcon('background')}
+                      <span className="text-neutral-300 text-xs">Background Image</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleElementClick(index, 'title')}
+                      className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${
+                        selectedElement.slideIndex === index && selectedElement.element === 'title' ? 'bg-neutral-800' : ''
+                      }`}
+                    >
+                      {getElementIcon('title')}
+                      <span className="text-neutral-300 text-xs">Title</span>
+                    </button>
+
+                    {conteudo.subtitle && (
+                      <button
+                        onClick={() => handleElementClick(index, 'subtitle')}
+                        className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${
+                          selectedElement.slideIndex === index && selectedElement.element === 'subtitle' ? 'bg-neutral-800' : ''
+                        }`}
+                      >
+                        {getElementIcon('subtitle')}
+                        <span className="text-neutral-300 text-xs">Subtitle</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex-1 flex flex-col">
-        <div className="h-16 bg-neutral-900 border-b border-neutral-700 flex items-center justify-between px-6 z-10">
+        <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
           <div className="flex items-center space-x-4">
-            <h2 className="text-white font-semibold text-lg">Carousel Editor</h2>
-            <div className="text-neutral-400 text-sm">
-              {slides.length} slide{slides.length !== 1 ? 's' : ''}
+            <h2 className="text-white font-semibold">Carousel Editor</h2>
+            <div className="text-neutral-500 text-sm">
+              {slides.length} slides
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
             <button
               onClick={handleZoomOut}
-              className="bg-neutral-700 hover:bg-neutral-600 text-white p-2 rounded transition-colors"
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
               title="Zoom Out"
             >
-              <ZoomOut className="w-5 h-5" />
+              <ZoomOut className="w-4 h-4" />
             </button>
-            <div className="bg-neutral-700 text-white px-4 py-2 rounded min-w-[80px] text-center text-sm">
+            <div className="bg-neutral-800 text-white px-3 py-1.5 rounded text-xs min-w-[70px] text-center">
               {Math.round(zoom * 100)}%
             </div>
             <button
               onClick={handleZoomIn}
-              className="bg-neutral-700 hover:bg-neutral-600 text-white p-2 rounded transition-colors"
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
               title="Zoom In"
             >
-              <ZoomIn className="w-5 h-5" />
+              <ZoomIn className="w-4 h-4" />
             </button>
-            <div className="w-px h-8 bg-neutral-700 mx-2" />
+            <div className="w-px h-6 bg-neutral-800 mx-2" />
             <button
               onClick={handleDownloadAll}
-              className="bg-neutral-700 hover:bg-neutral-600 text-white px-4 py-2 rounded transition-colors flex items-center space-x-2"
+              className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm"
               title="Download All Slides"
             >
-              <Download className="w-5 h-5" />
-              <span>Download All</span>
+              <Download className="w-4 h-4" />
+              <span>Download</span>
             </button>
             <button
               onClick={onClose}
-              className="bg-neutral-700 hover:bg-neutral-600 text-white p-2 rounded transition-colors"
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
               title="Close (Esc)"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         <div
           ref={containerRef}
-          className="flex-1 overflow-hidden relative"
+          className="flex-1 overflow-hidden relative bg-neutral-800"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
@@ -199,7 +291,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   }}
                   onClick={() => handleSlideClick(index)}
                 >
-                  <div className="absolute top-3 left-3 bg-black/70 text-white px-3 py-1 rounded-full text-sm font-medium z-10">
+                  <div className="absolute top-3 left-3 bg-black/70 text-white px-2 py-1 rounded text-xs font-medium z-10">
                     {index + 1}
                   </div>
                   <iframe
@@ -213,113 +305,128 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               ))}
             </div>
           </div>
-        </div>
 
-        <div className="h-12 bg-neutral-900 border-t border-neutral-700 flex items-center justify-center">
-          <div className="text-neutral-400 text-sm">
-            Use mouse wheel to zoom • Drag to pan • Click slide to focus
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-neutral-950/90 backdrop-blur-sm text-neutral-400 px-3 py-1.5 rounded text-xs">
+            Zoom: {Math.round(zoom * 100)}%
           </div>
         </div>
       </div>
 
-      <div className="w-80 bg-neutral-900 border-l border-neutral-700 flex flex-col">
-        <div className="h-16 border-b border-neutral-700 flex items-center px-4">
-          <h3 className="text-white font-semibold">Layers</h3>
+      <div className="w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col">
+        <div className="h-14 border-b border-neutral-800 flex items-center px-4">
+          <h3 className="text-white font-medium text-sm">Properties</h3>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {slides.map((_, index) => {
-            const conteudo = carouselData.conteudos[index];
-            const isExpanded = expandedLayers.has(index);
-            const isFocused = focusedSlide === index;
-
-            return (
-              <div key={index} className={`border-b border-neutral-700 ${isFocused ? 'bg-blue-900/20' : ''}`}>
-                <button
-                  onClick={() => {
-                    toggleLayer(index);
-                    handleSlideClick(index);
-                  }}
-                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-neutral-800 transition-colors"
-                >
-                  <div className="flex items-center space-x-2">
-                    {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-neutral-400" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-neutral-400" />
-                    )}
-                    <span className="text-white font-medium">Slide {index + 1}</span>
-                  </div>
-                </button>
-
-                {isExpanded && conteudo && (
-                  <div className="px-4 pb-3 space-y-3">
-                    <div className="ml-6 space-y-2">
-                      <div className="flex items-start space-x-2 text-sm">
-                        <Type className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <div className="text-neutral-400 text-xs mb-1">Title</div>
-                          <div className="text-white break-words">{conteudo.title}</div>
-                        </div>
-                      </div>
-
-                      {conteudo.subtitle && (
-                        <div className="flex items-start space-x-2 text-sm">
-                          <Type className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="text-neutral-400 text-xs mb-1">Subtitle</div>
-                            <div className="text-white break-words">{conteudo.subtitle}</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {conteudo.imagem_fundo && (
-                        <div className="flex items-start space-x-2 text-sm">
-                          <ImageIcon className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="text-neutral-400 text-xs mb-1">Background Image</div>
-                            <img
-                              src={conteudo.imagem_fundo}
-                              alt="Background"
-                              className="w-full h-20 object-cover rounded border border-neutral-700"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {conteudo.imagem_fundo2 && (
-                        <div className="flex items-start space-x-2 text-sm">
-                          <ImageIcon className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="text-neutral-400 text-xs mb-1">Image 2</div>
-                            <img
-                              src={conteudo.imagem_fundo2}
-                              alt="Image 2"
-                              className="w-full h-20 object-cover rounded border border-neutral-700"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {conteudo.imagem_fundo3 && (
-                        <div className="flex items-start space-x-2 text-sm">
-                          <ImageIcon className="w-4 h-4 text-neutral-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <div className="text-neutral-400 text-xs mb-1">Image 3</div>
-                            <img
-                              src={conteudo.imagem_fundo3}
-                              alt="Image 3"
-                              className="w-full h-20 object-cover rounded border border-neutral-700"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+        <div className="flex-1 overflow-y-auto p-4">
+          {selectedElement.element === null ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mb-4">
+                <Type className="w-8 h-8 text-neutral-700" />
               </div>
-            );
-          })}
+              <h4 className="text-white font-medium mb-2">No Element Selected</h4>
+              <p className="text-neutral-500 text-sm mb-1">Click on an element in the preview</p>
+              <p className="text-neutral-500 text-sm">to edit its properties</p>
+              <div className="mt-6 space-y-2 text-xs text-neutral-600">
+                <p>• Single click to select</p>
+                <p>• Double click text to edit inline</p>
+                <p>• Press ESC to deselect</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="text-neutral-400 text-xs mb-2 block">Element Type</label>
+                <div className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm capitalize">
+                  {selectedElement.element}
+                </div>
+              </div>
+
+              {selectedElement.element === 'title' && (
+                <>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Content</label>
+                    <textarea
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm resize-none"
+                      rows={4}
+                      value={carouselData.conteudos[selectedElement.slideIndex]?.title || ''}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Font Size</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
+                      placeholder="24px"
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Color</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
+                      placeholder="#FFFFFF"
+                      readOnly
+                    />
+                  </div>
+                </>
+              )}
+
+              {selectedElement.element === 'subtitle' && (
+                <>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Content</label>
+                    <textarea
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm resize-none"
+                      rows={3}
+                      value={carouselData.conteudos[selectedElement.slideIndex]?.subtitle || ''}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Font Size</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
+                      placeholder="16px"
+                      readOnly
+                    />
+                  </div>
+                </>
+              )}
+
+              {selectedElement.element === 'background' && (
+                <>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Image URL</label>
+                    <input
+                      type="text"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm"
+                      value={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo || ''}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Preview</label>
+                    <img
+                      src={carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo}
+                      alt="Background"
+                      className="w-full h-32 object-cover rounded border border-neutral-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-neutral-400 text-xs mb-2 block">Size</label>
+                    <select className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm">
+                      <option>Cover</option>
+                      <option>Contain</option>
+                      <option>Auto</option>
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
