@@ -57,6 +57,21 @@ export class TemplateRenderer {
     return result;
   }
 
+  private replaceTextBoxImages(html: string, imageUrl: string): string {
+    let result = html;
+
+    const textBoxRegex = /<div[^>]*class\s*=\s*["'][^"']*text-box[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi;
+
+    result = result.replace(textBoxRegex, (match) => {
+      return match.replace(
+        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/i,
+        `<img$1src="${imageUrl}"`
+      );
+    });
+
+    return result;
+  }
+
   renderSlide(templateHtml: string, data: CarouselData, slideIndex: number): string {
     let rendered = templateHtml;
     const conteudo = data.conteudos[slideIndex];
@@ -76,6 +91,7 @@ export class TemplateRenderer {
       const bgUrl = conteudo.imagem_fundo || '';
       rendered = rendered.replace(/\{\{bg\}\}/g, bgUrl);
       rendered = this.replaceBackgroundImages(rendered, bgUrl);
+      rendered = this.replaceTextBoxImages(rendered, bgUrl);
     }
 
     return rendered;
