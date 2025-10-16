@@ -243,7 +243,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 const video = iframeDoc.createElement('video');
                 video.src = bgImage;
                 video.className = imgElement.className;
-                video.style.cssText = imgElement.style.cssText;
+                video.style.cssText = `width: 100%; border-radius: 24px; ${imgElement.style.cssText}`;
                 video.setAttribute('data-video-src', bgImage);
 
                 const playBtn = iframeDoc.createElement('button');
@@ -296,6 +296,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 if (isVideoUrl) {
                   video.src = bgImage;
                   video.setAttribute('data-video-src', bgImage);
+                  video.style.cssText = `width: 100%; border-radius: 24px; ${video.style.cssText.replace(/width:\s*[^;]+;?/gi, '').replace(/border-radius:\s*[^;]+;?/gi, '')}`;
                   const playBtn = element.querySelector('.video-play-btn') as HTMLButtonElement;
                   if (playBtn) {
                     playBtn.style.display = 'flex';
@@ -304,7 +305,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   const img = iframeDoc.createElement('img');
                   img.src = bgImage;
                   img.className = video.className;
-                  img.style.cssText = video.style.cssText;
+
+                  const containerStyle = element.style.cssText;
+                  const videoStyles = video.style.cssText
+                    .replace(/width:\s*[^;]+;?/gi, '')
+                    .replace(/border-radius:\s*[^;]+;?/gi, '');
+
+                  img.style.cssText = containerStyle || videoStyles;
 
                   if (element.parentNode) {
                     element.parentNode.replaceChild(img, element);

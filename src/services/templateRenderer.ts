@@ -161,7 +161,7 @@ export class TemplateRenderer {
           const alt = altMatch ? altMatch[1] : '';
 
           return `<div class="video-container" style="position: relative; display: inline-block; ${style}">
-            <video class="${className}" style="${style}" src="${imageUrl}" data-video-src="${imageUrl}"></video>
+            <video class="${className}" style="width: 100%; border-radius: 24px; ${style}" src="${imageUrl}" data-video-src="${imageUrl}"></video>
             <button class="video-play-btn" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(0,0,0,0.7); border: 3px solid white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10;">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-left: 3px;">
                 <path d="M8 5v14l11-7z"/>
