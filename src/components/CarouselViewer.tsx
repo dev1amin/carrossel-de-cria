@@ -227,7 +227,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
         const allElements = iframeDoc.querySelectorAll('*');
         const conteudo = carouselData.conteudos[index];
-        const currentBgImage = editedContent[`${index}-background`] || conteudo?.imagem_fundo;
+        const originalBgImages = [
+          conteudo?.imagem_fundo,
+          conteudo?.imagem_fundo2,
+          conteudo?.imagem_fundo3
+        ].filter(Boolean);
 
         allElements.forEach(el => {
           const element = el as HTMLElement;
@@ -239,13 +243,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             const imgHeight = imgElement.height;
 
             const isLargeImage = imgWidth > 100 || imgHeight > 100;
+            const isOriginalBgImage = originalBgImages.some(bg => imgSrc.includes(bg));
 
-            if (conteudo && imgSrc && isLargeImage && (
-              imgSrc.includes(conteudo.imagem_fundo) ||
-              (conteudo.imagem_fundo2 && imgSrc.includes(conteudo.imagem_fundo2)) ||
-              (conteudo.imagem_fundo3 && imgSrc.includes(conteudo.imagem_fundo3)) ||
-              imgSrc === currentBgImage
-            )) {
+            if (conteudo && imgSrc && isLargeImage && isOriginalBgImage) {
               const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
               if (isVideoUrl) {
@@ -298,19 +298,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             const video = element.querySelector('video') as HTMLVideoElement;
             if (video) {
               const videoSrc = video.getAttribute('data-video-src') || video.src;
+              const isOriginalVideoSrc = originalBgImages.some(bg => videoSrc.includes(bg));
 
-              if (conteudo && videoSrc && (
-                videoSrc.includes(conteudo.imagem_fundo) ||
-                (conteudo.imagem_fundo2 && videoSrc.includes(conteudo.imagem_fundo2)) ||
-                (conteudo.imagem_fundo3 && videoSrc.includes(conteudo.imagem_fundo3)) ||
-                videoSrc === currentBgImage
-              )) {
+              if (conteudo && isOriginalVideoSrc) {
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
                 if (isVideoUrl) {
                   video.src = bgImage;
                   video.setAttribute('data-video-src', bgImage);
-                  video.style.cssText = `width: 100%; border-radius: 24px; ${video.style.cssText.replace(/width:\s*[^;]+;?/gi, '').replace(/border-radius:\s*[^;]+;?/gi, '')}`;
+                  video.load();
                   const playBtn = element.querySelector('.video-play-btn') as HTMLButtonElement;
                   if (playBtn) {
                     playBtn.style.display = 'flex';
@@ -320,12 +316,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   img.src = bgImage;
                   img.className = video.className;
 
-                  const containerStyle = element.style.cssText;
-                  const videoStyles = video.style.cssText
-                    .replace(/width:\s*[^;]+;?/gi, '')
-                    .replace(/border-radius:\s*[^;]+;?/gi, '');
-
-                  img.style.cssText = containerStyle || videoStyles;
+                  const containerElement = element as HTMLElement;
+                  const containerStyle = containerElement.style.cssText
+                    .replace(/position:\s*[^;]+;?/gi, '')
+                    .replace(/display:\s*[^;]+;?/gi, '');
+                  img.style.cssText = containerStyle;
 
                   if (element.parentNode) {
                     element.parentNode.replaceChild(img, element);
