@@ -64,39 +64,46 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = html;
+    const conteudo = carouselData.conteudos[slideIndex];
 
-    result = result.replace(
-      /(<[^>]*\{\{title\}\}[^>]*>)/gi,
-      `<span id="slide-${slideIndex}-title" data-editable="title" style="display: inline-block;">`
-    );
+    const titleText = conteudo?.title || '';
+    const subtitleText = conteudo?.subtitle || '';
 
-    result = result.replace(/\{\{title\}\}/g, (match) => {
-      return `${carouselData.conteudos[slideIndex]?.title || ''}</span>`;
-    });
+    if (titleText) {
+      const escapedTitle = titleText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(
+        new RegExp(`(<[^>]*>)(${escapedTitle})(<\/[^>]*>)`, 'gi'),
+        `$1<span id="slide-${slideIndex}-title" data-editable="title" data-original-content="${titleText.replace(/"/g, '&quot;')}" style="display: inline-block;">$2</span>$3`
+      );
+    }
 
-    result = result.replace(
-      /(<[^>]*\{\{subtitle\}\}[^>]*>)/gi,
-      `<span id="slide-${slideIndex}-subtitle" data-editable="subtitle" style="display: inline-block;">`
-    );
-
-    result = result.replace(/\{\{subtitle\}\}/g, (match) => {
-      return `${carouselData.conteudos[slideIndex]?.subtitle || ''}</span>`;
-    });
+    if (subtitleText) {
+      const escapedSubtitle = subtitleText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      result = result.replace(
+        new RegExp(`(<[^>]*>)(${escapedSubtitle})(<\/[^>]*>)`, 'gi'),
+        `$1<span id="slide-${slideIndex}-subtitle" data-editable="subtitle" data-original-content="${subtitleText.replace(/"/g, '&quot;')}" style="display: inline-block;">$2</span>$3`
+      );
+    }
 
     result = result.replace(
       /<style>/i,
       `<style>
-        [data-editable] { cursor: pointer; position: relative; }
+        [data-editable] { cursor: pointer !important; position: relative; }
         [data-editable].selected {
-          outline: 2px solid #3B82F6 !important;
+          outline: 3px solid #3B82F6 !important;
           outline-offset: 2px;
+          z-index: 1000;
         }
         [data-editable]:hover:not(.selected) {
           outline: 2px solid rgba(59, 130, 246, 0.5) !important;
           outline-offset: 2px;
         }
-        .bg-element.selected {
-          outline: 2px solid #3B82F6 !important;
+        body[data-editable].selected {
+          outline: 3px solid #3B82F6 !important;
+          outline-offset: -3px;
+        }
+        body[data-editable]:hover:not(.selected) {
+          outline: 2px solid rgba(59, 130, 246, 0.5) !important;
           outline-offset: -2px;
         }
       `
@@ -104,7 +111,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     result = result.replace(
       /<body([^>]*)>/i,
-      `<body$1 id="slide-${slideIndex}-background" data-editable="background" class="bg-element">`
+      `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
     );
 
     return result;
@@ -127,10 +134,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         if (!element) return;
 
         if (styles) {
-          if (styles.fontSize) element.style.fontSize = styles.fontSize;
-          if (styles.fontWeight) element.style.fontWeight = styles.fontWeight;
-          if (styles.textAlign) element.style.textAlign = styles.textAlign;
-          if (styles.color) element.style.color = styles.color;
+          if (styles.fontSize) element.style.setProperty('font-size', styles.fontSize, 'important');
+          if (styles.fontWeight) element.style.setProperty('font-weight', styles.fontWeight, 'important');
+          if (styles.textAlign) element.style.setProperty('text-align', styles.textAlign, 'important');
+          if (styles.color) element.style.setProperty('color', styles.color, 'important');
         }
 
         if (content !== undefined) {
@@ -158,9 +165,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (bgImage) {
         const body = iframeDoc.body;
         if (body) {
-          body.style.backgroundImage = `url('${bgImage}')`;
+          body.style.setProperty('background-image', `url('${bgImage}')`, 'important');
         }
       }
+
+      const allElements = iframeDoc.querySelectorAll('[data-editable]');
+      allElements.forEach(el => {
+        (el as HTMLElement).style.pointerEvents = 'auto';
+      });
     });
   }, [elementStyles, editedContent]);
 
@@ -171,10 +183,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
-      iframeDoc.querySelectorAll('[data-editable]').forEach((element) => {
-        const editableType = element.getAttribute('data-editable');
+      const editableElements = iframeDoc.querySelectorAll('[data-editable]');
 
-        (element as HTMLElement).onclick = (e) => {
+      editableElements.forEach((element) => {
+        const editableType = element.getAttribute('data-editable');
+        const htmlElement = element as HTMLElement;
+
+        htmlElement.style.pointerEvents = 'auto';
+        htmlElement.style.cursor = 'pointer';
+
+        htmlElement.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
 
@@ -189,14 +207,20 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       });
     };
 
-    iframeRefs.current.forEach((iframe, index) => {
-      if (iframe) {
-        iframe.onload = () => setupIframeInteraction(iframe, index);
-        if (iframe.contentDocument?.readyState === 'complete') {
-          setupIframeInteraction(iframe, index);
+    const timer = setTimeout(() => {
+      iframeRefs.current.forEach((iframe, index) => {
+        if (iframe) {
+          iframe.onload = () => {
+            setTimeout(() => setupIframeInteraction(iframe, index), 100);
+          };
+          if (iframe.contentDocument?.readyState === 'complete') {
+            setupIframeInteraction(iframe, index);
+          }
         }
-      }
-    });
+      });
+    }, 200);
+
+    return () => clearTimeout(timer);
   }, [renderedSlides]);
 
   const handleWheel = (e: React.WheelEvent) => {
