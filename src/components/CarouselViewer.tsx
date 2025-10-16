@@ -223,6 +223,37 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
         allElements.forEach(el => {
           const element = el as HTMLElement;
+
+          if (element.tagName === 'IMG') {
+            const imgElement = element as HTMLImageElement;
+            const imgSrc = imgElement.src;
+
+            if (conteudo && imgSrc && (
+              imgSrc.includes(conteudo.imagem_fundo) ||
+              (conteudo.imagem_fundo2 && imgSrc.includes(conteudo.imagem_fundo2)) ||
+              (conteudo.imagem_fundo3 && imgSrc.includes(conteudo.imagem_fundo3))
+            )) {
+              const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
+
+              if (isVideoUrl) {
+                const video = iframeDoc.createElement('video');
+                video.autoplay = true;
+                video.loop = true;
+                video.muted = true;
+                video.playsInline = true;
+                video.src = bgImage;
+                video.className = imgElement.className;
+                video.style.cssText = imgElement.style.cssText;
+
+                if (imgElement.parentNode) {
+                  imgElement.parentNode.replaceChild(video, imgElement);
+                }
+              } else {
+                imgElement.src = bgImage;
+              }
+            }
+          }
+
           const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
 
           if (computedStyle) {
@@ -264,6 +295,34 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
                   }
                 }
+              }
+            }
+          }
+        });
+      }
+
+      const videoBgUrl = iframeDoc.body.getAttribute('data-video-bg');
+      if (videoBgUrl) {
+        const allDivs = iframeDoc.querySelectorAll('div, section');
+        allDivs.forEach(el => {
+          const element = el as HTMLElement;
+          const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
+
+          if (computedStyle && computedStyle.backgroundImage && computedStyle.backgroundImage === 'none') {
+            const hasBackgroundProperty = element.style.background || element.style.backgroundImage;
+
+            if (hasBackgroundProperty) {
+              let video = element.querySelector('video');
+              if (!video) {
+                video = iframeDoc.createElement('video');
+                video.autoplay = true;
+                video.loop = true;
+                video.muted = true;
+                video.playsInline = true;
+                video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
+                video.src = videoBgUrl;
+                element.style.position = 'relative';
+                element.insertBefore(video, element.firstChild);
               }
             }
           }

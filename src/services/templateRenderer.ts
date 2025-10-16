@@ -25,18 +25,44 @@ export class TemplateRenderer {
     return `${months[date.getMonth()]} ${date.getFullYear()}`;
   }
 
+  private isVideoUrl(url: string): boolean {
+    return url.toLowerCase().match(/\.(mp4|webm|ogg|mov)(\?|$)/) !== null;
+  }
+
   private replaceBackgroundImages(html: string, imageUrl: string): string {
     let result = html;
 
-    result = result.replace(
-      /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-      `background-image: url('${imageUrl}')`
-    );
+    if (this.isVideoUrl(imageUrl)) {
+      result = result.replace(
+        /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+        `background-image: none`
+      );
 
-    result = result.replace(
-      /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-      `background: url('${imageUrl}')`
-    );
+      result = result.replace(
+        /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+        `background: none`
+      );
+
+      result = result.replace(
+        /<body([^>]*)>/i,
+        (match, attrs) => {
+          if (!match.includes('data-video-bg')) {
+            return `<body${attrs} data-video-bg="${imageUrl}">`;
+          }
+          return match;
+        }
+      );
+    } else {
+      result = result.replace(
+        /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+        `background-image: url('${imageUrl}')`
+      );
+
+      result = result.replace(
+        /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
+        `background: url('${imageUrl}')`
+      );
+    }
 
     return result;
   }
@@ -63,10 +89,23 @@ export class TemplateRenderer {
     const textBoxRegex = /<div[^>]*class\s*=\s*["'][^"']*text-box[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi;
 
     result = result.replace(textBoxRegex, (match) => {
-      return match.replace(
-        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/i,
-        `<img$1src="${imageUrl}"`
-      );
+      if (this.isVideoUrl(imageUrl)) {
+        return match.replace(
+          /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/i,
+          (imgMatch, attrs) => {
+            const classMatch = imgMatch.match(/class\s*=\s*["']([^"']*)["']/);
+            const styleMatch = imgMatch.match(/style\s*=\s*["']([^"']*)["']/);
+            const className = classMatch ? classMatch[1] : '';
+            const style = styleMatch ? styleMatch[1] : '';
+            return `<video autoplay loop muted playsinline class="${className}" style="${style}" src="${imageUrl}"></video>`;
+          }
+        );
+      } else {
+        return match.replace(
+          /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/i,
+          `<img$1src="${imageUrl}"`
+        );
+      }
     });
 
     return result;
@@ -75,10 +114,29 @@ export class TemplateRenderer {
   private replacePlaceholderImages(html: string, imageUrl: string): string {
     let result = html;
 
-    result = result.replace(
-      /https:\/\/admin\.cnnbrasil\.com\.br\/wp-content\/uploads\/sites\/12\/2025\/01\/Santos-Neymar-braco-Cruzado\.jpg/gi,
-      imageUrl
-    );
+    const placeholderUrl = 'https://admin.cnnbrasil.com.br/wp-content/uploads/sites/12/2025/01/Santos-Neymar-braco-Cruzado.jpg';
+
+    if (this.isVideoUrl(imageUrl)) {
+      result = result.replace(
+        new RegExp(placeholderUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+        imageUrl
+      );
+      result = result.replace(
+        /<img([^>]*)src="[^"]*Santos-Neymar[^"]*"/gi,
+        (match, attrs) => {
+          const classMatch = match.match(/class\s*=\s*["']([^"']*)["']/);
+          const styleMatch = match.match(/style\s*=\s*["']([^"']*)["']/);
+          const className = classMatch ? classMatch[1] : '';
+          const style = styleMatch ? styleMatch[1] : '';
+          return `<video autoplay loop muted playsinline class="${className}" style="${style}" src="${imageUrl}"></video>`;
+        }
+      );
+    } else {
+      result = result.replace(
+        new RegExp(placeholderUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+        imageUrl
+      );
+    }
 
     return result;
   }
