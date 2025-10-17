@@ -59,7 +59,7 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, on
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: -100, opacity: 0 }}
-      className="fixed top-14 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 shadow-lg md:left-16 z-99"
+      className="fixed top-14 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 shadow-lg md:left-16"
     >
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between mb-2">
