@@ -222,9 +222,6 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                       className={`group w-full text-left rounded-xl border ${theme.border} ${theme.card} ${theme.hover} transition-all focus:outline-none focus:ring-2 ${theme.accent} ${isActive ? 'ring-2 ring-offset-0 border-purple-700/50' : ''}`}
                     >
                       <div className="flex items-center gap-3 p-3">
-                        <div className="relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border border-white/10 bg-zinc-800">
-                          <img src={template.thumbnail} alt={template.name} className="w-full h-full object-cover" onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />
-                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <h3 className="font-semibold truncate">{template.name}</h3>
