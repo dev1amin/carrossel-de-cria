@@ -440,6 +440,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               processedMainImage = true; // marque como processado
               return;
             }
+
+            
             
             const imgWidth = imgElement.width;
             const imgHeight = imgElement.height;
