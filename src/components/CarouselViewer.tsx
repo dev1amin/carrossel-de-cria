@@ -27,8 +27,9 @@ const isVideoUrl = (url: string): boolean => {
 
 const isProtectedSrc = (url?: string | null): boolean => {
   if (!url) return false;
-  const clean = url.replace(/^url\((['"]?)(.*)\1\)$/i, '$2');
-  return /^https:\/\/i\.imgur/i.test(clean);
+  const clean = String(url).trim().replace(/^url\((['"]?)(.*)\1\)$/i, '$2');
+  // Match exatamente i.imgur.com (com http ou https), independente de querystring
+  return /^https?:\/\/i\.imgur\.com\//i.test(clean);
 };
 
 interface CarouselViewerProps {
