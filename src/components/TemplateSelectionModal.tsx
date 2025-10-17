@@ -32,7 +32,7 @@ const defaultBrand = {
   accent: "ring-purple-500/40",
 };
 
-const SLIDE_W = 1080; // tamanho real de cada slide
+const SLIDE_W = 1090; // tamanho real de cada slide
 const SLIDE_H = 1350;
 const GAP_X = 80; // espaço entre slides no canvas
 
