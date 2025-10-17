@@ -643,9 +643,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   const bgUrl = matches[1];
 
                       if (isProtectedSrc(bgUrl)) {
-      processedMainImage = true; // marca como tratado para não fazer fallback
-      return; // não altera nada
-    }
+                          processedMainImage = true; // marca como tratado para não fazer fallback
+                          return; // não altera nada
+                        }
 
                   if (conteudo && (
                     bgUrl.includes(conteudo.imagem_fundo) ||
