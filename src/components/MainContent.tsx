@@ -141,7 +141,6 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
   }
 };
 
-
   const handleTestEditor = async () => {
     try {
       setIsLoading(true);
