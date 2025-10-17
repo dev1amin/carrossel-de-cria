@@ -648,25 +648,26 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
                 }
                 processedMainImage = true;
-              } else {
+              } } else {
                 const matches = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
                 if (matches && matches[1]) {
                   const bgUrl = matches[1];
-
-                      if (isProtectedSrc(bgUrl)) {
-                        processedMainImage = true; // marca como tratado para não fazer fallback
-                        return; // não altera nada
-                      }
-
-                  if (conteudo && (
-                    bgUrl.includes(conteudo.imagem_fundo) ||
-                    (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
-                    (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3))
-                  )) {
-                    element.setAttribute('data-has-bg-image', 'true');
-                    element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
-                    processedMainImage = true;
+              
+                  // 1) não toque se for Imgur
+                  if (isProtectedSrc(bgUrl)) {
+                    processedMainImage = true; // evita cair no fallback do <body>
+                    return;
                   }
+              
+                  // 2) só mexa se bater com alguma das imagens originais do template
+                  if (!matchesTemplateImage(bgUrl)) {
+                    return;
+                  }
+              
+                  // OK, agora podemos trocar
+                  element.setAttribute('data-has-bg-image', 'true');
+                  element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
+                  processedMainImage = true;
                 }
               }
             }
