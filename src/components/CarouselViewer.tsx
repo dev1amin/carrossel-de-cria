@@ -346,6 +346,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       });
 
+      const markProtectedImages = () => {
+        const allImages = iframeDoc.querySelectorAll('img');
+        allImages.forEach(img => {
+          const imgElement = img as HTMLImageElement;
+          if (isImgurUrl(imgElement.src) && !imgElement.getAttribute('data-protected')) {
+            imgElement.setAttribute('data-protected', 'true');
+          }
+        });
+      };
+
+      markProtectedImages();
+
       const updateElement = (elementId: string, styles?: ElementStyles, content?: string) => {
         const element = iframeDoc.getElementById(elementId);
         if (!element) return;
@@ -424,7 +436,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const previousBgImage = imgElement.getAttribute('data-bg-image-url');
               const needsUpdate = !previousBgImage || previousBgImage !== bgImage;
 
-              if (needsUpdate && !imgElement.src.includes('https://i.imgur')) {
+              const isProtected = imgElement.getAttribute('data-protected') === 'true' || isImgurUrl(imgElement.src);
+
+              if (needsUpdate && !isProtected) {
                 imgElement.setAttribute('data-bg-image-url', bgImage);
                 processedMainImage = true;
 
@@ -792,11 +806,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             return;
           }
 
-          iframeDoc.querySelectorAll('[data-editable]').forEach(el => {
-            el.classList.remove('selected');
-            if (el.getAttribute('contenteditable') === 'true') {
-              el.setAttribute('contenteditable', 'false');
-            }
+          iframeRefs.current.forEach((iframe) => {
+            if (!iframe || !iframe.contentWindow) return;
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            if (!doc) return;
+
+            doc.querySelectorAll('[data-editable]').forEach(el => {
+              el.classList.remove('selected');
+              if (el.getAttribute('contenteditable') === 'true') {
+                el.setAttribute('contenteditable', 'false');
+              }
+            });
           });
 
           element.classList.add('selected');
@@ -917,20 +937,43 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
+  const isImgurUrl = (url: string): boolean => {
+    return url.includes('i.imgur.com');
+  };
+
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
-    const conteudo = carouselData.conteudos[slideIndex];
-    const originalImages = [
-      conteudo?.imagem_fundo,
-      conteudo?.imagem_fundo2,
-      conteudo?.imagem_fundo3,
-      conteudo?.imagem_fundo4,
-      conteudo?.imagem_fundo5,
-      conteudo?.imagem_fundo6,
-    ].filter(Boolean);
+    const iframe = iframeRefs.current[slideIndex];
+    if (!iframe || !iframe.contentWindow) return;
 
-    const isProtectedImage = originalImages.some(img => img && img.includes('https://i.imgur'));
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    if (!iframeDoc) return;
 
-    if (isProtectedImage && imageUrl.includes('https://i.imgur')) {
+    const allImages = iframeDoc.querySelectorAll('img');
+    let hasProtectedImgurImage = false;
+
+    allImages.forEach(img => {
+      const imgElement = img as HTMLImageElement;
+      if (isImgurUrl(imgElement.src) && imgElement.getAttribute('data-protected') === 'true') {
+        hasProtectedImgurImage = true;
+      }
+    });
+
+    const bodyStyle = iframeDoc.body.style.backgroundImage;
+    if (bodyStyle && bodyStyle.includes('i.imgur.com')) {
+      hasProtectedImgurImage = true;
+    }
+
+    const allElements = iframeDoc.querySelectorAll('*');
+    allElements.forEach(el => {
+      const element = el as HTMLElement;
+      const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
+      if (computedStyle?.backgroundImage && computedStyle.backgroundImage.includes('i.imgur.com')) {
+        hasProtectedImgurImage = true;
+      }
+    });
+
+    if (hasProtectedImgurImage) {
+      console.warn('Cannot replace Imgur images - they are protected');
       return;
     }
 
@@ -997,6 +1040,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   const handleSlideClick = (index: number) => {
+    iframeRefs.current.forEach((iframe) => {
+      if (!iframe || !iframe.contentWindow) return;
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      if (!doc) return;
+
+      doc.querySelectorAll('[data-editable]').forEach(el => {
+        el.classList.remove('selected');
+      });
+    });
+
     setFocusedSlide(index);
     setSelectedElement({ slideIndex: index, element: null });
     const slideWidth = 1080;
@@ -1010,7 +1063,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const handleElementClick = (slideIndex: number, element: ElementType) => {
     setIsLoadingProperties(true);
 
-    iframeRefs.current.forEach((iframe, index) => {
+    iframeRefs.current.forEach((iframe) => {
       if (!iframe || !iframe.contentWindow) return;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
@@ -1019,6 +1072,22 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         el.classList.remove('selected');
       });
     });
+
+    const targetIframe = iframeRefs.current[slideIndex];
+    if (targetIframe && targetIframe.contentWindow) {
+      const targetDoc = targetIframe.contentDocument || targetIframe.contentWindow.document;
+      if (targetDoc && element) {
+        const targetElement = targetDoc.getElementById(`slide-${slideIndex}-${element}`);
+        if (targetElement) {
+          targetElement.classList.add('selected');
+        } else if (element === 'background') {
+          const bodyElement = targetDoc.body;
+          if (bodyElement) {
+            bodyElement.classList.add('selected');
+          }
+        }
+      }
+    }
 
     setPreviousSelection(selectedElement);
     setSelectedElement({ slideIndex, element });

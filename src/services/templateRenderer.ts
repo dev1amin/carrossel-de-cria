@@ -34,13 +34,23 @@ export class TemplateRenderer {
 
     if (this.isVideoUrl(imageUrl)) {
       result = result.replace(
-        /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-        `background-image: none`
+        /background-image\s*:\s*url\s*\(\s*['"]?([^)'"]*)['"]?\s*\)/gi,
+        (match, currentUrl) => {
+          if (this.isImgurUrl(currentUrl)) {
+            return match;
+          }
+          return `background-image: none`;
+        }
       );
 
       result = result.replace(
-        /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-        `background: none`
+        /background\s*:\s*url\s*\(\s*['"]?([^)'"]*)['"]?\s*\)/gi,
+        (match, currentUrl) => {
+          if (this.isImgurUrl(currentUrl)) {
+            return match;
+          }
+          return `background: none`;
+        }
       );
 
       result = result.replace(
@@ -54,13 +64,23 @@ export class TemplateRenderer {
       );
     } else {
       result = result.replace(
-        /background-image\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-        `background-image: url('${imageUrl}')`
+        /background-image\s*:\s*url\s*\(\s*['"]?([^)'"]*)['"]?\s*\)/gi,
+        (match, currentUrl) => {
+          if (this.isImgurUrl(currentUrl)) {
+            return match;
+          }
+          return `background-image: url('${imageUrl}')`;
+        }
       );
 
       result = result.replace(
-        /background\s*:\s*url\s*\(\s*['"]?[^)'"]*['"]?\s*\)/gi,
-        `background: url('${imageUrl}')`
+        /background\s*:\s*url\s*\(\s*['"]?([^)'"]*)['"]?\s*\)/gi,
+        (match, currentUrl) => {
+          if (this.isImgurUrl(currentUrl)) {
+            return match;
+          }
+          return `background: url('${imageUrl}')`;
+        }
       );
     }
 
@@ -141,15 +161,24 @@ export class TemplateRenderer {
     return result;
   }
 
+  private isImgurUrl(url: string): boolean {
+    return url.includes('i.imgur.com');
+  }
+
   private replaceAllImages(html: string, imageUrl: string): string {
     let result = html;
 
     if (this.isVideoUrl(imageUrl)) {
       result = result.replace(
-        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/gi,
-        (match, attrs) => {
+        /<img([^>]*)\bsrc\s*=\s*["']([^"']*)["']/gi,
+        (match, attrs, currentSrc) => {
           if (match.includes('avatar')) {
             return match;
+          }
+
+          if (this.isImgurUrl(currentSrc)) {
+            const protectedMatch = match.replace(/<img/, '<img data-protected="true"');
+            return protectedMatch;
           }
 
           const classMatch = match.match(/class\s*=\s*["']([^"']*)["']/);
@@ -172,11 +201,19 @@ export class TemplateRenderer {
       );
     } else {
       result = result.replace(
-        /<img([^>]*)\bsrc\s*=\s*["'][^"']*["']/gi,
-        (match) => {
+        /<img([^>]*)\bsrc\s*=\s*["']([^"']*)["']/gi,
+        (match, attrs, currentSrc) => {
           if (match.includes('avatar')) {
             return match;
           }
+
+          if (this.isImgurUrl(currentSrc)) {
+            if (!match.includes('data-protected')) {
+              return match.replace(/<img/, '<img data-protected="true"');
+            }
+            return match;
+          }
+
           return match.replace(/src\s*=\s*["'][^"']*["']/, `src="${imageUrl}"`);
         }
       );
