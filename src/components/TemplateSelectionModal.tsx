@@ -243,7 +243,15 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                 <div className="w-full h-full bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:16px_16px]" />
               </div>
 
-
+              <div className="relative h-full w-full flex flex-col">
+                {/* Controles mobile */}
+                <div className="md:hidden flex items-center gap-2 p-3 border-b border-zinc-900">
+                  <button onClick={() => setZoom((z) => Math.max(0.05, Number((z - 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800"><ZoomOut className="w-4 h-4"/></button>
+                  <span className="text-sm tabular-nums w-12 text-center">{Math.round(zoom*100)}%</span>
+                  <button onClick={() => setZoom((z) => Math.min(2, Number((z + 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800"><ZoomIn className="w-4 h-4"/></button>
+                  <button onClick={() => setZoom(0.35)} className="p-2 rounded-md border border-zinc-800"><CircleSlash className="w-4 h-4"/></button>
+                  <button onClick={fitToHeight} className="p-2 rounded-md border border-zinc-800">Fit</button>
+                </div>
 
                 {/* Viewport com pan/scroll */}
                 <div
@@ -273,7 +281,6 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                           {slidesHtml.map((html, idx) => (
                             <div key={idx} className="relative shadow-2xl rounded-xl overflow-hidden bg-white border border-zinc-200" style={{ width: SLIDE_W, height: SLIDE_H }}>
                               <iframe title={`Slide ${idx + 1}`} srcDoc={html} className="w-full h-full" sandbox="allow-scripts" />
-                              <div className="absolute -top-2 -left-2 bg-black text-white text-[10px] px-2 py-0.5 rounded-md shadow border border-zinc-800">{idx + 1}</div>
                             </div>
                           ))}
                         </div>
