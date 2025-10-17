@@ -436,11 +436,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (element.tagName === 'IMG') {
             const imgElement = element as HTMLImageElement;
 
-            if (isProtectedSrc(imgElement.src)) {
-              // considera “processado” para não cair no fallback que mete bg no <body>
-              // e para não tentar achar outro “main image”
-              return;
-            }
+if (isProtectedSrc(imgElement.src)) {
+  processedMainImage = true; // marque como processado
+  return;
+}
             
             const imgWidth = imgElement.width;
             const imgHeight = imgElement.height;
