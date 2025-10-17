@@ -675,7 +675,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           }
         });
 
-        if (!processedMainImage) {
+        const hasAnyProtectedImg = Array.from(iframeDoc.images).some(img => isProtectedSrc(img.src));
+        if (!processedMainImage && !hasAnyProtectedImg) {
           const body = iframeDoc.body;
           if (body) {
             body.style.setProperty('background-image', `url('${bgImage}')`, 'important');
