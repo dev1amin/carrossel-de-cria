@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { configureCarousel } from '../Carousel-Template';
 import LoginPage from './pages/LoginPage';
 import MainContent from './components/MainContent';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -10,6 +11,22 @@ function App() {
   const [activeSort, setActiveSort] = useState<SortOption>('popular');
   const [currentPage, setCurrentPage] = useState<'feed' | 'settings'>('feed');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    configureCarousel({
+      webhook: {
+        generateCarousel: 'https://webhook.workez.online/webhook/generateCarousel',
+        searchImages: 'https://webhook.workez.online/webhook/searchImages',
+      },
+      minio: {
+        endpoint: 'https://s3.workez.online',
+        bucket: 'carousel-templates',
+      },
+      templates: {
+        totalSlides: 10,
+      },
+    });
+  }, []);
 
   const handleSearch = (term: string) => {
     setSearchTerm(term);

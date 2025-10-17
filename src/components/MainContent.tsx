@@ -5,15 +5,11 @@ import Feed from './Feed';
 import Navigation from './Navigation';
 import SettingsPage from './SettingsPage';
 import LoadingBar from './LoadingBar';
-import CarouselViewer from './CarouselViewer';
-import GenerationQueue from './GenerationQueue';
+import { CarouselViewer, GenerationQueue, useCarousel } from '../../Carousel-Template';
+import { templateService, templateRenderer, generateCarousel } from '../../Carousel-Template';
+import { AVAILABLE_TEMPLATES, GenerationQueueItem, CarouselData as CarouselDataType } from '../../Carousel-Template';
 import { getFeed } from '../services/feed';
-import { templateService } from '../services/template';
-import { templateRenderer } from '../services/templateRenderer';
 import { testCarouselData } from '../data/testCarouselData';
-import { generateCarousel } from '../services/carousel';
-import { GenerationQueueItem } from '../types/queue';
-import { AVAILABLE_TEMPLATES } from '../types/template';
 
 interface MainContentProps {
   searchTerm: string;
@@ -26,22 +22,7 @@ interface MainContentProps {
   setIsLoading: (loading: boolean) => void;
 }
 
-interface CarouselData {
-  dados_gerais: {
-    nome: string;
-    arroba: string;
-    foto_perfil: string;
-    template: string;
-  };
-  conteudos: Array<{
-    title: string;
-    subtitle?: string;
-    imagem_fundo: string;
-    thumbnail_url?: string;
-    imagem_fundo2?: string;
-    imagem_fundo3?: string;
-  }>;
-}
+type CarouselData = CarouselDataType;
 
 const MainContent: React.FC<MainContentProps> = ({
   searchTerm,

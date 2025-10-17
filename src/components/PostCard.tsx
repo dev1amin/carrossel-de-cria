@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Heart, Play, Trophy, Medal, Award, ExternalLink, Sparkles } from 'lucide-react';
-import TemplateSelectionModal from './TemplateSelectionModal';
+import { TemplateSelectionModal } from '../../Carousel-Template';
 import { Post } from '../types';
 import { formatNumber } from '../utils/formatters';
 

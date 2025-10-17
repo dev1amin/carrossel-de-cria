@@ -2,11 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
 import { Post, SortOption } from '../types';
 import PostCard from './PostCard';
-import CarouselViewer from './CarouselViewer';
+import { CarouselViewer, CarouselData as CarouselDataType } from '../../Carousel-Template';
+import { generateCarousel, templateService, templateRenderer } from '../../Carousel-Template';
 import { Scale } from 'lucide-react';
-import { generateCarousel } from '../services/carousel';
-import { templateService } from '../services/template';
-import { templateRenderer } from '../services/templateRenderer';
 
 interface FeedProps {
   posts: Post[];
@@ -15,22 +13,7 @@ interface FeedProps {
   onGenerateCarousel?: (code: string, templateId: string) => void;
 }
 
-interface CarouselData {
-  dados_gerais: {
-    nome: string;
-    arroba: string;
-    foto_perfil: string;
-    template: string;
-  };
-  conteudos: Array<{
-    title: string;
-    subtitle?: string;
-    imagem_fundo: string;
-    thumbnail_url?: string;
-    imagem_fundo2?: string;
-    imagem_fundo3?: string;
-  }>;
-}
+type CarouselData = CarouselDataType;
 
 const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCarousel: onGenerateCarouselProp }) => {
   const [filteredPosts, setFilteredPosts] = useState<Post[]>(posts);
