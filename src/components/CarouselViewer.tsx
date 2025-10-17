@@ -643,9 +643,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   const bgUrl = matches[1];
 
                       if (isProtectedSrc(bgUrl)) {
-                          processedMainImage = true; // marca como tratado para não fazer fallback
-                          return; // não altera nada
-                        }
+                        processedMainImage = true; // marca como tratado para não fazer fallback
+                        return; // não altera nada
+                      }
 
                   if (conteudo && (
                     bgUrl.includes(conteudo.imagem_fundo) ||
@@ -942,6 +942,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     const conteudo = carouselData.conteudos[slideIndex];
+  
     const originalImages = [
       conteudo?.imagem_fundo,
       conteudo?.imagem_fundo2,
@@ -949,14 +950,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       conteudo?.imagem_fundo4,
       conteudo?.imagem_fundo5,
       conteudo?.imagem_fundo6,
-    ].filter(Boolean);
-
-    const isProtectedImage = originalImages.some(img => img && img.includes('https://i.imgur'));
-
-    if (isProtectedImage && imageUrl.includes('https://i.imgur')) {
-      return;
+    ].filter(Boolean) as string[];
+  
+    const templateHasProtected = originalImages.some(isProtectedSrc);
+  
+    // 1) Se o template tem imgur, não altere. 2) Também não aceite novo bg vindo do imgur.
+    if (templateHasProtected || isProtectedSrc(imageUrl)) {
+      return; // silêncio: não muda nada
     }
-
+  
     updateEditedValue(slideIndex, 'background', imageUrl);
   };
 
