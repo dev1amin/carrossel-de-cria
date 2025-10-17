@@ -6,10 +6,14 @@ import Navigation from './Navigation';
 import SettingsPage from './SettingsPage';
 import LoadingBar from './LoadingBar';
 import CarouselViewer from './CarouselViewer';
+import GenerationQueue from './GenerationQueue';
 import { getFeed } from '../services/feed';
 import { templateService } from '../services/template';
 import { templateRenderer } from '../services/templateRenderer';
 import { testCarouselData } from '../data/testCarouselData';
+import { generateCarousel } from '../services/carousel';
+import { GenerationQueueItem } from '../types/queue';
+import { AVAILABLE_TEMPLATES } from '../types/template';
 
 interface MainContentProps {
   searchTerm: string;
@@ -53,6 +57,63 @@ const MainContent: React.FC<MainContentProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [testSlides, setTestSlides] = useState<string[] | null>(null);
   const [currentCarouselData, setCurrentCarouselData] = useState<CarouselData | null>(null);
+  const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
+  const [isQueueExpanded, setIsQueueExpanded] = useState(true);
+
+  const handleGenerateCarousel = async (code: string, templateId: string) => {
+    const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
+    const queueItem: GenerationQueueItem = {
+      id: `${code}-${templateId}-${Date.now()}`,
+      postCode: code,
+      templateId,
+      templateName: template?.name || `Template ${templateId}`,
+      status: 'generating',
+      createdAt: Date.now(),
+    };
+
+    setGenerationQueue(prev => [...prev, queueItem]);
+
+    try {
+      console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
+      const result = await generateCarousel(code, templateId);
+      console.log('Carousel generated successfully:', result);
+
+      if (result && result.length > 0) {
+        const carouselData = result[0];
+        const responseTemplateId = carouselData.dados_gerais.template;
+
+        console.log(`Fetching template ${responseTemplateId}...`);
+        const templateSlides = await templateService.fetchTemplate(responseTemplateId);
+
+        console.log('Rendering slides with data...');
+        const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+
+        setTestSlides(rendered);
+        setCurrentCarouselData(carouselData);
+
+        setGenerationQueue(prev =>
+          prev.map(item =>
+            item.id === queueItem.id
+              ? { ...item, status: 'completed', completedAt: Date.now() }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Failed to generate carousel:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+
+      setGenerationQueue(prev =>
+        prev.map(item =>
+          item.id === queueItem.id
+            ? { ...item, status: 'error', errorMessage, completedAt: Date.now() }
+            : item
+        )
+      );
+
+      alert('Erro ao gerar carrossel. Verifique o console para mais detalhes.');
+    }
+  };
 
   const handleTestEditor = async () => {
     try {
@@ -132,11 +193,17 @@ const MainContent: React.FC<MainContentProps> = ({
               onSortChange={onSortChange}
               onTestEditor={handleTestEditor}
             />
-          <main className="pt-14">
-            <Feed 
-              posts={posts} 
+            <GenerationQueue
+              items={generationQueue}
+              isExpanded={isQueueExpanded}
+              onToggleExpand={() => setIsQueueExpanded(!isQueueExpanded)}
+            />
+          <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-16' : ''}`}>
+            <Feed
+              posts={posts}
               searchTerm={searchTerm}
               activeSort={activeSort}
+              onGenerateCarousel={handleGenerateCarousel}
             />
           </main>
         </>

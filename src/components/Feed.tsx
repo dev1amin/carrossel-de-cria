@@ -12,6 +12,7 @@ interface FeedProps {
   posts: Post[];
   searchTerm: string;
   activeSort: SortOption;
+  onGenerateCarousel?: (code: string, templateId: string) => void;
 }
 
 interface CarouselData {
@@ -31,7 +32,7 @@ interface CarouselData {
   }>;
 }
 
-const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
+const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCarousel: onGenerateCarouselProp }) => {
   const [filteredPosts, setFilteredPosts] = useState<Post[]>(posts);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [renderedSlides, setRenderedSlides] = useState<string[] | null>(null);
@@ -42,18 +43,23 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort }) => {
   const dragY = useMotionValue(0);
   const controls = useAnimation();
 
-  const handleGenerateCarousel = async (code: string) => {
+  const handleGenerateCarousel = async (code: string, templateId: string) => {
+    if (onGenerateCarouselProp) {
+      onGenerateCarouselProp(code, templateId);
+      return;
+    }
+
     try {
-      console.log(`Generating carousel for post: ${code}`);
-      const result = await generateCarousel(code);
+      console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
+      const result = await generateCarousel(code, templateId);
       console.log('Carousel generated successfully:', result);
 
       if (result && result.length > 0) {
         const carouselData = result[0];
-        const templateId = carouselData.dados_gerais.template;
+        const responseTemplateId = carouselData.dados_gerais.template;
 
-        console.log(`Fetching template ${templateId}...`);
-        const templateSlides = await templateService.fetchTemplate(templateId);
+        console.log(`Fetching template ${responseTemplateId}...`);
+        const templateSlides = await templateService.fetchTemplate(responseTemplateId);
 
         console.log('Rendering slides with data...');
         const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);

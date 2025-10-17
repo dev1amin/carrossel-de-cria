@@ -15,8 +15,13 @@ interface CarouselResponse {
   }>;
 }
 
-export async function generateCarousel(code: string): Promise<CarouselResponse[]> {
+export async function generateCarousel(code: string, templateId?: string): Promise<CarouselResponse[]> {
   const webhookUrl = 'https://webhook.workez.online/webhook/generateCarousel';
+
+  const requestBody: { code: string; template?: string } = { code };
+  if (templateId) {
+    requestBody.template = templateId;
+  }
 
   try {
     const response = await fetch(webhookUrl, {
@@ -24,7 +29,7 @@ export async function generateCarousel(code: string): Promise<CarouselResponse[]
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Heart, Play, Trophy, Medal, Award, ExternalLink, Sparkles } from 'lucide-react';
+import TemplateSelectionModal from './TemplateSelectionModal';
 import { Post } from '../types';
 import { formatNumber } from '../utils/formatters';
 
@@ -9,20 +10,20 @@ interface PostCardProps {
   onHover: () => void;
   onLeave: () => void;
   onAIClick: () => void;
-  onGenerateCarousel?: (code: string) => void;
+  onGenerateCarousel?: (code: string, templateId: string) => void;
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post, index, onGenerateCarousel }) => {
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleGenerateCarousel = async () => {
-    if (isGenerating || !onGenerateCarousel) return;
+  const handleOpenModal = () => {
+    if (!onGenerateCarousel) return;
+    setIsModalOpen(true);
+  };
 
-    setIsGenerating(true);
-    try {
-      await onGenerateCarousel(post.code);
-    } finally {
-      setIsGenerating(false);
+  const handleSelectTemplate = (templateId: string) => {
+    if (onGenerateCarousel) {
+      onGenerateCarousel(post.code, templateId);
     }
   };
   const formatTimeAgo = (timestamp: number) => {
@@ -102,14 +103,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, index, onGenerateCarousel }) 
             <span>#{index + 1}</span>
           </div>
           {onGenerateCarousel && (
-            <button
-              onClick={handleGenerateCarousel}
-              disabled={isGenerating}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-full text-sm flex items-center space-x-2 transition-all shadow-lg hover:shadow-xl"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{isGenerating ? 'Gerando...' : 'Gerar'}</span>
-            </button>
+            <>
+              <button
+                onClick={handleOpenModal}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 py-1.5 rounded-full text-sm flex items-center space-x-2 transition-all shadow-lg hover:shadow-xl"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Gerar</span>
+              </button>
+              <TemplateSelectionModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSelectTemplate={handleSelectTemplate}
+                postCode={post.code}
+              />
+            </>
           )}
         </div>
       </div>
