@@ -67,69 +67,80 @@ const MainContent: React.FC<MainContentProps> = ({
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const handleGenerateCarousel = async (code: string, templateId: string) => {
-    const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
-    const queueItem: GenerationQueueItem = {
-      id: `${code}-${templateId}-${Date.now()}`,
-      postCode: code,
-      templateId,
-      templateName: template?.name || `Template ${templateId}`,
-      status: 'generating',
-      createdAt: Date.now(),
-    };
+const handleGenerateCarousel = async (code: string, templateId: string) => {
+  const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
+  const queueItem: GenerationQueueItem = {
+    id: `${code}-${templateId}-${Date.now()}`,
+    postCode: code,
+    templateId,
+    templateName: template?.name || `Template ${templateId}`,
+    status: 'generating',
+    createdAt: Date.now(),
+  };
 
-    setGenerationQueue(prev => [...prev, queueItem]);
+  setGenerationQueue(prev => [...prev, queueItem]);
 
-    try {
-      console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
-      const result = await generateCarousel(code, templateId);
-      console.log('Carousel generated successfully:', result);
+  try {
+    console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
+    const result = await generateCarousel(code, templateId); // precisa retornar res.json()!
+    console.log('Webhook result:', result);
 
-      if (result && result.length > 0) {
-        const carouselData = result[0];
-        const responseTemplateId = carouselData.dados_gerais.template;
+    // 🔹 Corrige tipo de resposta (array com 1 objeto)
+    const carouselData = Array.isArray(result) ? result[0] : result;
 
-        console.log(`Fetching template ${responseTemplateId}...`);
-        const templateSlides = await templateService.fetchTemplate(responseTemplateId);
-
-        console.log('Rendering slides with data...');
-        const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
-
-        setTestSlides(rendered);
-        setCurrentCarouselData(carouselData);
-
-        const galleryItem: GalleryCarousel = {
-          id: queueItem.id,
-          postCode: code,
-          templateName: queueItem.templateName,
-          createdAt: Date.now(),
-          slides: rendered,
-          carouselData,
-        };
-
-        setGalleryCarousels(prev => [galleryItem, ...prev]);
-
-        addToast('Carrossel criado com sucesso! Veja-o na galeria.', 'success');
-
-        setTimeout(() => {
-          setGenerationQueue(prev => prev.filter(item => item.id !== queueItem.id));
-        }, 1000);
-      }
-    } catch (error) {
-      console.error('Failed to generate carousel:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-
+    if (!carouselData || !carouselData.dados_gerais) {
+      console.warn('Resposta inesperada do webhook:', result);
+      addToast('Erro: formato inesperado do retorno do webhook.', 'error');
       setGenerationQueue(prev =>
         prev.map(item =>
           item.id === queueItem.id
-            ? { ...item, status: 'error', errorMessage, completedAt: Date.now() }
+            ? { ...item, status: 'error', errorMessage: 'Formato inesperado.', completedAt: Date.now() }
             : item
         )
       );
-
-      addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
+      return;
     }
-  };
+
+    const responseTemplateId = carouselData.dados_gerais.template;
+    console.log(`Fetching template ${responseTemplateId}...`);
+
+    const templateSlides = await templateService.fetchTemplate(responseTemplateId);
+    const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+
+    // Atualiza estado do editor e galeria
+    setTestSlides(rendered);
+    setCurrentCarouselData(carouselData);
+
+    const galleryItem: GalleryCarousel = {
+      id: queueItem.id,
+      postCode: code,
+      templateName: queueItem.templateName,
+      createdAt: Date.now(),
+      slides: rendered,
+      carouselData,
+    };
+
+    setGalleryCarousels(prev => [galleryItem, ...prev]);
+
+    // 🔹 Mostra toast e remove da fila
+    addToast('✅ Carrossel criado com sucesso! Veja-o na galeria.', 'success');
+    setGenerationQueue(prev => prev.filter(item => item.id !== queueItem.id));
+  } catch (error) {
+    console.error('Failed to generate carousel:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+
+    setGenerationQueue(prev =>
+      prev.map(item =>
+        item.id === queueItem.id
+          ? { ...item, status: 'error', errorMessage, completedAt: Date.now() }
+          : item
+      )
+    );
+
+    addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
+  }
+};
+
 
   const handleTestEditor = async () => {
     try {
