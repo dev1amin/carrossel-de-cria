@@ -9,4 +9,6 @@ export interface GenerationQueueItem {
   createdAt: number;
   completedAt?: number;
   errorMessage?: string;
+  slides?: string[];
+  carouselData?: any;
 }

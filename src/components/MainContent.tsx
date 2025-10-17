@@ -5,6 +5,8 @@ import Feed from './Feed';
 import Navigation from './Navigation';
 import SettingsPage from './SettingsPage';
 import LoadingBar from './LoadingBar';
+import Gallery from './Gallery';
+import Toast, { ToastMessage } from './Toast';
 import { CarouselViewer, GenerationQueue, useCarousel } from '../../Carousel-Template';
 import { templateService, templateRenderer, generateCarousel } from '../../Carousel-Template';
 import { AVAILABLE_TEMPLATES, GenerationQueueItem, CarouselData as CarouselDataType } from '../../Carousel-Template';
@@ -14,12 +16,21 @@ import { testCarouselData } from '../data/testCarouselData';
 interface MainContentProps {
   searchTerm: string;
   activeSort: SortOption;
-  currentPage: 'feed' | 'settings';
+  currentPage: 'feed' | 'settings' | 'gallery';
   isLoading: boolean;
   onSearch: (term: string) => void;
   onSortChange: (sort: SortOption) => void;
-  onPageChange: (page: 'feed' | 'settings') => void;
+  onPageChange: (page: 'feed' | 'settings' | 'gallery') => void;
   setIsLoading: (loading: boolean) => void;
+}
+
+interface GalleryCarousel {
+  id: string;
+  postCode: string;
+  templateName: string;
+  createdAt: number;
+  slides: string[];
+  carouselData: any;
 }
 
 type CarouselData = CarouselDataType;
@@ -40,6 +51,21 @@ const MainContent: React.FC<MainContentProps> = ({
   const [currentCarouselData, setCurrentCarouselData] = useState<CarouselData | null>(null);
   const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
   const [isQueueExpanded, setIsQueueExpanded] = useState(true);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [galleryCarousels, setGalleryCarousels] = useState<GalleryCarousel[]>([]);
+
+  const addToast = (message: string, type: 'success' | 'error') => {
+    const toast: ToastMessage = {
+      id: `toast-${Date.now()}`,
+      message,
+      type,
+    };
+    setToasts(prev => [...prev, toast]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   const handleGenerateCarousel = async (code: string, templateId: string) => {
     const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
@@ -72,13 +98,22 @@ const MainContent: React.FC<MainContentProps> = ({
         setTestSlides(rendered);
         setCurrentCarouselData(carouselData);
 
-        setGenerationQueue(prev =>
-          prev.map(item =>
-            item.id === queueItem.id
-              ? { ...item, status: 'completed', completedAt: Date.now() }
-              : item
-          )
-        );
+        const galleryItem: GalleryCarousel = {
+          id: queueItem.id,
+          postCode: code,
+          templateName: queueItem.templateName,
+          createdAt: Date.now(),
+          slides: rendered,
+          carouselData,
+        };
+
+        setGalleryCarousels(prev => [galleryItem, ...prev]);
+
+        addToast('Carrossel criado com sucesso! Veja-o na galeria.', 'success');
+
+        setTimeout(() => {
+          setGenerationQueue(prev => prev.filter(item => item.id !== queueItem.id));
+        }, 1000);
       }
     } catch (error) {
       console.error('Failed to generate carousel:', error);
@@ -92,7 +127,7 @@ const MainContent: React.FC<MainContentProps> = ({
         )
       );
 
-      alert('Erro ao gerar carrossel. Verifique o console para mais detalhes.');
+      addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
     }
   };
 
@@ -164,6 +199,7 @@ const MainContent: React.FC<MainContentProps> = ({
           }}
         />
       )}
+      <Toast toasts={toasts} onRemove={removeToast} />
       <div className="min-h-screen bg-black pb-20 md:pb-0 md:pl-16">
         <LoadingBar isLoading={isLoading} />
         {currentPage === 'feed' && (
@@ -189,14 +225,24 @@ const MainContent: React.FC<MainContentProps> = ({
           </main>
         </>
       )}
-      
+
+      {currentPage === 'gallery' && (
+        <Gallery
+          carousels={galleryCarousels}
+          onViewCarousel={(carousel) => {
+            setTestSlides(carousel.slides);
+            setCurrentCarouselData(carousel.carouselData);
+          }}
+        />
+      )}
+
       {currentPage === 'settings' && (
-        <SettingsPage 
-          onPageChange={onPageChange} 
+        <SettingsPage
+          onPageChange={onPageChange}
           setIsLoading={setIsLoading}
         />
       )}
-      
+
       <Navigation
         currentPage={currentPage}
         onPageChange={onPageChange}

@@ -9,7 +9,7 @@ import { SortOption } from './types';
 function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSort, setActiveSort] = useState<SortOption>('popular');
-  const [currentPage, setCurrentPage] = useState<'feed' | 'settings'>('feed');
+  const [currentPage, setCurrentPage] = useState<'feed' | 'settings' | 'gallery'>('feed');
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {

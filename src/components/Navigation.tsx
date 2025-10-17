@@ -1,17 +1,17 @@
 import React from 'react';
-import { Play, Settings } from 'lucide-react';
+import { Play, Settings, Image } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface NavigationProps {
-  currentPage: 'feed' | 'settings';
-  onPageChange: (page: 'feed' | 'settings') => void;
+  currentPage: 'feed' | 'settings' | 'gallery';
+  onPageChange: (page: 'feed' | 'settings' | 'gallery') => void;
 }
 
 const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange }) => {
   return (
     <>
       {/* Mobile Bottom Navigation */}
-      <motion.nav 
+      <motion.nav
         className="fixed bottom-0 left-0 right-0 bg-black/90 backdrop-blur-lg border-t border-white/10 z-50 md:hidden"
         initial={{ y: 100 }}
         animate={{ y: 0 }}
@@ -19,7 +19,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange }) =>
       >
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-around py-4">
-            <button 
+            <button
               className={`flex flex-col items-center transition-colors ${
                 currentPage === 'feed' ? 'text-white' : 'text-white/60 hover:text-white/90'
               }`}
@@ -28,7 +28,16 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange }) =>
               <Play className="w-6 h-6" />
               <span className="text-xs mt-1">Feed</span>
             </button>
-            <button 
+            <button
+              className={`flex flex-col items-center transition-colors ${
+                currentPage === 'gallery' ? 'text-white' : 'text-white/60 hover:text-white/90'
+              }`}
+              onClick={() => onPageChange('gallery')}
+            >
+              <Image className="w-6 h-6" />
+              <span className="text-xs mt-1">Galeria</span>
+            </button>
+            <button
               className={`flex flex-col items-center transition-colors ${
                 currentPage === 'settings' ? 'text-white' : 'text-white/60 hover:text-white/90'
               }`}
@@ -49,20 +58,30 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange }) =>
         transition={{ duration: 0.3 }}
       >
         <div className="flex flex-col items-center space-y-8 py-10">
-          <button 
+          <button
             className={`p-3 rounded-lg transition-colors ${
-              currentPage === 'feed' 
-                ? 'bg-white/10 text-white' 
+              currentPage === 'feed'
+                ? 'bg-white/10 text-white'
                 : 'text-white/60 hover:text-white/90 hover:bg-white/5'
             }`}
             onClick={() => onPageChange('feed')}
           >
             <Play className="w-6 h-6" />
           </button>
-          <button 
+          <button
             className={`p-3 rounded-lg transition-colors ${
-              currentPage === 'settings' 
-                ? 'bg-white/10 text-white' 
+              currentPage === 'gallery'
+                ? 'bg-white/10 text-white'
+                : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+            }`}
+            onClick={() => onPageChange('gallery')}
+          >
+            <Image className="w-6 h-6" />
+          </button>
+          <button
+            className={`p-3 rounded-lg transition-colors ${
+              currentPage === 'settings'
+                ? 'bg-white/10 text-white'
                 : 'text-white/60 hover:text-white/90 hover:bg-white/5'
             }`}
             onClick={() => onPageChange('settings')}
