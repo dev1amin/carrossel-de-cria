@@ -436,10 +436,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (element.tagName === 'IMG') {
             const imgElement = element as HTMLImageElement;
 
-if (isProtectedSrc(imgElement.src)) {
-  processedMainImage = true; // marque como processado
-  return;
-}
+            if (isProtectedSrc(imgElement.src)) {
+              processedMainImage = true; // marque como processado
+              return;
+            }
             
             const imgWidth = imgElement.width;
             const imgHeight = imgElement.height;
