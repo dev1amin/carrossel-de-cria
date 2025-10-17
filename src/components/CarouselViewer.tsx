@@ -413,6 +413,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const bgImage = editedContent[`${index}-background`];
       if (bgImage) {
         const conteudo = carouselData.conteudos[index];
+
+        const originalImages = [
+          conteudo?.imagem_fundo,
+          conteudo?.imagem_fundo2,
+          conteudo?.imagem_fundo3,
+          conteudo?.imagem_fundo4,
+          conteudo?.imagem_fundo5,
+          conteudo?.imagem_fundo6,
+        ].filter(Boolean) as string[];
+        
+        const matchesTemplateImage = (candidate: string) =>
+          originalImages.some((u) => typeof candidate === 'string' && candidate.includes(u));
+        
         const allElements = iframeDoc.querySelectorAll('*');
 
         let processedMainImage = false;
