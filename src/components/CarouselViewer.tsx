@@ -424,7 +424,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         ].filter(Boolean) as string[];
         
         const matchesTemplateImage = (candidate: string) =>
-          originalImages.some((u) => typeof candidate === 'string' && candidate.includes(u));
+        originalImages.some((u) => typeof candidate === 'string' && candidate.includes(u));
         
         const allElements = iframeDoc.querySelectorAll('*');
 
