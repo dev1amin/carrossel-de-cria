@@ -32,8 +32,8 @@ const defaultBrand = {
   accent: "ring-purple-500/40",
 };
 
-const SLIDE_W = 1095; // tamanho real de cada slide
-const SLIDE_H = 1350;
+const SLIDE_W = 1085; // tamanho real de cada slide
+const SLIDE_H = 1354;
 const GAP_X = 80; // espaço entre slides no canvas
 
 const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
