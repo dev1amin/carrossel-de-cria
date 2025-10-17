@@ -454,7 +454,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const previousBgImage = imgElement.getAttribute('data-bg-image-url');
               const needsUpdate = !previousBgImage || previousBgImage !== bgImage;
 
-              if (needsUpdate && !imgElement.src.includes('https://i.imgur')) {
+              if (needsUpdate && !isProtectedSrc(imgElement.src)) {
                 imgElement.setAttribute('data-bg-image-url', bgImage);
                 processedMainImage = true;
 
