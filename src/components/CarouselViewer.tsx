@@ -25,6 +25,17 @@ const isVideoUrl = (url: string): boolean => {
   return url.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/) !== null;
 };
 
+const isProtectedSrc = (url?: string | null): boolean => {
+  if (!url) return false;
+  try {
+    // pega a URL pura (funciona para bg-image também)
+    const clean = url.replace(/^url\((['"]?)(.*)\1\)$/, '$2');
+    return /^https:\/\/i\.imgur/i.test(clean);
+  } catch {
+    return false;
+  }
+};
+
 interface CarouselViewerProps {
   slides: string[];
   carouselData: CarouselData;
