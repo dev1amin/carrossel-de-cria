@@ -648,7 +648,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
                 }
                 processedMainImage = true;
-              } } else {
+              } else {
                 const matches = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
                 if (matches && matches[1]) {
                   const bgUrl = matches[1];
