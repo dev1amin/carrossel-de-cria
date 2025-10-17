@@ -25,13 +25,6 @@ const isVideoUrl = (url: string): boolean => {
   return url.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/) !== null;
 };
 
-const isProtectedSrc = (url?: string | null): boolean => {
-  if (!url) return false;
-  const clean = String(url).trim().replace(/^url\((['"]?)(.*)\1\)$/i, '$2');
-  // Match exatamente i.imgur.com (com http ou https), independente de querystring
-  return /^https?:\/\/i\.imgur\.com\//i.test(clean);
-};
-
 interface CarouselViewerProps {
   slides: string[];
   carouselData: CarouselData;
@@ -414,19 +407,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const bgImage = editedContent[`${index}-background`];
       if (bgImage) {
         const conteudo = carouselData.conteudos[index];
-
-        const originalImages = [
-          conteudo?.imagem_fundo,
-          conteudo?.imagem_fundo2,
-          conteudo?.imagem_fundo3,
-          conteudo?.imagem_fundo4,
-          conteudo?.imagem_fundo5,
-          conteudo?.imagem_fundo6,
-        ].filter(Boolean) as string[];
-        
-        const matchesTemplateImage = (candidate: string) =>
-        originalImages.some((u) => typeof candidate === 'string' && candidate.includes(u));
-        
         const allElements = iframeDoc.querySelectorAll('*');
 
         let processedMainImage = false;
@@ -436,16 +416,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
           if (element.tagName === 'IMG') {
             const imgElement = element as HTMLImageElement;
-
-            if (isProtectedSrc(imgElement.src)) {
-              processedMainImage = true; // marque como processado
-              return;
-            }
-
-            if (!matchesTemplateImage(imgElement.src)) {
-              return; // não é a “foto principal” do template, ignore
-            }
-            
             const imgWidth = imgElement.width;
             const imgHeight = imgElement.height;
             const isLargeImage = imgWidth > 100 || imgHeight > 100;
@@ -454,7 +424,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const previousBgImage = imgElement.getAttribute('data-bg-image-url');
               const needsUpdate = !previousBgImage || previousBgImage !== bgImage;
 
-            if (needsUpdate && !isProtectedSrc(imgElement.src) && !isProtectedSrc(bgImage)) {
+              if (needsUpdate && !imgElement.src.includes('https://i.imgur')) {
                 imgElement.setAttribute('data-bg-image-url', bgImage);
                 processedMainImage = true;
 
@@ -569,11 +539,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
             if (bgImageStyle && bgImageStyle !== 'none' && bgImageStyle.includes('url')) {
               if (element.getAttribute('data-has-bg-image')) {
-                const containsProtected = !!element.querySelector?.('img[src^="https://i.imgur.com/"]');
-                if (containsProtected) {
-                  processedMainImage = true; // evita cair no fallback
-                  return;
-                }
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
                 if (isVideoUrl) {
@@ -658,30 +623,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 const matches = bgImageStyle.match(/url\(['"]?([^'"\)]+)['"]?\)/);
                 if (matches && matches[1]) {
                   const bgUrl = matches[1];
-              
-                  // 1) não toque se for Imgur
-                  if (isProtectedSrc(bgUrl)) {
-                    processedMainImage = true; // evita cair no fallback do <body>
-                    return;
+
+                  if (conteudo && (
+                    bgUrl.includes(conteudo.imagem_fundo) ||
+                    (conteudo.imagem_fundo2 && bgUrl.includes(conteudo.imagem_fundo2)) ||
+                    (conteudo.imagem_fundo3 && bgUrl.includes(conteudo.imagem_fundo3))
+                  )) {
+                    element.setAttribute('data-has-bg-image', 'true');
+                    element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
+                    processedMainImage = true;
                   }
-              
-                  // 2) só mexa se bater com alguma das imagens originais do template
-                  if (!matchesTemplateImage(bgUrl)) {
-                    return;
-                  }
-              
-                  // OK, agora podemos trocar
-                  element.setAttribute('data-has-bg-image', 'true');
-                  element.style.setProperty('background-image', `url('${bgImage}')`, 'important');
-                  processedMainImage = true;
                 }
               }
             }
           }
         });
 
-        const hasAnyProtectedImg = Array.from(iframeDoc.images).some(img => isProtectedSrc(img.src));
-        if (!processedMainImage && !hasAnyProtectedImg) {
+        if (!processedMainImage) {
           const body = iframeDoc.body;
           if (body) {
             body.style.setProperty('background-image', `url('${bgImage}')`, 'important');
@@ -961,7 +919,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     const conteudo = carouselData.conteudos[slideIndex];
-  
     const originalImages = [
       conteudo?.imagem_fundo,
       conteudo?.imagem_fundo2,
@@ -969,15 +926,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       conteudo?.imagem_fundo4,
       conteudo?.imagem_fundo5,
       conteudo?.imagem_fundo6,
-    ].filter(Boolean) as string[];
-  
-    const templateHasProtected = originalImages.some(isProtectedSrc);
-  
-    // 1) Se o template tem imgur, não altere. 2) Também não aceite novo bg vindo do imgur.
-    if (templateHasProtected || isProtectedSrc(imageUrl)) {
-      return; // silêncio: não muda nada
+    ].filter(Boolean);
+
+    const isProtectedImage = originalImages.some(img => img && img.includes('https://i.imgur'));
+
+    if (isProtectedImage && imageUrl.includes('https://i.imgur')) {
+      return;
     }
-  
+
     updateEditedValue(slideIndex, 'background', imageUrl);
   };
 
