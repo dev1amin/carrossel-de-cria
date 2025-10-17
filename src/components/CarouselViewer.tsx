@@ -27,13 +27,8 @@ const isVideoUrl = (url: string): boolean => {
 
 const isProtectedSrc = (url?: string | null): boolean => {
   if (!url) return false;
-  try {
-    // pega a URL pura (funciona para bg-image também)
-    const clean = url.replace(/^url\((['"]?)(.*)\1\)$/, '$2');
-    return /^https:\/\/i\.imgur/i.test(clean);
-  } catch {
-    return false;
-  }
+  const clean = url.replace(/^url\((['"]?)(.*)\1\)$/i, '$2');
+  return /^https:\/\/i\.imgur/i.test(clean);
 };
 
 interface CarouselViewerProps {
