@@ -441,7 +441,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               return;
             }
 
-            
+            if (!matchesTemplateImage(imgElement.src)) {
+  return; // não é a “foto principal” do template, ignore
+}
             
             const imgWidth = imgElement.width;
             const imgHeight = imgElement.height;
