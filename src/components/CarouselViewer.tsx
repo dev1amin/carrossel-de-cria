@@ -569,6 +569,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
             if (bgImageStyle && bgImageStyle !== 'none' && bgImageStyle.includes('url')) {
               if (element.getAttribute('data-has-bg-image')) {
+                const containsProtected = !!element.querySelector?.('img[src^="https://i.imgur.com/"]');
+                if (containsProtected) {
+                  processedMainImage = true; // evita cair no fallback
+                  return;
+                }
                 const isVideoUrl = bgImage.toLowerCase().match(/\.(mp4|webm|ogg|mov)($|\?)/);
 
                 if (isVideoUrl) {
