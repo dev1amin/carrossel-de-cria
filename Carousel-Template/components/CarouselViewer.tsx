@@ -23,20 +23,14 @@ type ImageModalState =
   | {
       open: true;
       slideIndex: number;
-      // dados do alvo (para aplicar de volta no slide real)
       targetType: TargetKind;
-      targetId: string; // id estável dentro do slide (criamos se não houver)
+      targetId: string;
       imageUrl: string;
-      // medidas naturais (preenchidas quando carregar)
       naturalW: number;
       naturalH: number;
-      // container (máscara) dentro do alvo
       containerHeightPx: number;
-      // offset vertical atual da imagem dentro do container
       imgOffsetTopPx: number;
-      // largura do alvo (px) — a imagem rende em width:100% do alvo
       targetWidthPx: number;
-      // estado visual do modal
       modalHeightPx: number;
     }
   | { open: false };
@@ -237,7 +231,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
 
-      // tornar imagens editáveis
       const imgs = Array.from(doc.querySelectorAll('img'));
       let imgIdx = 0;
       imgs.forEach((im) => {
@@ -249,7 +242,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       });
 
-      // estilos de texto + conteúdo
       const titleEl = doc.getElementById(`slide-${index}-title`);
       const subtitleEl = doc.getElementById(`slide-${index}-subtitle`);
       if (titleEl) {
@@ -275,13 +267,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         if (content !== undefined && subtitleEl.getAttribute('contenteditable') !== 'true') subtitleEl.textContent = content;
       }
 
-      // captura estilos originais (1x)
       setTimeout(() => {
         if (titleEl && !originalStyles[`${index}-title`]) setOriginalStyles(p => ({ ...p, [`${index}-title`]: extractTextStyles(doc, titleEl as HTMLElement) }));
         if (subtitleEl && !originalStyles[`${index}-subtitle`]) setOriginalStyles(p => ({ ...p, [`${index}-subtitle`]: extractTextStyles(doc, subtitleEl as HTMLElement) }));
       }, 50);
 
-      // aplicar bg do estado (se houver)
       const bg = editedContent[`${index}-background`];
       if (bg) {
         const best = findLargestVisual(doc);
@@ -380,7 +370,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
 
-    // seleção visual
     iframeRefs.current.forEach((f) => {
       const d = f?.contentDocument || f?.contentWindow?.document;
       if (!d) return;
@@ -440,7 +429,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const getEditedValue = (slideIndex: number, field: string, def: any) => {
     const k = `${slideIndex}-${field}`;
     return editedContent[k] !== undefined ? editedContent[k] : def;
-    };
+  };
   const updateEditedValue = (slideIndex: number, field: string, value: any) => {
     const k = `${slideIndex}-${field}`;
     setEditedContent(prev => ({ ...prev, [k]: value }));
@@ -495,53 +484,36 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
-  /* ===================== MODAL: abrir/fechar ===================== */
+  /* ===================== MODAL: abrir/fechar/aplicar ===================== */
 
   const closeImageModal = () => {
     setImageModal({ open: false });
     document.documentElement.style.overflow = '';
   };
 
-  // Abre o modal SEM depender de trocar a imagem antes
   const openImageEditModal = (slideIndex: number) => {
     const ifr = iframeRefs.current[slideIndex];
     const doc = ifr?.contentDocument || ifr?.contentWindow?.document;
     if (!doc) return;
 
-    // 1) tentar alvo selecionado
     let target = doc.querySelector('[data-editable].selected') as HTMLElement | null;
-
-    // 2) se não houver, tentar maior visual
     if (!target) {
       const best = findLargestVisual(doc);
       target = best?.el || null;
     }
-
-    // 3) se ainda não houver, pegar primeira img editável
-    if (!target) {
-      target = doc.querySelector('img[data-editable]') as HTMLElement | null;
-    }
-
+    if (!target) target = doc.querySelector('img[data-editable]') as HTMLElement | null;
     if (!target) return;
 
-    // garantir id fixo
     if (!target.id) target.id = `img-target-${Date.now()}`;
 
-    // descobrir URL da imagem
     let imageUrl = '';
     let targetType: TargetKind = 'img';
     const cs = doc.defaultView?.getComputedStyle(target);
-
-    if (target.tagName === 'IMG') {
-      imageUrl = (target as HTMLImageElement).src;
-      targetType = 'img';
-    } else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
+    if (target.tagName === 'IMG') { imageUrl = (target as HTMLImageElement).src; targetType = 'img'; }
+    else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
       const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
-      imageUrl = m?.[1] || '';
-      targetType = 'bg';
+      imageUrl = m?.[1] || ''; targetType = 'bg';
     }
-
-    // 4) fallback: editedContent -> conteudo padrão
     if (!imageUrl) {
       const fallback = editedContent[`${slideIndex}-background`]
         || carouselData.conteudos[slideIndex]?.imagem_fundo
@@ -552,30 +524,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }
     if (!imageUrl) return;
 
-    // medidas do alvo
     const r = target.getBoundingClientRect();
     const targetWidthPx = r.width;
     const targetHeightPx = r.height;
-
-    // container inicial = altura atual
     const containerHeightPx = Math.max(60, targetHeightPx);
-
-    // offset inicial
     let imgOffsetTopPx = 0;
-
-    if (targetType === 'img') {
-      const top = parseFloat((target as HTMLImageElement).style.top || '0');
-      imgOffsetTopPx = isNaN(top) ? 0 : top;
-    } else {
-      // background -> inferir a partir do background-position-y
-      const cs2 = doc.defaultView?.getComputedStyle(target);
-      const bgPosY = cs2?.backgroundPositionY || '0%';
-      // valor será refinado após natural sizes
-      if (bgPosY.endsWith('%')) {
-        // guardar como 0 px, ajustamos após saber naturalW/H
-        imgOffsetTopPx = 0;
-      }
-    }
 
     const tmp = new Image();
     tmp.src = imageUrl;
@@ -592,7 +545,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         containerHeightPx,
         imgOffsetTopPx,
         targetWidthPx,
-        modalHeightPx: 780,
+        modalHeightPx: 820,
       });
       document.documentElement.style.overflow = 'hidden';
     };
@@ -605,10 +558,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }
   };
 
-  /* ===================== MODAL: aplicar no slide real ===================== */
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
-
     const {
       slideIndex, targetType, targetId, imageUrl,
       containerHeightPx, imgOffsetTopPx, naturalW, naturalH, targetWidthPx
@@ -622,7 +573,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (!el) { closeImageModal(); return; }
 
     if (targetType === 'img') {
-      // garantir wrapper
       let wrapper = el.parentElement;
       if (!wrapper || !wrapper.classList.contains('img-crop-wrapper')) {
         const w = doc.createElement('div');
@@ -666,9 +616,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if ((el as HTMLImageElement).src !== imageUrl) (el as HTMLImageElement).src = imageUrl;
 
     } else {
-      // background
-      const imgDisplayH = targetWidthPx * (naturalH / naturalW);
-      const maxOffset = Math.max(0, imgDisplayH - containerHeightPx);
+      const imgH = targetWidthPx * (naturalH / naturalW);
+      const maxOffset = Math.max(0, imgH - containerHeightPx);
       const perc = maxOffset ? (-imgOffsetTopPx / maxOffset) * 100 : 0;
 
       el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
@@ -694,15 +643,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/70" />
             {/* Shell redimensionável (altura) */}
-            <div className="absolute left-1/2 -translate-x-1/2 top-10 w-[min(96vw,1280px)]"
-                 style={{ height: imageModal.modalHeightPx }}>
+            <div
+              className="absolute left-1/2 -translate-x-1/2 top-10 w-[min(96vw,1280px)]"
+              style={{ height: imageModal.modalHeightPx }}
+            >
               <div className="relative h-full bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto flex flex-col">
                 {/* Header */}
                 <div className="h-12 px-4 flex items-center justify-between border-b border-neutral-800">
                   <div className="flex items-center gap-3">
                     <span className="text-white font-medium text-sm">Edição da imagem — Slide {imageModal.slideIndex + 1}</span>
                     <span className="text-neutral-400 text-xs hidden sm:inline">
-                      Clique e arraste a imagem para ajustar • Arraste as barras superior/inferior para alterar a altura visível
+                      Arraste a imagem (vertical) • Arraste as barras do topo/rodapé para alterar a altura visível
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -725,13 +676,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 {/* Ajuda */}
                 <div className="px-4 py-2 text-neutral-400 text-xs border-b border-neutral-800">
                   <ul className="list-disc pl-4 space-y-1">
-                    <li>Arraste a imagem (vertical) para enquadrar.</li>
-                    <li>Arraste as alças azuladas no topo/rodapé da área destacada para mudar a altura de corte.</li>
-                    <li>A área clara é a parte que aparecerá no slide; o restante está com opacidade reduzida.</li>
+                    <li>Preview fixo em 1080×1350 (tamanho real do slide).</li>
+                    <li>A imagem fora da área destacada aparece com opacidade reduzida.</li>
+                    <li>Use as alças azuladas para mudar a altura do recorte.</li>
                   </ul>
                 </div>
 
-                {/* === Corpo: IFRAME do slide === */}
+                {/* === Corpo: SLIDE em 1080×1350 com máscara/drag === */}
                 <ModalSlideEditor
                   html={renderedSlides[imageModal.slideIndex]}
                   state={imageModal}
@@ -739,12 +690,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 />
 
                 {/* Barra de resize do MODAL (altura) */}
-                <ModalBottomResize onResize={(dy) => {
-                  setImageModal({
-                    ...imageModal,
-                    modalHeightPx: Math.max(520, imageModal.modalHeightPx + dy),
-                  });
-                }}/>
+                <ModalBottomResize
+                  onResize={(dy) => {
+                    setImageModal({
+                      ...imageModal,
+                      modalHeightPx: Math.max(560, imageModal.modalHeightPx + dy),
+                    });
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -1180,7 +1133,7 @@ const ModalBottomResize: React.FC<{ onResize: (dy: number) => void }> = ({ onRes
   );
 };
 
-// Corpo do modal: renderiza um iframe com o SLIDE e aplica máscara/drag/resize dentro do próprio iframe
+/* ========= SLIDE 1080×1350 + overlay com máscara e drag ========= */
 const ModalSlideEditor: React.FC<{
   html: string;
   state: Extract<ImageModalState, { open: true }>;
@@ -1188,7 +1141,6 @@ const ModalSlideEditor: React.FC<{
 }> = ({ html, state, onStateChange }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // Helpers p/ movimentar e redimensionar dentro do iframe
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
@@ -1197,362 +1149,224 @@ const ModalSlideEditor: React.FC<{
       const doc = iframe.contentDocument || iframe.contentWindow?.document;
       if (!doc) return;
 
-      // Garantir target
-      const el = doc.getElementById(state.targetId) as HTMLElement | null;
-      if (!el) return;
+      // Ajusta o body do slide para 1080x1350 e evita scroll internos
+      const styleTag = doc.createElement('style');
+      styleTag.textContent = `
+        html, body { margin:0; padding:0; width:1080px !important; height:1350px !important; overflow:hidden !important; }
+      `;
+      doc.head.appendChild(styleTag);
 
+      // Limpa overlays anteriores
+      ['__overlayRoot','__mask','__imgBase','__imgStrong','__ovTop','__ovLeft','__ovRight','__ovBottom','__bgPrev']
+        .forEach(id => doc.getElementById(id)?.remove());
+
+      // Raiz do overlay (em cima do slide inteiro 1080x1350)
+      const overlayRoot = doc.createElement('div');
+      overlayRoot.id = '__overlayRoot';
+      overlayRoot.style.position = 'absolute';
+      overlayRoot.style.left = '0';
+      overlayRoot.style.top = '0';
+      overlayRoot.style.width = '1080px';
+      overlayRoot.style.height = '1350px';
+      overlayRoot.style.pointerEvents = 'none';
+      overlayRoot.style.zIndex = '99999';
+      doc.body.appendChild(overlayRoot);
+
+      // Dim fora da máscara
+      const mkDim = (id: string) => {
+        const d = doc.createElement('div');
+        d.id = id;
+        d.style.position = 'absolute';
+        d.style.background = 'rgba(0,0,0,.3)';
+        d.style.pointerEvents = 'none';
+        overlayRoot.appendChild(d);
+        return d;
+      };
+      const ovTop = mkDim('__ovTop'), ovLeft = mkDim('__ovLeft'),
+            ovRight = mkDim('__ovRight'), ovBottom = mkDim('__ovBottom');
+
+      // Cálculos base
       const targetW = state.targetWidthPx;
-      let containerHeight = state.containerHeightPx;
+      const imgH = targetW * (state.naturalH / state.naturalW);
 
-      // garantir wrapper/estilo para IMG
-      if (state.targetType === 'img') {
-        let wrapper = el.parentElement;
-        if (!wrapper || !wrapper.classList.contains('img-crop-wrapper')) {
-          const w = doc.createElement('div');
-          w.className = 'img-crop-wrapper';
-          w.style.display = 'inline-block';
-          w.style.position = 'relative';
-          w.style.overflow = 'visible'; // no modal queremos ver fora com opacidade reduzida
-          w.style.borderRadius = getComputedStyle(el).borderRadius;
+      // Imagem base (opacidade .3) – visível fora da máscara
+      const imgBase = doc.createElement('img');
+      imgBase.id = '__imgBase';
+      imgBase.src = state.imageUrl;
+      imgBase.style.position = 'absolute';
+      imgBase.style.left = `${(1080 - targetW) / 2}px`;
+      imgBase.style.top = '0px';
+      imgBase.style.width = `${targetW}px`;
+      imgBase.style.height = `${imgH}px`;
+      imgBase.style.opacity = '0.3';
+      imgBase.style.pointerEvents = 'none';
+      overlayRoot.appendChild(imgBase);
 
-          el.style.position = 'absolute';
-          el.style.left = '0px';
-          el.style.maxWidth = 'unset';
-          el.style.maxHeight = 'unset';
-          el.style.width = `${targetW}px`;
-          el.style.height = `${targetW * (state.naturalH / state.naturalW)}px`;
-          if (el.parentNode) el.parentNode.replaceChild(w, el);
-          w.appendChild(el);
-          wrapper = w;
-        } else {
-          el.style.position = 'absolute';
-          el.style.left = '0px';
-          el.style.maxWidth = 'unset';
-          el.style.maxHeight = 'unset';
-          el.style.width = `${targetW}px`;
-          el.style.height = `${targetW * (state.naturalH / state.naturalW)}px`;
-        }
+      // Máscara (área válida)
+      const mask = doc.createElement('div');
+      mask.id = '__mask';
+      mask.style.position = 'absolute';
+      mask.style.left = `${(1080 - targetW) / 2}px`;
+      mask.style.top = `${(1350 - state.containerHeightPx) / 2}px`;
+      mask.style.width = `${targetW}px`;
+      mask.style.height = `${state.containerHeightPx}px`;
+      mask.style.overflow = 'hidden';
+      mask.style.boxShadow = '0 0 0 3px rgba(59,130,246,.95)';
+      mask.style.borderRadius = '16px';
+      mask.style.pointerEvents = 'auto';
+      overlayRoot.appendChild(mask);
 
-        // máscara visível 100% e resto opaco 0.3
-        // criamos um container "mask" com overflow hidden e um "halo" translucido atrás
-        let mask = doc.getElementById('__mask') as HTMLElement | null;
-        if (!mask) {
-          mask = doc.createElement('div');
-          mask.id = '__mask';
-          mask.style.position = 'absolute';
-          mask.style.left = '50%';
-          mask.style.transform = 'translateX(-50%)';
-          mask.style.width = `${targetW}px`;
-          mask.style.height = `${containerHeight}px`;
-          mask.style.overflow = 'hidden';
-          mask.style.boxShadow = '0 0 0 3px rgba(59,130,246,.9)';
-          mask.style.borderRadius = getComputedStyle(wrapper as HTMLElement).borderRadius;
-          doc.body.appendChild(mask);
-        }
+      // Imagem dentro da máscara (opacidade 1)
+      const imgStrong = doc.createElement('img');
+      imgStrong.id = '__imgStrong';
+      imgStrong.src = state.imageUrl;
+      imgStrong.style.position = 'absolute';
+      imgStrong.style.left = `0px`;
+      imgStrong.style.top = '0px';
+      imgStrong.style.width = `${targetW}px`;
+      imgStrong.style.height = `${imgH}px`;
+      imgStrong.style.opacity = '1';
+      imgStrong.style.pointerEvents = 'none';
+      mask.appendChild(imgStrong);
 
-        // posicionar máscara verticalmente alinhada ao centro da viewport do slide
-        const slideH = (doc.body.getBoundingClientRect().height) || 1350;
-        mask.style.top = `${(slideH - containerHeight) / 2}px`;
-        mask.style.height = `${containerHeight}px`;
-        mask.style.width = `${targetW}px`;
+      // Colocar imagens na posição inicial (top ajustado)
+      const minTop = Math.min(0, state.containerHeightPx - imgH);
+      const startTop = Math.max(minTop, Math.min(0, state.imgOffsetTopPx));
+      imgStrong.style.top = `${startTop}px`;
+      imgBase.style.top = `${((1350 - state.containerHeightPx) / 2) + startTop}px`;
 
-        // "colamos" a imagem dentro da máscara (clonando a mesma el)
-        // para não mexer no DOM original, movemos o elemento para a mask (apenas no modal)
-        if (el.parentElement !== mask) {
-          mask.innerHTML = '';
-          mask.appendChild(el);
-        }
+      // posiciona dims
+      const placeOverlays = () => {
+        const mTop = parseFloat(mask.style.top);
+        const mHeight = parseFloat(mask.style.height);
+        const mLeft = parseFloat(mask.style.left);
+        const mRight = mLeft + targetW;
 
-        // BACKGROUND: overlays (escurecer fora da máscara)
-        let ovTop = doc.getElementById('__ovTop') as HTMLElement | null;
-        let ovLeft = doc.getElementById('__ovLeft') as HTMLElement | null;
-        let ovRight = doc.getElementById('__ovRight') as HTMLElement | null;
-        let ovBottom = doc.getElementById('__ovBottom') as HTMLElement | null;
-        const ensureOv = (id: string) => {
-          const d = doc.getElementById(id) as HTMLElement | null;
-          if (d) return d;
-          const o = doc.createElement('div');
-          o.id = id;
-          o.style.position = 'absolute';
-          o.style.background = 'rgba(0,0,0,.3)';
-          o.style.pointerEvents = 'none';
-          doc.body.appendChild(o);
-          return o;
+        ovTop.style.left = '0px'; ovTop.style.top = '0px';
+        ovTop.style.width = '1080px'; ovTop.style.height = `${mTop}px`;
+
+        ovLeft.style.left = '0px'; ovLeft.style.top = `${mTop}px`;
+        ovLeft.style.width = `${mLeft}px`; ovLeft.style.height = `${mHeight}px`;
+
+        ovRight.style.left = `${mRight}px`; ovRight.style.top = `${mTop}px`;
+        ovRight.style.width = `${1080 - mRight}px`; ovRight.style.height = `${mHeight}px`;
+
+        ovBottom.style.left = '0px'; ovBottom.style.top = `${mTop + mHeight}px`;
+        ovBottom.style.width = '1080px'; ovBottom.style.height = `${1350 - (mTop + mHeight)}px`;
+      };
+      placeOverlays();
+
+      // Drag (vertical) na máscara
+      let dragging = false, lastY = 0;
+      const onDown = (e: MouseEvent) => {
+        e.preventDefault();
+        dragging = true;
+        lastY = e.clientY;
+      };
+      const onMove = (e: MouseEvent) => {
+        if (!dragging) return;
+        const delta = e.clientY - lastY;
+        lastY = e.clientY;
+
+        const curTop = parseFloat(imgStrong.style.top || '0');
+        const nextTop = Math.max(minTop, Math.min(0, curTop + delta));
+        imgStrong.style.top = `${nextTop}px`;
+
+        // imagem base move junto, mas situada pela máscara centralizada
+        const maskTop = parseFloat(mask.style.top);
+        imgBase.style.top = `${maskTop + nextTop}px`;
+
+        onStateChange({ ...state, imgOffsetTopPx: nextTop });
+      };
+      const onUp = () => { dragging = false; };
+
+      mask.addEventListener('mousedown', onDown);
+      doc.addEventListener('mousemove', onMove);
+      doc.addEventListener('mouseup', onUp);
+
+      // Handles top/bottom para redimensionar a altura da máscara
+      const mkHandle = (pos: 'top' | 'bottom') => {
+        const h = doc.createElement('div');
+        h.style.position = 'absolute';
+        h.style.left = '50%';
+        h.style.transform = 'translateX(-50%)';
+        h.style.width = '84px';
+        h.style.height = '8px';
+        h.style.borderRadius = '999px';
+        h.style.background = 'rgba(59,130,246,.95)';
+        h.style.cursor = pos === 'top' ? 'n-resize' : 's-resize';
+        h.style.zIndex = '50';
+        h.style.pointerEvents = 'auto';
+        if (pos === 'top') h.style.top = '-6px'; else h.style.bottom = '-6px';
+        mask.appendChild(h);
+
+        let resizing = false, lastY2 = 0;
+        const onDown2 = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); resizing = true; lastY2 = e.clientY; };
+        const onMove2 = (e: MouseEvent) => {
+          if (!resizing) return;
+          const dy = e.clientY - lastY2; lastY2 = e.clientY;
+
+          let mTop = parseFloat(mask.style.top);
+          let mHeight = parseFloat(mask.style.height);
+
+          if (pos === 'top') {
+            // reduzir pelo topo: top cresce, height diminui (ou vice-versa)
+            const newTop = Math.min(mTop + dy, mTop + mHeight - 60);
+            const newHeight = Math.max(60, mHeight - dy);
+            mask.style.top = `${newTop}px`;
+            mask.style.height = `${newHeight}px`;
+
+            // Recalcular limites e reposicionar imagem base e forte
+            const newMinTop = Math.min(0, newHeight - imgH);
+            const curTop = parseFloat(imgStrong.style.top || '0');
+            const clamped = Math.max(newMinTop, Math.min(0, curTop + dy)); // empurra junto ao ajustar pelo topo
+            imgStrong.style.top = `${clamped}px`;
+            imgBase.style.top = `${newTop + clamped}px`;
+
+            onStateChange({ ...state, containerHeightPx: newHeight, imgOffsetTopPx: clamped });
+
+          } else {
+            // aumentar pelo bottom: height aumenta
+            const newHeight = Math.max(60, mHeight + dy);
+            mask.style.height = `${newHeight}px`;
+
+            const newMinTop = Math.min(0, newHeight - imgH);
+            const curTop = parseFloat(imgStrong.style.top || '0');
+            const clamped = Math.max(newMinTop, Math.min(0, curTop));
+            imgStrong.style.top = `${clamped}px`;
+            imgBase.style.top = `${parseFloat(mask.style.top) + clamped}px`;
+
+            onStateChange({ ...state, containerHeightPx: newHeight, imgOffsetTopPx: clamped });
+          }
+
+          placeOverlays();
         };
-        ovTop = ensureOv('__ovTop'); ovLeft = ensureOv('__ovLeft'); ovRight = ensureOv('__ovRight'); ovBottom = ensureOv('__ovBottom');
+        const onUp2 = () => { resizing = false; };
 
-        const placeOverlays = () => {
-          const bodyRect = doc.body.getBoundingClientRect();
-          const mRect = mask!.getBoundingClientRect();
-          // top
-          ovTop!.style.left = `0px`;
-          ovTop!.style.top = `0px`;
-          ovTop!.style.width = `${bodyRect.width}px`;
-          ovTop!.style.height = `${mRect.top - bodyRect.top}px`;
-          // left
-          ovLeft!.style.left = `0px`;
-          ovLeft!.style.top = `${mRect.top - bodyRect.top}px`;
-          ovLeft!.style.width = `${(bodyRect.width - targetW)/2}px`;
-          ovLeft!.style.height = `${containerHeight}px`;
-          // right
-          ovRight!.style.left = `${(bodyRect.width + targetW)/2}px`;
-          ovRight!.style.top = `${mRect.top - bodyRect.top}px`;
-          ovRight!.style.width = `${(bodyRect.width - targetW)/2}px`;
-          ovRight!.style.height = `${containerHeight}px`;
-          // bottom
-          ovBottom!.style.left = `0px`;
-          ovBottom!.style.top = `${mRect.bottom - bodyRect.top}px`;
-          ovBottom!.style.width = `${bodyRect.width}px`;
-          ovBottom!.style.height = `${bodyRect.height - (mRect.bottom - bodyRect.top)}px`;
-        };
-        placeOverlays();
-
-        // Drag da imagem (vertical)
-        let dragging = false;
-        let lastY = 0;
-        const onMove = (e: MouseEvent) => {
-          if (!dragging) return;
-          const imgH = targetW * (state.naturalH / state.naturalW);
-          const minTop = Math.min(0, containerHeight - imgH);
-          const curTop = parseFloat(el.style.top || '0');
-          const nextTop = Math.max(minTop, Math.min(0, curTop + (e.clientY - lastY)));
-          el.style.top = `${nextTop}px`;
-          lastY = e.clientY;
-          onStateChange({ ...state, imgOffsetTopPx: nextTop });
-        };
-        const onUp = () => { dragging = false; };
-        const onDown = (e: MouseEvent) => { dragging = true; lastY = e.clientY; };
-
-        // superfície de drag (pega cliques dentro da máscara)
-        mask.addEventListener('mousedown', onDown);
-        doc.addEventListener('mousemove', onMove);
-        doc.addEventListener('mouseup', onUp);
-
-        // Handles (resize) top/bottom
-        const mkHandle = (pos: 'top'|'bottom') => {
-          const h = doc.createElement('div');
-          h.style.position = 'absolute';
-          h.style.left = '50%';
-          h.style.transform = 'translateX(-50%)';
-          h.style.width = '80px';
-          h.style.height = '8px';
-          h.style.borderRadius = '999px';
-          h.style.background = 'rgba(59,130,246,.9)';
-          h.style.cursor = pos === 'top' ? 'n-resize' : 's-resize';
-          h.style.zIndex = '50';
-          if (pos === 'top') h.style.top = '-6px'; else h.style.bottom = '-6px';
-          mask.appendChild(h);
-
-          let resizing = false;
-          let lastY2 = 0;
-          const onMove2 = (e: MouseEvent) => {
-            if (!resizing) return;
-            const dy = e.clientY - lastY2;
-            lastY2 = e.clientY;
-
-            const imgH = targetW * (state.naturalH / state.naturalW);
-
-            if (pos === 'top') {
-              const newH = Math.max(60, containerHeight - dy);
-              containerHeight = newH;
-              mask!.style.height = `${containerHeight}px`;
-              // ao reduzir pelo topo, também precisamos deslocar a imagem um pouco para manter posição visual
-              const curTop = parseFloat(el.style.top || '0');
-              const minTop = Math.min(0, containerHeight - imgH);
-              const clamped = Math.max(minTop, Math.min(0, curTop + dy));
-              el.style.top = `${clamped}px`;
-              onStateChange({ ...state, containerHeightPx: containerHeight, imgOffsetTopPx: clamped });
-              placeOverlays();
-            } else {
-              const newH = Math.max(60, containerHeight + dy);
-              containerHeight = newH;
-              mask!.style.height = `${containerHeight}px`;
-              const curTop = parseFloat(el.style.top || '0');
-              const minTop = Math.min(0, containerHeight - imgH);
-              const clamped = Math.max(minTop, Math.min(0, curTop));
-              el.style.top = `${clamped}px`;
-              onStateChange({ ...state, containerHeightPx: containerHeight, imgOffsetTopPx: clamped });
-              placeOverlays();
-            }
-          };
-          const onUp2 = () => { resizing = false; };
-          const onDown2 = (e: MouseEvent) => { e.stopPropagation(); resizing = true; lastY2 = e.clientY; };
-          h.addEventListener('mousedown', onDown2);
-          doc.addEventListener('mousemove', onMove2);
-          doc.addEventListener('mouseup', onUp2);
-        };
-        mkHandle('top');
-        mkHandle('bottom');
-
-        // inicial: posicionar imagem
-        const imgH = targetW * (state.naturalH / state.naturalW);
-        const minTop = Math.min(0, containerHeight - imgH);
-        const startTop = Math.max(minTop, Math.min(0, state.imgOffsetTopPx));
-        el.style.top = `${startTop}px`;
-
-      } else {
-        // === targetType 'bg' ===
-        // criamos apenas a máscara (sem mover o elemento), e manipulamos background-position-y
-        const target = el;
-        const slideH = (doc.body.getBoundingClientRect().height) || 1350;
-
-        let mask = doc.getElementById('__mask') as HTMLElement | null;
-        if (!mask) {
-          mask = doc.createElement('div');
-          mask.id = '__mask';
-          mask.style.position = 'absolute';
-          mask.style.left = '50%';
-          mask.style.transform = 'translateX(-50%)';
-          mask.style.width = `${state.targetWidthPx}px`;
-          mask.style.boxShadow = '0 0 0 3px rgba(59,130,246,.9)';
-          mask.style.borderRadius = getComputedStyle(target as HTMLElement).borderRadius || '16px';
-          mask.style.overflow = 'hidden';
-          doc.body.appendChild(mask);
-        }
-        mask.style.height = `${state.containerHeightPx}px`;
-        mask.style.top = `${(slideH - state.containerHeightPx)/2}px`;
-        mask.style.width = `${state.targetWidthPx}px`;
-
-        // dentro da mask colocamos uma DIV que renderiza a imagem como bg (100% auto)
-        let preview = doc.getElementById('__bgPrev') as HTMLElement | null;
-        if (!preview) {
-          preview = doc.createElement('div');
-          preview.id = '__bgPrev';
-          preview.style.position = 'absolute';
-          preview.style.left = '0';
-          preview.style.top = '0';
-          preview.style.width = '100%';
-          preview.style.height = `${state.targetWidthPx * (state.naturalH / state.naturalW)}px`;
-          preview.style.backgroundImage = `url('${state.imageUrl}')`;
-          preview.style.backgroundRepeat = 'no-repeat';
-          preview.style.backgroundSize = '100% auto';
-          preview.style.backgroundPositionX = 'center';
-          mask.appendChild(preview);
-        } else {
-          preview.style.height = `${state.targetWidthPx * (state.naturalH / state.naturalW)}px`;
-          preview.style.backgroundImage = `url('${state.imageUrl}')`;
-        }
-        // top inicial
-        const imgH = state.targetWidthPx * (state.naturalH / state.naturalW);
-        const minTop = Math.min(0, state.containerHeightPx - imgH);
-        const startTop = Math.max(minTop, Math.min(0, state.imgOffsetTopPx));
-        preview.style.top = `${startTop}px`;
-
-        // overlays fora da mask
-        const ensureOv = (id: string) => {
-          let d = doc.getElementById(id) as HTMLElement | null;
-          if (d) return d;
-          d = doc.createElement('div');
-          d.id = id;
-          d.style.position = 'absolute';
-          d.style.background = 'rgba(0,0,0,.3)';
-          d.style.pointerEvents = 'none';
-          doc.body.appendChild(d);
-          return d;
-        };
-        const ovTop = ensureOv('__ovTop'), ovLeft = ensureOv('__ovLeft'), ovRight = ensureOv('__ovRight'), ovBottom = ensureOv('__ovBottom');
-        const placeOverlays = () => {
-          const bodyRect = doc.body.getBoundingClientRect();
-          const mRect = mask!.getBoundingClientRect();
-          ovTop.style.left = '0px'; ovTop.style.top = '0px';
-          ovTop.style.width = `${bodyRect.width}px`; ovTop.style.height = `${mRect.top - bodyRect.top}px`;
-
-          ovLeft.style.left = '0px'; ovLeft.style.top = `${mRect.top - bodyRect.top}px`;
-          ovLeft.style.width = `${(bodyRect.width - state.targetWidthPx)/2}px`; ovLeft.style.height = `${state.containerHeightPx}px`;
-
-          ovRight.style.left = `${(bodyRect.width + state.targetWidthPx)/2}px`; ovRight.style.top = `${mRect.top - bodyRect.top}px`;
-          ovRight.style.width = `${(bodyRect.width - state.targetWidthPx)/2}px`; ovRight.style.height = `${state.containerHeightPx}px`;
-
-          ovBottom.style.left = '0px'; ovBottom.style.top = `${mRect.bottom - bodyRect.top}px`;
-          ovBottom.style.width = `${bodyRect.width}px`; ovBottom.style.height = `${bodyRect.height - (mRect.bottom - bodyRect.top)}px`;
-        };
-        placeOverlays();
-
-        // drag vertical
-        let dragging = false, lastY = 0;
-        const onMove = (e: MouseEvent) => {
-          if (!dragging) return;
-          const curTop = parseFloat(preview!.style.top || '0');
-          const nextTop = Math.max(minTop, Math.min(0, curTop + (e.clientY - lastY)));
-          preview!.style.top = `${nextTop}px`;
-          lastY = e.clientY;
-          onStateChange({ ...state, imgOffsetTopPx: nextTop });
-        };
-        const onUp = () => { dragging = false; };
-        const onDown = (e: MouseEvent) => { dragging = true; lastY = e.clientY; };
-        mask.addEventListener('mousedown', onDown);
-        doc.addEventListener('mousemove', onMove);
-        doc.addEventListener('mouseup', onUp);
-
-        // handles
-        const mkHandle = (pos: 'top'|'bottom') => {
-          const h = doc.createElement('div');
-          h.style.position = 'absolute';
-          h.style.left = '50%';
-          h.style.transform = 'translateX(-50%)';
-          h.style.width = '80px';
-          h.style.height = '8px';
-          h.style.borderRadius = '999px';
-          h.style.background = 'rgba(59,130,246,.9)';
-          h.style.cursor = pos === 'top' ? 'n-resize' : 's-resize';
-          h.style.zIndex = '50';
-          if (pos === 'top') h.style.top = '-6px'; else h.style.bottom = '-6px';
-          mask.appendChild(h);
-
-          let resizing = false, lastY2 = 0;
-          const onMove2 = (e: MouseEvent) => {
-            if (!resizing) return;
-            const dy = e.clientY - lastY2; lastY2 = e.clientY;
-            if (pos === 'top') {
-              const newH = Math.max(60, state.containerHeightPx - dy);
-              mask!.style.height = `${newH}px`;
-              const minTop2 = Math.min(0, newH - imgH);
-              const curTop = parseFloat(preview!.style.top || '0');
-              const clamped = Math.max(minTop2, Math.min(0, curTop + dy));
-              preview!.style.top = `${clamped}px`;
-              onStateChange({ ...state, containerHeightPx: newH, imgOffsetTopPx: clamped });
-              placeOverlays();
-            } else {
-              const newH = Math.max(60, state.containerHeightPx + dy);
-              mask!.style.height = `${newH}px`;
-              const minTop2 = Math.min(0, newH - imgH);
-              const curTop = parseFloat(preview!.style.top || '0');
-              const clamped = Math.max(minTop2, Math.min(0, curTop));
-              preview!.style.top = `${clamped}px`;
-              onStateChange({ ...state, containerHeightPx: newH, imgOffsetTopPx: clamped });
-              placeOverlays();
-            }
-          };
-          const onUp2 = () => { resizing = false; };
-          const onDown2 = (e: MouseEvent) => { e.stopPropagation(); resizing = true; lastY2 = e.clientY; };
-          h.addEventListener('mousedown', onDown2);
-          doc.addEventListener('mousemove', onMove2);
-          doc.addEventListener('mouseup', onUp2);
-        };
-        mkHandle('top');
-        mkHandle('bottom');
-      }
+        h.addEventListener('mousedown', onDown2);
+        doc.addEventListener('mousemove', onMove2);
+        doc.addEventListener('mouseup', onUp2);
+      };
+      mkHandle('top'); mkHandle('bottom');
     };
 
-    // monta ao carregar
     const onLoad = () => setTimeout(setup, 60);
     iframe.addEventListener('load', onLoad);
-    // se já carregado
     if (iframe.contentDocument?.readyState === 'complete') onLoad();
 
-    return () => {
-      iframe.removeEventListener('load', onLoad);
-    };
+    return () => { iframe.removeEventListener('load', onLoad); };
   }, [html, state, onStateChange]);
 
   return (
     <div className="relative flex-1 overflow-auto p-4">
       <div className="mx-auto w-[min(1100px,95%)] h-[100%] bg-neutral-900/40 rounded-lg border border-neutral-800 p-3">
-        <div className="text-neutral-400 text-xs mb-2">Preview do slide (com foco na área editável):</div>
-        <div className="relative border border-neutral-800 rounded-lg overflow-hidden bg-white">
+        <div className="text-neutral-400 text-xs mb-2">Preview do slide (1080×1350) com máscara e arrasto vertical:</div>
+        <div className="relative border border-neutral-800 rounded-lg overflow-hidden bg-white flex items-center justify-center">
+          {/* Iframe com tamanho fixo do slide */}
           <iframe
             ref={iframeRef}
-            className="w-full h-[calc(100vh-280px)] min-h-[480px] border-0 bg-white"
+            className="border-0 bg-white"
+            style={{ width: 1080, height: 1350 }}
             sandbox="allow-same-origin allow-scripts"
             srcDoc={html}
             title="Slide Edit Preview"
