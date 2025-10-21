@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers, Image as ImageIcon, Type, Upload, Search, Play } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import {
+  X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight,
+  Layers, Image as ImageIcon, Type, Upload, Search, Play
+} from 'lucide-react';
 import { CarouselData, ElementType, ElementStyles } from '../types';
 import { searchImages } from '../services';
 
@@ -13,26 +17,10 @@ interface CarouselViewerProps {
   onClose: () => void;
 }
 
-type ImageEditorModalState =
-  | {
-      slideIndex: number;
-      // o alvo dentro do IFRAME modal (resolvido ao abrir)
-      targetHint?: 'img' | 'bg';
-      // dados da edição (preenchidos durante o modal)
-      final?: {
-        type: 'img' | 'bg';
-        // seletor/id aplicado para replicar no preview
-        targetSelector: string;
-        // dimensões finais
-        wrapperWidth: number;
-        wrapperHeight: number;
-        imgWidth: number;
-        imgHeight: number;
-        imgLeft: number;
-        imgTop: number;
-      };
-    }
-  | null;
+type ImageEditorModalState = {
+  slideIndex: number;
+  targetHint?: 'img' | 'bg';
+} | null;
 
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
   const [zoom, setZoom] = useState(0.35);
@@ -56,7 +44,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [cropMode, setCropMode] = useState<{ slideIndex: number; videoId: string } | null>(null);
   const [videoDimensions, setVideoDimensions] = useState<Record<string, { width: number; height: number }>>({});
 
-  // NOVO: modal de edição
   const [imageEditorModal, setImageEditorModal] = useState<ImageEditorModalState>(null);
   const modalIframeRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -68,14 +55,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const slideHeight = 1350;
   const gap = 40;
 
-  // =============================
-  // Utilidades
   const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
 
   const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
     let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
 
-    // imagens
+    // imgs
     const imgs = Array.from(iframeDoc.querySelectorAll('img')) as HTMLImageElement[];
     imgs.forEach(img => {
       if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
@@ -86,7 +71,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
     });
 
-    // elementos com bg-image
+    // bg-image
     const allEls = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
     allEls.forEach(el => {
       const cs = iframeDoc.defaultView?.getComputedStyle(el);
@@ -103,13 +88,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return best ? { type: best.type, el: best.el } : null;
   };
 
-  // =============================
-  // Inicialização / atalho de teclado
+  // ====== Keydown / eventos globais ==========================================================
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (imageEditorModal) {
-          // fecha modal sem aplicar
+          // fechar modal sem aplicar
           closeImageEditor(false);
           return;
         }
@@ -126,7 +110,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedElement, cropMode, onClose, imageEditorModal]);
 
-  // placeholder de mensagens vindo do iframe original (vídeos, etc.)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'enterCropMode') {
@@ -137,8 +120,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // =============================
-  // Injeção de IDs editáveis (texto + bg)
+  // ====== Injeção de IDs editáveis (texto/bg) ===============================================
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = html;
     const conteudo = carouselData.conteudos[slideIndex];
@@ -168,7 +150,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       });
     }
 
-    // estilos para hover/seleção e para o modo de edição (apenas básicos)
     result = result.replace(
       /<style>/i,
       `<style>
@@ -177,17 +158,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         [data-editable][contenteditable="true"]{outline:3px solid #10B981!important;outline-offset:2px;background:rgba(16,185,129,.1)!important}
         img[data-editable]{display:block!important}
         img[data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px}
-        /* elementos com bg editável */
         .cv-mask-wrapper{position:relative;display:inline-block}
         .cv-mask-overlay{position:absolute;inset:0;cursor:move;z-index:1003;background:transparent}
         .cv-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1004}
-        /* Dimmer fora do recorte (dentro do iframe do modal) */
         .cv-dim{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:1002}
         .cv-dim-block{position:fixed;background:rgba(0,0,0,.55);pointer-events:none;z-index:1002}
       `
     );
 
-    // background do body vira editável
     result = result.replace(
       /<body([^>]*)>/i,
       `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
@@ -208,14 +186,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setFocusedSlide(0);
   }, []);
 
-  // =============================
-  // Aplicar mudanças de texto/estilo e marcar editáveis
+  // ====== Aplicações no iframe principal (texto/bg) ==========================================
   useEffect(() => {
     iframeRefs.current.forEach((iframe, index) => {
       if (!iframe || !iframe.contentWindow) return;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
+      // marca editáveis
       const markEditables = () => {
         const allImages = iframeDoc.querySelectorAll('img');
         let imgIdx = 0;
@@ -250,7 +228,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
       markEditables();
 
-      // Atualiza textos/estilos
       const updateElement = (elementId: string, styles?: ElementStyles, content?: string) => {
         const element = iframeDoc.getElementById(elementId);
         if (!element) return;
@@ -307,7 +284,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }
 
-      // salva estilos originais dos textos para painel
       setTimeout(() => {
         const titleElement = iframeDoc.getElementById(`slide-${index}-title`);
         if (titleElement && !originalStyles[`${index}-title`]) {
@@ -323,8 +299,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   }, [elementStyles, editedContent, originalStyles]);
 
-  // =============================
-  // Ações UI laterais
+  // ====== UI helpers =========================================================================
   const toggleLayer = (index: number) => {
     const newExpanded = new Set(expandedLayers);
     if (newExpanded.has(index)) newExpanded.delete(index);
@@ -392,8 +367,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
-  // =============================
-  // Troca imediata do background + abrir modal de edição
+  // ====== Troca de background + abrir modal ==================================================
   const applyBackgroundImageImmediate = (slideIndex: number, imageUrl: string): HTMLElement | null => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return null;
@@ -432,7 +406,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setFocusedSlide(slideIndex);
     updateEditedValue(slideIndex, 'background', imageUrl);
 
-    // abre modal automaticamente após escolher imagem
     if (updatedEl) {
       const isImg = updatedEl.tagName === 'IMG';
       openImageEditor(slideIndex, isImg ? 'img' : 'bg');
@@ -464,26 +437,69 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     reader.readAsDataURL(file);
   };
 
-  // =============================
-  // MODO POPUP (apenas slide selecionado)
+  // ====== MODAL (Portal) =====================================================================
   const openImageEditor = (slideIndex: number, targetHint?: 'img' | 'bg') => {
     setImageEditorModal({ slideIndex, targetHint });
   };
 
-  const setupModalIframe = () => {
+  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
+    const wW = wrapper.clientWidth;
+    const wH = wrapper.clientHeight;
+    const iW = img.offsetWidth;
+    const iH = img.offsetHeight;
+    let left = parseFloat(img.style.left || '0'); left = 0;
+    let top = parseFloat(img.style.top || '0');
+    const minTop = Math.min(0, wH - iH);
+    const maxTop = 0;
+    if (top < minTop) top = minTop;
+    if (top > maxTop) top = maxTop;
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+  };
+
+  const refreshDimmer = (doc: Document, wrapper: HTMLElement) => {
+    const ensure = (cls: string) => {
+      let el = doc.querySelector(`.${cls}`) as HTMLDivElement | null;
+      if (!el) {
+        el = doc.createElement('div'); el.className = cls; doc.body.appendChild(el);
+      }
+      return el;
+    };
+    ensure('cv-dim');
+    const topB = ensure('cv-dim-top'); topB.classList.add('cv-dim-block');
+    const rightB = ensure('cv-dim-right'); rightB.classList.add('cv-dim-block');
+    const bottomB = ensure('cv-dim-bottom'); bottomB.classList.add('cv-dim-block');
+    const leftB = ensure('cv-dim-left'); leftB.classList.add('cv-dim-block');
+
+    const rect = wrapper.getBoundingClientRect();
+    const vw = doc.defaultView?.innerWidth || 0;
+    const vh = doc.defaultView?.innerHeight || 0;
+
+    topB.style.left = '0px'; topB.style.top = '0px';
+    topB.style.width = `${vw}px`; topB.style.height = `${Math.max(0, rect.top)}px`;
+
+    bottomB.style.left = '0px'; bottomB.style.top = `${Math.max(0, rect.bottom)}px`;
+    bottomB.style.width = `${vw}px`; bottomB.style.height = `${Math.max(0, vh - rect.bottom)}px`;
+
+    leftB.style.left = '0px'; leftB.style.top = `${Math.max(0, rect.top)}px`;
+    leftB.style.width = `${Math.max(0, rect.left)}px`; leftB.style.height = `${Math.max(0, rect.height)}px`;
+
+    rightB.style.left = `${Math.max(0, rect.right)}px`; rightB.style.top = `${Math.max(0, rect.top)}px`;
+    rightB.style.width = `${Math.max(0, vw - rect.right)}px`; rightB.style.height = `${Math.max(0, rect.height)}px`;
+  };
+
+  const setupModalIframe = (slideIndex: number) => {
     const iframe = modalIframeRef.current;
     if (!iframe) return;
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
 
-    // encontra alvo (preferir o selecionado no preview principal)
-    const origIframe = iframeRefs.current[imageEditorModal!.slideIndex];
+    const origIframe = iframeRefs.current[slideIndex];
     const origDoc = origIframe?.contentDocument || origIframe?.contentWindow?.document || null;
 
     let target: { type: 'img' | 'bg', el: HTMLElement } | null = null;
 
     if (origDoc) {
-      // se havia um [data-editable].selected no original, tenta mesmo ID no modal
       const selectedOrig = origDoc.querySelector('[data-editable].selected') as HTMLElement | null;
       if (selectedOrig && selectedOrig.id) {
         const same = doc.getElementById(selectedOrig.id);
@@ -493,16 +509,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }
     }
-
     if (!target) {
-      // fallback: maior visual
       const best = findLargestVisual(doc);
       if (best) target = best;
     }
-
     if (!target) return;
 
-    // garante wrapper (máscara): mantém tamanho do elemento; imagem ocupa 100% da largura
+    // wrapper & img
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
 
@@ -513,7 +526,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const m = bg.match(/url\(["']?(.+?)["']?\)/i);
       const bgUrl = m?.[1] || '';
 
-      // zera bg-image e coloca <img> posicionado
       let existingImg = el.querySelector('img') as HTMLImageElement | null;
       if (!existingImg) {
         existingImg = doc.createElement('img');
@@ -533,7 +545,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       imgEl = existingImg;
     } else {
       const el = target.el as HTMLImageElement;
-      // wrap só se ainda não tiver
       if (!el.parentElement || !el.parentElement.classList.contains('cv-mask-wrapper')) {
         const w = doc.createElement('div');
         w.className = 'cv-mask-wrapper';
@@ -543,15 +554,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         w.style.borderRadius = getComputedStyle(el).borderRadius;
         w.style.display = 'inline-block';
         w.style.position = 'relative';
-        w.style.overflow = 'hidden'; // máscara no modal
-
+        w.style.overflow = 'hidden';
         el.style.position = 'absolute';
         el.style.maxWidth = 'unset';
         el.style.maxHeight = 'unset';
         el.style.userSelect = 'none';
         if (!el.style.left) el.style.left = '0px';
         if (!el.style.top) el.style.top = '0px';
-
         if (el.parentNode) el.parentNode.replaceChild(w, el);
         w.appendChild(el);
         wrapper = w;
@@ -562,29 +571,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       imgEl = wrapper.querySelector('img') as HTMLImageElement;
     }
 
-    // imagem ocupa 100% da largura do wrapper; altura proporcional
     const fitImageToWrapperWidth = () => {
       if (!imgEl) return;
       const nW = imgEl.naturalWidth || imgEl.width;
       const nH = imgEl.naturalHeight || imgEl.height;
       const ratio = nH / nW;
-
       const wW = wrapper.clientWidth;
       const expectedH = wW * ratio;
-
       imgEl.style.width = `${wW}px`;
       imgEl.style.height = `${expectedH}px`;
-
       if (!imgEl.style.top) imgEl.style.top = `${(wrapper.clientHeight - expectedH) / 2}px`;
       imgEl.style.left = '0px';
       clampDragWithin(wrapper, imgEl);
       refreshDimmer(doc, wrapper);
     };
-
     if (imgEl?.complete) fitImageToWrapperWidth();
     else imgEl?.addEventListener('load', fitImageToWrapperWidth, { once: true });
 
-    // overlay para arrasto
     const overlay = doc.createElement('div');
     overlay.className = 'cv-mask-overlay';
     wrapper.appendChild(overlay);
@@ -617,7 +620,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     overlay.addEventListener('mousedown', onOverlayDown);
 
-    // handles para redimensionar a ALTURA do container (e também cantos)
+    // handles (altura/cantos)
     const handles = ['n','s','nw','ne','sw','se'] as const;
     const makeHandle = (pos: typeof handles[number]) => {
       const h = doc.createElement('div');
@@ -625,7 +628,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (['nw','ne','sw','se'].includes(pos)) {
         h.style.width='12px'; h.style.height='12px'; h.style.borderRadius='50%'; h.style.cursor=`${pos}-resize`;
       } else {
-        // n/s
         h.style.width='40px'; h.style.height='8px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`;
         h.style.left='50%'; h.style.transform='translateX(-50%)';
       }
@@ -651,20 +653,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           const dx = e.clientX - startX;
           let newH = startH;
           let newW = startW;
-
           if (pos.includes('s')) newH = startH + dy;
           if (pos.includes('n')) newH = startH - dy;
           if (pos.includes('e')) newW = startW + dx;
           if (pos.includes('w')) newW = startW - dx;
 
-          // POR ENQUANTO, travamos a largura (mantemos máscara alinhada ao design). Se quiser liberar, remova as linhas abaixo e habilite newW.
+          // Por padrão só altura (remova o comentário para liberar largura)
           if (newH > 40) wrapper.style.height = `${newH}px`;
-
-          // opcional: se quiser liberar largura no modal:
           // if (newW > 80) wrapper.style.width = `${newW}px`;
 
           if (imgEl) {
-            // imagem continua 100% da largura do wrapper
             const nW = imgEl.naturalWidth || imgEl.width;
             const nH = imgEl.naturalHeight || imgEl.height;
             const ratio = nH / nW;
@@ -691,16 +689,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     handles.forEach(makeHandle);
 
-    // Botão Done dentro do modal (em overlay fora do iframe)
-    // -> tratado no contêiner React (fora do iframe)
-
-    // Salvar referência no dataset p/ aplicar de volta
-    // Se não houver id, cria um
     if (!target.el.id) target.el.id = `cv-target-${Date.now()}`;
     (doc.body as any).__cvTargetSelector = `#${target.el.id}`;
     (doc.body as any).__cvTargetType = target.type;
 
-    // Fit inicial + dimmer
     const onWinResize = () => {
       fitImageToWrapperWidth();
       refreshDimmer(doc, wrapper);
@@ -708,128 +700,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     doc.defaultView?.addEventListener('resize', onWinResize);
   };
 
-  const refreshDimmer = (doc: Document, wrapper: HTMLElement) => {
-    // cria blocos
-    const ensure = (cls: string) => {
-      let el = doc.querySelector(`.${cls}`) as HTMLDivElement | null;
-      if (!el) {
-        el = doc.createElement('div');
-        el.className = cls;
-        doc.body.appendChild(el);
-      }
-      return el;
-    };
-    ensure('cv-dim');
-    const topB = ensure('cv-dim-top'); topB.classList.add('cv-dim-block');
-    const rightB = ensure('cv-dim-right'); rightB.classList.add('cv-dim-block');
-    const bottomB = ensure('cv-dim-bottom'); bottomB.classList.add('cv-dim-block');
-    const leftB = ensure('cv-dim-left'); leftB.classList.add('cv-dim-block');
-
-    const rect = wrapper.getBoundingClientRect();
-    const vw = doc.defaultView?.innerWidth || 0;
-    const vh = doc.defaultView?.innerHeight || 0;
-
-    topB.style.left = '0px'; topB.style.top = '0px';
-    topB.style.width = `${vw}px`; topB.style.height = `${Math.max(0, rect.top)}px`;
-
-    bottomB.style.left = '0px'; bottomB.style.top = `${Math.max(0, rect.bottom)}px`;
-    bottomB.style.width = `${vw}px`; bottomB.style.height = `${Math.max(0, vh - rect.bottom)}px`;
-
-    leftB.style.left = '0px'; leftB.style.top = `${Math.max(0, rect.top)}px`;
-    leftB.style.width = `${Math.max(0, rect.left)}px`; leftB.style.height = `${Math.max(0, rect.height)}px`;
-
-    rightB.style.left = `${Math.max(0, rect.right)}px`; rightB.style.top = `${Math.max(0, rect.top)}px`;
-    rightB.style.width = `${Math.max(0, vw - rect.right)}px`; rightB.style.height = `${Math.max(0, rect.height)}px`;
-  };
-
-  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
-    const wW = wrapper.clientWidth;
-    const wH = wrapper.clientHeight;
-    const iW = img.offsetWidth;
-    const iH = img.offsetHeight;
-
-    // largura cola 100% -> sem arrasto horizontal (pode travar em 0)
-    let left = parseFloat(img.style.left || '0');
-    left = 0;
-
-    // vertical limitado para cobrir sempre
-    let top = parseFloat(img.style.top || '0');
-    const minTop = Math.min(0, wH - iH);
-    const maxTop = 0;
-    if (top < minTop) top = minTop;
-    if (top > maxTop) top = maxTop;
-
-    img.style.left = `${left}px`;
-    img.style.top = `${top}px`;
-  };
-
-  const closeImageEditor = (apply: boolean) => {
-    if (!imageEditorModal) {
-      setImageEditorModal(null);
-      return;
-    }
-    const modal = modalIframeRef.current;
-    const modalDoc = modal?.contentDocument || modal?.contentWindow?.document;
-    if (!modalDoc) {
-      setImageEditorModal(null);
-      return;
-    }
-
-    // coletar estado final
-    const selector: string = (modalDoc.body as any).__cvTargetSelector;
-    const type: 'img' | 'bg' = (modalDoc.body as any).__cvTargetType || 'img';
-    const target = selector ? (modalDoc.querySelector(selector) as HTMLElement | null) : null;
-
-    if (apply && target) {
-      let wrapper: HTMLElement | null = null;
-      let img: HTMLImageElement | null = null;
-
-      if (type === 'bg') {
-        wrapper = target;
-        img = wrapper.querySelector('img');
-      } else {
-        if (target.tagName === 'IMG') {
-          img = target as HTMLImageElement;
-          wrapper = img.parentElement && img.parentElement.classList.contains('cv-mask-wrapper')
-            ? (img.parentElement as HTMLElement)
-            : null;
-        } else {
-          // caso raro
-          wrapper = target;
-          img = wrapper.querySelector('img');
-        }
-      }
-
-      if (wrapper && img) {
-        const finalState = {
-          type,
-          targetSelector: selector,
-          wrapperWidth: wrapper.clientWidth,
-          wrapperHeight: wrapper.clientHeight,
-          imgWidth: img.offsetWidth,
-          imgHeight: img.offsetHeight,
-          imgLeft: parseFloat(img.style.left || '0'),
-          imgTop: parseFloat(img.style.top || '0'),
-        };
-
-        // aplica no preview original
-        applyToPreview(imageEditorModal.slideIndex, finalState);
-      }
-    }
-
-    setImageEditorModal(null);
-  };
-
   const applyToPreview = (
     slideIndex: number,
     final: {
       type: 'img' | 'bg';
       targetSelector: string;
-      wrapperWidth: number;
       wrapperHeight: number;
-      imgWidth: number;
       imgHeight: number;
-      imgLeft: number;
       imgTop: number;
     }
   ) => {
@@ -845,7 +722,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     let imgEl: HTMLImageElement | null = null;
 
     if (final.type === 'bg') {
-      // converte bg em wrapper com img posicionado
       const cs = doc.defaultView?.getComputedStyle(orig);
       let bg = cs?.backgroundImage || '';
       const m = bg.match(/url\(["']?(.+?)["']?\)/i);
@@ -864,17 +740,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
       wrapper = orig;
       imgEl = existingImg;
-      // aplica tamanhos/posições
-      wrapper.style.overflow = 'hidden';
-      // mantém a largura original; altura conforme final
-      wrapper.style.height = `${final.wrapperHeight}px`;
 
-      imgEl.style.width = `${wrapper.clientWidth}px`; // cola largura do wrapper
+      wrapper.style.overflow = 'hidden';
+      wrapper.style.height = `${final.wrapperHeight}px`;
+      imgEl.style.width = `${wrapper.clientWidth}px`;
       imgEl.style.height = `${final.imgHeight}px`;
-      imgEl.style.left = `0px`; // travado
+      imgEl.style.left = `0px`;
       imgEl.style.top = `${final.imgTop}px`;
     } else {
-      // IMG
       const el = orig.tagName === 'IMG' ? (orig as HTMLImageElement) : (orig.querySelector('img') as HTMLImageElement);
       if (!el) return;
 
@@ -904,10 +777,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         wrapper.style.overflow = 'hidden';
       }
 
-      // aplica altura do wrapper (largura permanece a do design)
       wrapper.style.height = `${final.wrapperHeight}px`;
-
-      // imagem = 100% da largura do wrapper (mantém proporção)
       imgEl.style.width = `${wrapper.clientWidth}px`;
       imgEl.style.height = `${final.imgHeight}px`;
       imgEl.style.left = `0px`;
@@ -915,8 +785,53 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }
   };
 
-  // =============================
-  // CLICK dentro do preview principal
+  const closeImageEditor = (apply: boolean) => {
+    const iframe = modalIframeRef.current;
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+
+    if (apply && doc) {
+      const selector: string = (doc.body as any).__cvTargetSelector;
+      const type: 'img' | 'bg' = (doc.body as any).__cvTargetType || 'img';
+      const target = selector ? (doc.querySelector(selector) as HTMLElement | null) : null;
+
+      if (target) {
+        let wrapper: HTMLElement | null = null;
+        let img: HTMLImageElement | null = null;
+
+        if (type === 'bg') {
+          wrapper = target;
+          img = wrapper.querySelector('img');
+        } else {
+          if (target.tagName === 'IMG') {
+            const el = target as HTMLImageElement;
+            wrapper = el.parentElement && el.parentElement.classList.contains('cv-mask-wrapper')
+              ? (el.parentElement as HTMLElement)
+              : null;
+            img = el;
+          } else {
+            wrapper = target;
+            img = wrapper.querySelector('img');
+          }
+        }
+
+        if (wrapper && img && imageEditorModal) {
+          const finalState = {
+            type,
+            targetSelector: selector,
+            wrapperHeight: wrapper.clientHeight,
+            imgHeight: img.offsetHeight,
+            imgTop: parseFloat(img.style.top || '0'),
+          };
+          applyToPreview(imageEditorModal.slideIndex, finalState);
+        }
+      }
+    }
+
+    // fecha modal
+    setImageEditorModal(null);
+  };
+
+  // ====== Interações no preview principal (seleção + abrir modal ao clicar na imagem) ========
   useEffect(() => {
     const setupIframeInteraction = (iframe: HTMLIFrameElement, slideIndex: number) => {
       if (!iframe.contentWindow) return;
@@ -937,7 +852,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
           if (htmlElement.getAttribute('contenteditable') === 'true') return;
 
-          // limpa seleção
           iframeRefs.current.forEach((f) => {
             if (!f || !f.contentWindow) return;
             const d = f.contentDocument || f.contentWindow.document;
@@ -953,7 +867,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             else selectedImageRefs.current[slideIndex] = null;
 
             handleElementClick(slideIndex, 'background');
-            // abre o modal explicitamente
             openImageEditor(slideIndex, isImg ? 'img' : 'bg');
           } else {
             selectedImageRefs.current[slideIndex] = null;
@@ -1003,52 +916,57 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // =============================
-  // UI
+  // ====== UI principal =========================================================================
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* MODAL DE EDIÇÃO DE IMAGEM */}
-      {imageEditorModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center">
-          {/* backdrop escuro */}
-          <div className="absolute inset-0 bg-black/70" />
-          {/* contêiner do slide (centralizado) */}
-          <div className="relative z-[201] w-[90vw] h-[90vh] max-w-[1100px] flex flex-col">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-white text-sm">Edição da imagem — Slide {imageEditorModal.slideIndex + 1}</div>
-              <div className="space-x-2">
-                <button
-                  onClick={() => closeImageEditor(false)}
-                  className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-white text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => closeImageEditor(true)}
-                  className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
-                >
-                  Done
-                </button>
+      {/* MODAL via PORTAL */}
+      {imageEditorModal &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[9999]">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/70" />
+
+            {/* Janela */}
+            <div className="relative z-[10000] w-[90vw] h-[90vh] max-w-[1100px] mx-auto my-[5vh] flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-white text-sm">
+                  Edição da imagem — Slide {imageEditorModal.slideIndex + 1}
+                </div>
+                <div className="space-x-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); closeImageEditor(false); }}
+                    className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-white text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); closeImageEditor(true); }}
+                    className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative flex-1 bg-neutral-800 rounded-lg overflow-hidden ring-2 ring-blue-500/40">
+                <iframe
+                  ref={modalIframeRef}
+                  // renderiza apenas o slide selecionado
+                  srcDoc={renderedSlides[imageEditorModal.slideIndex]}
+                  className="w-full h-full border-0"
+                  title={`Editor Slide ${imageEditorModal.slideIndex + 1}`}
+                  sandbox="allow-same-origin allow-scripts"
+                  onLoad={() => setupModalIframe(imageEditorModal.slideIndex)}
+                />
+                <div className="absolute bottom-2 left-2 text-neutral-300 text-xs bg-black/40 rounded px-2 py-1">
+                  Arraste a imagem para ajustar • Arraste as bordas/cantos para mudar a altura do recorte • ESC para sair
+                </div>
               </div>
             </div>
-            <div className="relative flex-1 bg-neutral-800 rounded-lg overflow-hidden ring-2 ring-blue-500/40">
-              {/* IFRAME do modal: só o slide selecionado */}
-              <iframe
-                ref={modalIframeRef}
-                srcDoc={renderedSlides[imageEditorModal.slideIndex]}
-                className="w-full h-full border-0"
-                title={`Editor Slide ${imageEditorModal.slideIndex + 1}`}
-                sandbox="allow-same-origin allow-scripts"
-                onLoad={setupModalIframe}
-              />
-              {/* dica */}
-              <div className="absolute bottom-2 left-2 text-neutral-300 text-xs bg-black/40 rounded px-2 py-1">
-                Arraste a imagem para ajustar • Arraste as bordas/cantos para mudar a altura do recorte • ESC para sair
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )
+      }
 
       {/* Sidebar esquerda */}
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
@@ -1332,9 +1250,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                       <div className="flex items-center justify-between">
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
                         <button
-                          onClick={() => {
-                            openImageEditor(selectedElement.slideIndex);
-                          }}
+                          onClick={(e) => { e.stopPropagation(); openImageEditor(selectedElement.slideIndex); }}
                           className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
                         >
                           Editar esta imagem
