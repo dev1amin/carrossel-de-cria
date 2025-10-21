@@ -268,7 +268,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (imgElement.getAttribute('data-protected') !== 'true') {
             imgElement.setAttribute('data-editable', 'image');
             if (!imgElement.id) imgElement.id = `slide-${index}-img-${imgIdx++}`;
-            // garante estilo pra poder ficar absoluta quando entrar no modo edição
             (imgElement as HTMLElement).style.willChange = 'transform,left,top,width,height';
           }
         });
@@ -330,7 +329,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (titleStyles || titleContent !== undefined) updateElement(`slide-${index}-title`, titleStyles, titleContent);
       if (subtitleStyles || subtitleContent !== undefined) updateElement(`slide-${index}-subtitle`, subtitleStyles, subtitleContent);
 
-      // se tiver background já escolhido, sincroniza
       const bgImage = editedContent[`${index}-background`];
       if (bgImage) {
         const best = findLargestVisual(iframeDoc);
@@ -388,7 +386,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     cleanupImageEdit(slideIndex);
 
-    // define wrapper (para img) ou o próprio elemento (para bg)
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
     let bgEl: HTMLElement | null = null;
@@ -396,7 +393,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (type === 'img') {
       imgEl = target as HTMLImageElement;
 
-      // garante wrapper com overflow hidden
       if (!imgEl.parentElement || !imgEl.parentElement.classList.contains('img-edit-wrapper')) {
         const w = doc.createElement('div');
         w.className = 'img-edit-wrapper';
@@ -408,7 +404,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         w.style.overflow = 'hidden';
         w.style.position = 'relative';
 
-        // imagem absoluta pra poder arrastar
         imgEl.style.position = 'absolute';
         if (!imgEl.style.left) imgEl.style.left = '0px';
         if (!imgEl.style.top) imgEl.style.top = '0px';
@@ -434,7 +429,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (cs && cs.position === 'static') wrapper.style.position = 'relative';
     }
 
-    // overlay que cobre o wrapper — captura drag independente do HTML interno
     const overlay = doc.createElement('div');
     overlay.className = 'img-edit-overlay';
     overlay.style.pointerEvents = 'auto';
@@ -488,7 +482,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     overlay.addEventListener('mousedown', onOverlayDown);
 
-    // alças de resize
     const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
     const makeHandle = (pos: typeof handles[number]) => {
       const h = doc.createElement('div');
@@ -548,7 +541,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     handles.forEach(makeHandle);
 
-    // botão Done
     const done = doc.createElement('button');
     done.className = 'img-edit-done-btn';
     done.textContent = 'Done';
@@ -556,7 +548,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     done.onclick = (e) => { e.preventDefault(); e.stopPropagation(); cleanupImageEdit(slideIndex); setImageEdit(null); };
     wrapper.appendChild(done);
 
-    // salva estado pro painel
     const targetId = (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id || `img-edit-${Date.now()}`;
     (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id = targetId;
     setImageEdit({ slideIndex, type, targetId });
@@ -564,7 +555,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   const enableImageEditFromElement = (slideIndex: number, el: HTMLElement) => {
     const isImg = el.tagName === 'IMG';
-    // atrasa um tick pra não conflitar com seleções
     setTimeout(() => startImageEdit(slideIndex, isImg ? (el as HTMLImageElement) : el, isImg ? 'img' : 'bg'), 0);
   };
 
@@ -575,7 +565,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
-      // clique em elementos editáveis
       const editableElements = iframeDoc.querySelectorAll('[data-editable]');
       editableElements.forEach((element) => {
         const editableType = element.getAttribute('data-editable');
@@ -587,7 +576,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           e.preventDefault(); e.stopPropagation();
           if (htmlElement.getAttribute('contenteditable') === 'true') return;
 
-          // limpa seleções visuais
           iframeRefs.current.forEach((f) => {
             if (!f || !f.contentWindow) return;
             const d = f.contentDocument || f.contentWindow.document;
@@ -652,7 +640,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // ===== util: achar maior visual
+  // ===== util: achar maior visual (única definição!)
   const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
     let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
 
@@ -725,7 +713,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
 
-    // selecionar e entrar no modo edição
     iframeRefs.current.forEach((f) => {
       if (!f || !f.contentWindow) return;
       const d = f.contentDocument || f.contentWindow.document;
@@ -846,35 +833,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setElementStyles(prev => ({ ...prev, [key]: { ...getElementStyle(slideIndex, element), [property]: value } }));
   };
 
-  const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
-    let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
-
-    const imgs = Array.from(iframeDoc.querySelectorAll('img')) as HTMLImageElement[];
-    imgs.forEach(img => {
-      if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
-      const r = img.getBoundingClientRect();
-      const area = r.width * r.height;
-      if (area > 9000) {
-        if (!best || area > best.area) best = { type: 'img', el: img, area };
-      }
-    });
-
-    const allEls = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
-    allEls.forEach(el => {
-      const cs = iframeDoc.defaultView?.getComputedStyle(el);
-      if (!cs) return;
-      if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
-        const r = el.getBoundingClientRect();
-        const area = r.width * r.height;
-        if (area > 9000) {
-          if (!best || area > best.area) best = { type: 'bg', el, area };
-        }
-      }
-    });
-
-    return best ? { type: best.type, el: best.el } : null;
-  };
-
   const getElementIcon = (element: string) => {
     if (element.includes('title') || element.includes('subtitle')) return <Type className="w-4 h-4 text-neutral-500" />;
     return <ImageIcon className="w-4 h-4 text-neutral-500" />;
@@ -964,12 +922,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             <div className="text-neutral-500 text-sm">{slides.length} slides</div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <button onClick={handleZoomOut} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom Out">
+        <div className="flex items-center space-x-2">
+            <button onClick={() => setZoom((p) => Math.max(p - 0.1, 0.1))} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom Out">
               <ZoomOut className="w-4 h-4" />
             </button>
             <div className="bg-neutral-800 text-white px-3 py-1.5 rounded text-xs min-w-[70px] text-center">{Math.round(zoom * 100)}%</div>
-            <button onClick={handleZoomIn} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom In">
+            <button onClick={() => setZoom((p) => Math.min(p + 0.1, 2))} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom In">
               <ZoomIn className="w-4 h-4" />
             </button>
             <div className="w-px h-6 bg-neutral-800 mx-2" />
@@ -1158,7 +1116,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
                         <button
                           onClick={() => {
-                            // tenta reativar edição no maior visual se não tiver um selecionado
                             const iframe = iframeRefs.current[selectedElement.slideIndex];
                             const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
                             if (!doc) return;
