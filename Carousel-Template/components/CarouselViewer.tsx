@@ -190,7 +190,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = ensureStyleTag(html);
     const conteudo = carouselData.conteudos[slideIndex];
-    aconst titleText = conteudo?.title || '';
+    const titleText = conteudo?.title || '';
     const subtitleText = conteudo?.subtitle || '';
 
     const addEditableSpan = (text: string, id: string, attr: string) => {
@@ -246,7 +246,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       minLeft, minTop
     };
   };
-  // cover com bleed para evitar vazamento subpixel
+  // cover com bleed para evitar vazamento subpixel no popup
   const computeCoverBleed = (natW: number, natH: number, contW: number, contH: number, bleedPx = 2) => {
     const scale = Math.max(contW / natW, contH / natH);
     const displayW = Math.ceil(natW * scale) + bleedPx;
@@ -692,8 +692,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     } else {
       // BACKGROUND com cover + posição relativa aos offsets (em %)
       const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
-      const displayW = Math.ceil(naturalW * scale) + 2; // bleed mínimo
-      const displayH = Math.ceil(naturalH * scale) + 2;
+      const displayW = Math.ceil(naturalW * scale);
+      const displayH = Math.ceil(naturalH * scale);
 
       const maxOffsetX = Math.max(0, displayW - targetWidthPx);
       const maxOffsetY = Math.max(0, displayH - containerHeightPx);
@@ -833,7 +833,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 className="relative bg-neutral-950 border border-neutral-800 rounded-2xl w-[min(92vw,1200px)] h-[min(90vh,900px)] shadow-2xl pointer-events-auto overflow-hidden"
                 role="dialog"
                 aria-modal="true"
-                style={{ resize: 'vertical' }}
+                style={{ resize: 'vertical' }} // usuário pode aumentar a altura do modal
               >
                 <div className="h-12 px-4 flex items-center justify-between border-b border-neutral-800">
                   <div className="text-white font-medium text-sm">Edição da imagem — Slide {imageModal.slideIndex + 1}</div>
@@ -886,13 +886,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         const containerWidth = imageModal.targetWidthPx;
                         const containerHeight = imageModal.containerHeightPx;
 
-                        // COVER com bleed: escala mínima para cobrir a máscara SEM vazar
+                        // COVER com bleed para matar gaps subpixel
                         const { displayW, displayH } = computeCoverBleed(
                           imageModal.naturalW,
                           imageModal.naturalH,
                           containerWidth,
                           containerHeight,
-                          2
+                          2 // bleed
                         );
 
                         // limites (não deixa ver fundo)
@@ -938,7 +938,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 overflow: 'hidden',
                               }}
                             >
-                              {/* imagem COVER + drag X/Y (com bleed e aceleração) */}
+                              {/* imagem COVER + drag X/Y */}
                               <img
                                 src={imageModal.imageUrl}
                                 alt="to-edit"
@@ -1070,7 +1070,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             <h2 className="text-white font-semibold">Carousel Editor</h2>
             <div className="text-neutral-500 text-sm">{slides.length} slides</div>
           </div>
-        <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
             <button
               onClick={() => setZoom(p => Math.max(0.1, p - 0.1))}
               className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
@@ -1166,7 +1166,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               {renderedSlides.map((slide, i) => (
                 <div
                   key={i}
-                  className={`relative bg.white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${focusedSlide === i ? 'ring-4 ring-blue-500' : ''}`}
+                  className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${focusedSlide === i ? 'ring-4 ring-blue-500' : ''}`}
                   style={{ width: `${slideWidth}px`, height: `${slideHeight}px` }}
                 >
                   <iframe
@@ -1198,7 +1198,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               <div className="w-16 h-16 bg-neutral-900 rounded-full flex items-center justify-center mb-4">
                 <Type className="w-8 h-8 text-neutral-700" />
               </div>
-              <h4 className="text.white font-medium mb-2">No Element Selected</h4>
+              <h4 className="text-white font-medium mb-2">No Element Selected</h4>
               <p className="text-neutral-500 text-sm mb-1">Click on an element in the preview</p>
               <p className="text-neutral-500 text-sm">to edit its properties</p>
               <div className="mt-6 space-y-2 text-xs text-neutral-600">
@@ -1228,7 +1228,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Size</label>
                     <input
                       type="text"
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline.none focus:border-blue-500 transition-colors"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                       value={getElementStyle(selectedElement.slideIndex, selectedElement.element).fontSize}
                       onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'fontSize', e.target.value)}
                       placeholder="e.g. 24px, 1.5rem"
@@ -1238,7 +1238,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   <div>
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Weight</label>
                     <select
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline.none focus:border-blue-500 transition-colors"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                       value={getElementStyle(selectedElement.slideIndex, selectedElement.element).fontWeight}
                       onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'fontWeight', e.target.value)}
                     >
@@ -1255,7 +1255,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   <div>
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Text Align</label>
                     <select
-                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline.none focus:border-blue-500 transition-colors"
+                      className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                       value={getElementStyle(selectedElement.slideIndex, selectedElement.element).textAlign}
                       onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'textAlign', e.target.value)}
                     >
@@ -1277,7 +1277,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                       />
                       <input
                         type="text"
-                        className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline.none focus:border-blue-500 transition-colors"
+                        className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
                         value={getElementStyle(selectedElement.slideIndex, selectedElement.element).color}
                         onChange={(e) => updateElementStyle(selectedElement.slideIndex, selectedElement.element!, 'color', e.target.value)}
                         placeholder="#FFFFFF"
