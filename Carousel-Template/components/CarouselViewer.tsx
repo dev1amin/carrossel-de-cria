@@ -37,6 +37,8 @@ type ImageEditModalState =
       // offsets da imagem dentro da máscara (drag X/Y)
       imgOffsetTopPx: number;
       imgOffsetLeftPx: number;
+      // zoom/escala da imagem (>= 1 cobre a máscara)
+      zoomScale: number;
       // dimensões/posição do alvo dentro do slide (para alinhar a máscara no preview)
       targetWidthPx: number;
       targetLeftPx: number;
@@ -190,20 +192,22 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = ensureStyleTag(html);
     const conteudo = carouselData.conteudos[slideIndex];
-    const titleText = conteudo?.title || '';
-    const subtitleText = conteudo?.subtitle || '';
+    ohNoExtra: {
+      const titleText = conteudo?.title || '';
+      const subtitleText = conteudo?.subtitle || '';
 
-    const addEditableSpan = (text: string, id: string, attr: string) => {
-      const lines = text.split('\n').filter(l => l.trim());
-      lines.forEach(line => {
-        const escaped = line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp(`(>[^<]*)(${escaped})([^<]*<)`, 'gi');
-        result = result.replace(re, (m, b, t, a) => `${b}<span id="${id}" data-editable="${attr}" contenteditable="false">${t}</span>${a}`);
-      });
-    };
+      const addEditableSpan = (text: string, id: string, attr: string) => {
+        const lines = text.split('\n').filter(l => l.trim());
+        lines.forEach(line => {
+          const escaped = line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const re = new RegExp(`(>[^<]*)(${escaped})([^<]*<)`, 'gi');
+          result = result.replace(re, (m, b, t, a) => `${b}<span id="${id}" data-editable="${attr}" contenteditable="false">${t}</span>${a}`);
+        });
+      };
 
-    if (titleText) addEditableSpan(titleText, `slide-${slideIndex}-title`, 'title');
-    if (subtitleText) addEditableSpan(subtitleText, `slide-${slideIndex}-subtitle`, 'subtitle');
+      if (titleText) addEditableSpan(titleText, `slide-${slideIndex}-title`, 'title');
+      if (subtitleText) addEditableSpan(subtitleText, `slide-${slideIndex}-subtitle`, 'subtitle');
+    }
 
     result = result.replace(/<style>/i, `<style>
       [data-editable]{cursor:pointer!important;position:relative;display:inline-block!important}
@@ -317,7 +321,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
         return img;
       } else {
-        // GARANTE COVER + CENTER IMEDIATO
+        // cover + center imediato
         best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
         best.el.style.setProperty('background-repeat', 'no-repeat', 'important');
         best.el.style.setProperty('background-size', 'cover', 'important');
@@ -394,7 +398,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }, 60);
 
-      // aplica bg escolhido (se houver) — JÁ FORÇA cover + center
+      // aplica bg escolhido (se houver) — cover + center
       const bg = editedContent[`${index}-background`];
       if (bg) {
         const best = findLargestVisual(doc);
@@ -608,6 +612,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         naturalH: natH,
         imgOffsetTopPx,
         imgOffsetLeftPx,
+        zoomScale: 1, // NOVO: zoom inicial = cover
         targetWidthPx,
         targetLeftPx,
         targetTopPx,
@@ -627,7 +632,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     const {
       slideIndex, targetType, targetSelector, imageUrl,
-      containerHeightPx, imgOffsetTopPx, imgOffsetLeftPx, naturalW, naturalH, targetWidthPx
+      containerHeightPx, imgOffsetTopPx, imgOffsetLeftPx, naturalW, naturalH, targetWidthPx, zoomScale
     } = imageModal;
 
     const iframe = iframeRefs.current[slideIndex];
@@ -657,17 +662,20 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
       (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
 
-      // COVER + centralização/clamp
+      // COVER + ZOOM + centralização/clamp
       const { displayW, displayH } = computeCover(naturalW, naturalH, targetWidthPx, containerHeightPx);
+      const zoomW = displayW * zoomScale;
+      const zoomH = displayH * zoomScale;
+
       const { left: centerLeft, top: centerTop, minLeft, minTop } =
-        centeredOffsets(displayW, displayH, targetWidthPx, containerHeightPx);
+        centeredOffsets(zoomW, zoomH, targetWidthPx, containerHeightPx);
 
       const safeLeft = clamp(isNaN(imgOffsetLeftPx) ? centerLeft : imgOffsetLeftPx, minLeft, 0);
       const safeTop  = clamp(isNaN(imgOffsetTopPx)  ? centerTop  : imgOffsetTopPx,  minTop,  0);
 
       (el as HTMLElement).style.position = 'absolute';
-      (el as HTMLElement).style.width  = `${displayW}px`;
-      (el as HTMLElement).style.height = `${displayH}px`;
+      (el as HTMLElement).style.width  = `${zoomW}px`;
+      (el as HTMLElement).style.height = `${zoomH}px`;
       (el as HTMLElement).style.left   = `${safeLeft}px`;
       (el as HTMLElement).style.top    = `${safeTop}px`;
       (el as HTMLElement).style.maxWidth = 'unset';
@@ -681,14 +689,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (el as HTMLImageElement).style.objectFit = 'cover'; // semântico
 
     } else {
-      // BACKGROUND com cover + posição relativa aos offsets (em %)
-      const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
-      const displayW = naturalW * scale;
-      const displayH = naturalH * scale;
+      // BACKGROUND: usamos tamanho absoluto em px para refletir zoom com precisão
+      const { displayW, displayH } = computeCover(naturalW, naturalH, targetWidthPx, containerHeightPx);
+      const zoomW = displayW * zoomScale;
+      const zoomH = displayH * zoomScale;
 
-      const maxOffsetX = Math.max(0, displayW - targetWidthPx);
-      const maxOffsetY = Math.max(0, displayH - containerHeightPx);
+      const maxOffsetX = Math.max(0, zoomW - targetWidthPx);
+      const maxOffsetY = Math.max(0, zoomH - containerHeightPx);
 
+      // converte offsets em porcentagem relativa ao tamanho "zoomado"
       let xPerc = maxOffsetX ? (-imgOffsetLeftPx / maxOffsetX) * 100 : 50;
       let yPerc = maxOffsetY ? (-imgOffsetTopPx  / maxOffsetY) * 100 : 50;
       if (!isFinite(xPerc)) xPerc = 50;
@@ -696,7 +705,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
       el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
       el.style.setProperty('background-repeat', 'no-repeat', 'important');
-      el.style.setProperty('background-size', 'cover', 'important'); // cover real
+      el.style.setProperty('background-size', `${zoomW}px ${zoomH}px`, 'important'); // px exatos (mantém zoom)
       el.style.setProperty('background-position-x', `${xPerc}%`, 'important');
       el.style.setProperty('background-position-y', `${yPerc}%`, 'important');
       el.style.setProperty('height', `${containerHeightPx}px`, 'important');
@@ -829,6 +838,46 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 <div className="h-12 px-4 flex items-center justify-between border-b border-neutral-800">
                   <div className="text-white font-medium text-sm">Edição da imagem — Slide {imageModal.slideIndex + 1}</div>
                   <div className="flex items-center gap-2">
+                    {/* Controles de ZOOM da imagem */}
+                    <div className="flex items-center gap-2 mr-2">
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 text-white p-1 rounded"
+                        onClick={() => {
+                          const ns = Math.max(1, +(imageModal.zoomScale - 0.1).toFixed(2));
+                          setImageModal({ ...imageModal, zoomScale: ns });
+                        }}
+                        title="Diminuir zoom da imagem"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={0.01}
+                        value={imageModal.zoomScale}
+                        onChange={(e) => {
+                          const ns = Math.max(1, Math.min(3, parseFloat(e.target.value)));
+                          setImageModal({ ...imageModal, zoomScale: ns });
+                        }}
+                        className="w-32 accent-blue-500"
+                        title="Zoom da imagem"
+                      />
+                      <button
+                        className="bg-neutral-800 hover:bg-neutral-700 text-white p-1 rounded"
+                        onClick={() => {
+                          const ns = Math.min(3, +(imageModal.zoomScale + 0.1).toFixed(2));
+                          setImageModal({ ...imageModal, zoomScale: ns });
+                        }}
+                        title="Aumentar zoom da imagem"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                      <div className="text-neutral-300 text-xs w-10 text-right tabular-nums">
+                        {(imageModal.zoomScale*100).toFixed(0)}%
+                      </div>
+                    </div>
+
                     <button
                       onClick={applyImageEditModal}
                       className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
@@ -851,6 +900,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   <div className="text-neutral-400 text-xs mb-3 space-y-1">
                     <div>• Arraste a <span className="text-neutral-200">imagem</span> para ajustar o enquadramento.</div>
                     <div>• Arraste a <span className="text-neutral-200">borda inferior</span> para aumentar a área visível.</div>
+                    <div>• Use o <span className="text-neutral-200">zoom</span> para redimensionar a imagem.</div>
                     <div>• As partes <span className="text-neutral-200">esmaecidas</span> não aparecerão no slide final.</div>
                   </div>
 
@@ -877,13 +927,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         const containerWidth = imageModal.targetWidthPx;
                         const containerHeight = imageModal.containerHeightPx;
 
-                        // COVER: escala mínima para cobrir a máscara
-                        const { displayW, displayH } = computeCover(
+                        // COVER base
+                        const base = computeCover(
                           imageModal.naturalW,
                           imageModal.naturalH,
                           containerWidth,
                           containerHeight
                         );
+                        // aplica zoom na imagem
+                        const displayW = base.displayW * imageModal.zoomScale;
+                        const displayH = base.displayH * imageModal.zoomScale;
 
                         // limites (não deixa ver fundo)
                         const minTop = containerHeight - displayH;   // <= 0
@@ -928,7 +981,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 overflow: 'hidden',
                               }}
                             >
-                              {/* imagem COVER + drag X/Y */}
+                              {/* imagem COVER+ZOOM + drag X/Y */}
                               <img
                                 src={imageModal.imageUrl}
                                 alt="to-edit"
@@ -959,8 +1012,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 position="bottom"
                                 onResize={(dy) => {
                                   const newH = Math.max(60, containerHeight + dy);
-                                  const { displayW: newDisplayW, displayH: newDisplayH } =
-                                    computeCover(imageModal.naturalW, imageModal.naturalH, containerWidth, newH);
+                                  const base2 = computeCover(imageModal.naturalW, imageModal.naturalH, containerWidth, newH);
+                                  const newDisplayW = base2.displayW * imageModal.zoomScale;
+                                  const newDisplayH = base2.displayH * imageModal.zoomScale;
 
                                   const newMinTop  = newH - newDisplayH;
                                   const newMinLeft = containerWidth - newDisplayW;
