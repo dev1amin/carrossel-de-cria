@@ -10,6 +10,7 @@ import { searchImages } from '../services';
 /** ====================== Utils ======================= */
 const isVideoUrl = (url: string): boolean => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
 const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
+const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
 /** ====================== Tipos ======================= */
 interface CarouselViewerProps {
@@ -34,12 +35,17 @@ type ImageEditModalState =
       // dimensões naturais da imagem
       naturalW: number;
       naturalH: number;
-      // offset vertical da imagem dentro da máscara
+      // offsets da imagem dentro da máscara (pan)
       imgOffsetTopPx: number;
+      imgOffsetLeftPx: number;
       // dimensões/posição do alvo dentro do slide (para alinhar a máscara no preview)
       targetWidthPx: number;
       targetLeftPx: number;
       targetTopPx: number;
+      // preview zoom/pan
+      previewZoom: number;
+      previewPanX: number;
+      previewPanY: number;
     }
   | { open: false };
 
@@ -62,13 +68,14 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return ReactDOM.createPortal(children, elRef.current);
 };
 
-const DragSurface: React.FC<{ onDrag: (dy: number) => void }> = ({ onDrag }) => {
+// Drag surface genérica (x,y)
+const DragSurface: React.FC<{ onDrag: (dx: number, dy: number) => void }> = ({ onDrag }) => {
   const dragging = useRef(false);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
-      onDrag(e.movementY);
+      onDrag(e.movementX, e.movementY);
     };
     const onUp = () => { dragging.current = false; };
 
@@ -495,10 +502,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
     if (!doc) return;
 
-    // alvo: selecionado ou maior visual
+    // alvo: selecionado ou maior visual (fallback)
     const selected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
     const largest = findLargestVisual(doc)?.el || null;
-    const chosen = selected || largest;
+    const chosen = selected || largest || doc.body; // fallback final
     if (!chosen) return;
 
     // define id estável
@@ -512,14 +519,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (chosen.tagName === 'IMG') {
       imageUrl = (chosen as HTMLImageElement).src;
       targetType = 'img';
-    } else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
+    } else if (cs?.backgroundImage && cs.backgroundImage.includes('url('))) {
       const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
       imageUrl = m?.[1] || '';
       targetType = 'bg';
     }
     if (!imageUrl) return;
 
-    // métricas do alvo
+    // métricas do alvo (em px)
     const r = chosen.getBoundingClientRect();
     const bodyRect = doc.body.getBoundingClientRect();
     const targetLeftPx = r.left - bodyRect.left;
@@ -534,20 +541,30 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     tmp.src = imageUrl;
 
     const finalizeOpen = (natW: number, natH: number) => {
-      // offset inicial:
+      // offsets iniciais (começa centralizado -> 0 será recalculado via cover)
       let imgOffsetTopPx = 0;
-      if (targetType === 'img') {
-        const top = parseFloat((chosen as HTMLImageElement).style.top || '0');
-        imgOffsetTopPx = isNaN(top) ? 0 : top;
-      } else {
-        // converter background-position-y para px
+      let imgOffsetLeftPx = 0;
+
+      // Se elemento tem background-position, converte para offsets aproximados (qualquer valor vira ponto de partida)
+      if (targetType === 'bg') {
         const cs2 = doc.defaultView?.getComputedStyle(chosen);
-        const bgPosY = cs2?.backgroundPositionY || '0%';
-        const imgDisplayH = targetWidthPx * (natH / natW); // width 100%
-        const maxOffset = Math.max(0, imgDisplayH - containerHeightPx);
-        let perc = 0;
-        if (bgPosY.endsWith('%')) perc = parseFloat(bgPosY) / 100;
-        imgOffsetTopPx = -perc * maxOffset;
+        const bgPosY = cs2?.backgroundPositionY || '50%';
+        const bgPosX = cs2?.backgroundPositionX || '50%';
+        const scale = Math.max(targetWidthPx / natW, containerHeightPx / natH);
+        const displayW = natW * scale;
+        const displayH = natH * scale;
+        const minLeft = targetWidthPx - displayW; // <=0
+        const minTop  = containerHeightPx - displayH; // <=0
+
+        const perc = (v: string) => v.endsWith('%') ? parseFloat(v)/100 : 0.5;
+        const pxFromPerc = (p: number, extra: number) => -p * extra;
+
+        const extraX = displayW - targetWidthPx;
+        const extraY = displayH - containerHeightPx;
+        imgOffsetLeftPx = extraX ? pxFromPerc(perc(bgPosX), extraX) : 0;
+        imgOffsetTopPx  = extraY ? pxFromPerc(perc(bgPosY), extraY) : 0;
+        imgOffsetLeftPx = clamp(imgOffsetLeftPx, minLeft, 0);
+        imgOffsetTopPx  = clamp(imgOffsetTopPx,  minTop,  0);
       }
 
       setImageModal({
@@ -562,9 +579,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         naturalW: natW,
         naturalH: natH,
         imgOffsetTopPx,
+        imgOffsetLeftPx,
         targetWidthPx,
         targetLeftPx,
         targetTopPx,
+        previewZoom: 1.0,
+        previewPanX: 0,
+        previewPanY: 0,
       });
       document.documentElement.style.overflow = 'hidden';
     };
@@ -581,7 +602,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     const {
       slideIndex, targetType, targetSelector, imageUrl,
-      containerHeightPx, imgOffsetTopPx, naturalW, naturalH, targetWidthPx
+      containerHeightPx, imgOffsetTopPx, imgOffsetLeftPx, naturalW, naturalH, targetWidthPx
     } = imageModal;
 
     const iframe = iframeRefs.current[slideIndex];
@@ -591,8 +612,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const el = doc.querySelector(targetSelector) as HTMLElement | null;
     if (!el) { setImageModal({ open: false }); document.documentElement.style.overflow = ''; return; }
 
+    // cálculo de cover -> percentuais para posicionamento
+    const Wc = targetWidthPx;
+    const Hc = containerHeightPx;
+    const scale = Math.max(Wc / naturalW, Hc / naturalH);
+    const displayW = naturalW * scale;
+    const displayH = naturalH * scale;
+    const extraX = Math.max(0, displayW - Wc);
+    const extraY = Math.max(0, displayH - Hc);
+    const percX = extraX ? (-imgOffsetLeftPx / extraX) * 100 : 50;
+    const percY = extraY ? (-imgOffsetTopPx  / extraY) * 100 : 50;
+
     if (targetType === 'img') {
-      // garante wrapper com overflow:hidden
+      // IMG: height:100% + object-fit:cover + object-position:X% Y%
       let wrapper = el.parentElement;
       if (!wrapper || !wrapper.classList.contains('img-crop-wrapper')) {
         const w = doc.createElement('div');
@@ -601,30 +633,27 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         w.style.position = 'relative';
         w.style.overflow = 'hidden';
         w.style.borderRadius = doc.defaultView?.getComputedStyle(el).borderRadius || '';
+        w.style.width = `${Wc}px`;
+        w.style.height = `${Hc}px`;
 
-        (el as HTMLElement).style.position = 'absolute';
-        (el as HTMLElement).style.left = '0px';
-        (el as HTMLElement).style.top = '0px';
-        (el as HTMLElement).style.maxWidth = 'unset';
-        (el as HTMLElement).style.maxHeight = 'unset';
-        (el as HTMLElement).style.width = `${targetWidthPx}px`;
-        (el as HTMLElement).style.height = `${targetWidthPx * (naturalH / naturalW)}px`;
+        (el as HTMLElement).style.position = 'relative';
+        (el as HTMLImageElement).style.width = '100%';
+        (el as HTMLImageElement).style.height = '100%';
+        (el as HTMLImageElement).style.objectFit = 'cover';
+        (el as HTMLImageElement).style.objectPosition = `${clamp(percX,0,100)}% ${clamp(percY,0,100)}%`;
 
         if (el.parentNode) el.parentNode.replaceChild(w, el);
         w.appendChild(el);
         wrapper = w;
       } else {
-        (el as HTMLElement).style.position = 'absolute';
-        (el as HTMLElement).style.left = '0px';
-        (el as HTMLElement).style.maxWidth = 'unset';
-        (el as HTMLElement).style.maxHeight = 'unset';
-        (el as HTMLElement).style.width = `${targetWidthPx}px`;
-        (el as HTMLElement).style.height = `${targetWidthPx * (naturalH / naturalW)}px`;
-      }
+        (wrapper as HTMLElement).style.width = `${Wc}px`;
+        (wrapper as HTMLElement).style.height = `${Hc}px`;
 
-      (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
-      (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
-      (el as HTMLElement).style.top = `${Math.max(Math.min(0, imgOffsetTopPx), containerHeightPx - (targetWidthPx * (naturalH / naturalW)))}px`;
+        (el as HTMLImageElement).style.width = '100%';
+        (el as HTMLImageElement).style.height = '100%';
+        (el as HTMLImageElement).style.objectFit = 'cover';
+        (el as HTMLImageElement).style.objectPosition = `${clamp(percX,0,100)}% ${clamp(percY,0,100)}%`;
+      }
 
       (el as HTMLImageElement).removeAttribute('srcset');
       (el as HTMLImageElement).removeAttribute('sizes');
@@ -632,17 +661,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if ((el as HTMLImageElement).src !== imageUrl) (el as HTMLImageElement).src = imageUrl;
 
     } else {
-      // background
-      const imgDisplayH = targetWidthPx * (naturalH / naturalW);
-      const maxOffset = Math.max(0, imgDisplayH - containerHeightPx);
-      const perc = maxOffset ? (-imgOffsetTopPx / maxOffset) * 100 : 0;
-
+      // BG: cover + position %
       el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
       el.style.setProperty('background-repeat', 'no-repeat', 'important');
-      el.style.setProperty('background-size', '100% auto', 'important');
-      el.style.setProperty('background-position-x', 'center', 'important');
-      el.style.setProperty('background-position-y', `${perc}%`, 'important');
-      el.style.setProperty('height', `${containerHeightPx}px`, 'important');
+      el.style.setProperty('background-size', 'cover', 'important');
+      el.style.setProperty('background-position-x', `${clamp(percX,0,100)}%`, 'important');
+      el.style.setProperty('background-position-y', `${clamp(percY,0,100)}%`, 'important');
+      el.style.setProperty('height', `${Hc}px`, 'important');
       if ((doc.defaultView?.getComputedStyle(el).position || 'static') === 'static') el.style.position = 'relative';
     }
 
@@ -658,7 +683,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   const handleSlideClick = (index: number) => {
-    // limpa seleções
     iframeRefs.current.forEach((iframe) => {
       const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
       if (!doc) return;
@@ -757,7 +781,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   /** ====================== Render ======================= */
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* === MODAL via PORTAL para não ficar atrás do canvas === */}
+      {/* === MODAL via PORTAL === */}
       {imageModal.open && (
         <ModalPortal>
           <div className="fixed inset-0 z-[9999]">
@@ -767,11 +791,34 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 className="relative bg-neutral-950 border border-neutral-800 rounded-2xl w-[min(92vw,1200px)] h-[min(90vh,900px)] shadow-2xl pointer-events-auto overflow-hidden"
                 role="dialog"
                 aria-modal="true"
-                style={{ resize: 'vertical' }} // usuário pode aumentar a altura do modal
+                style={{ resize: 'vertical' }}
               >
                 <div className="h-12 px-4 flex items-center justify-between border-b border-neutral-800">
                   <div className="text-white font-medium text-sm">Edição da imagem — Slide {imageModal.slideIndex + 1}</div>
+                  {/* Controles de zoom do preview */}
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setImageModal(m => m.open ? { ...m, previewZoom: clamp(m.previewZoom - 0.1, 0.2, 3) } : m)}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white px-2 py-1 rounded text-xs"
+                      title="Preview Zoom Out (Ctrl+Scroll)"
+                    >
+                      -
+                    </button>
+                    <div className="text-neutral-400 text-xs w-14 text-center">{imageModal.open ? Math.round(imageModal.previewZoom * 100) : 100}%</div>
+                    <button
+                      onClick={() => setImageModal(m => m.open ? { ...m, previewZoom: clamp(m.previewZoom + 0.1, 0.2, 3) } : m)}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white px-2 py-1 rounded text-xs"
+                      title="Preview Zoom In (Ctrl+Scroll)"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={() => setImageModal(m => m.open ? { ...m, previewZoom: 1, previewPanX: 0, previewPanY: 0 } : m)}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white px-2 py-1 rounded text-xs"
+                      title="Reset Preview"
+                    >
+                      100%
+                    </button>
                     <button
                       onClick={applyImageEditModal}
                       className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
@@ -788,115 +835,193 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   </div>
                 </div>
 
-                {/* conteúdo do editor (contexto do slide + máscara alinhada) */}
-                <div className="w-full h-[calc(100%-3rem)] p-4 overflow-auto">
+                {/* conteúdo do editor */}
+                <div className="w-full h-[calc(100%-3rem)] p-4 overflow-auto"
+                  onWheel={(e) => {
+                    if (!imageModal.open) return;
+                    if (!e.ctrlKey) return;
+                    e.preventDefault();
+                    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+                    setImageModal(m => {
+                      if (!m.open) return m;
+                      const oldZ = m.previewZoom;
+                      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                      const newZ = clamp(oldZ + delta, 0.2, 3);
+                      // zoom centrado no cursor -> ajusta pan
+                      const k = newZ / oldZ;
+                      return {
+                        ...m,
+                        previewZoom: newZ,
+                        previewPanX: mx - k * (mx - m.previewPanX),
+                        previewPanY: my - k * (my - m.previewPanY),
+                      };
+                    });
+                  }}
+                >
                   {/* Instruções */}
                   <div className="text-neutral-400 text-xs mb-3 space-y-1">
-                    <div>• Arraste a <span className="text-neutral-200">imagem</span> para ajustar o enquadramento.</div>
+                    <div>• Arraste a <span className="text-neutral-200">imagem</span> para ajustar o enquadramento (X e Y).</div>
                     <div>• Arraste a <span className="text-neutral-200">borda inferior</span> para aumentar a área visível.</div>
+                    <div>• Use <span className="text-neutral-200">Ctrl + Scroll</span> para zoom no preview; arraste o fundo para pan do preview.</div>
                     <div>• As partes <span className="text-neutral-200">esmaecidas</span> não aparecerão no slide final.</div>
                   </div>
 
                   <div className="grid place-items-center">
                     <div
-                      className="relative bg-neutral-100 rounded-xl shadow-xl border border-neutral-800"
+                      className="relative rounded-xl shadow-xl border border-neutral-800 bg-neutral-100"
                       style={{
                         width: `${imageModal.slideW}px`,
                         height: `${imageModal.slideH}px`,
                         overflow: 'hidden',
+                        position: 'relative',
                       }}
                     >
-                      {/* Preview do SLIDE COMPLETO */}
-                      <iframe
-                        srcDoc={renderedSlides[imageModal.slideIndex]}
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        sandbox="allow-same-origin"
-                        title={`Slide Preview ${imageModal.slideIndex + 1}`}
-                      />
+                      {/* LAYER de transformação compartilhada (iframe + overlays) */}
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          transform: `translate(${imageModal.previewPanX}px, ${imageModal.previewPanY}px) scale(${imageModal.previewZoom})`,
+                          transformOrigin: '0 0',
+                        }}
+                      >
+                        {/* Preview do SLIDE COMPLETO */}
+                        <iframe
+                          srcDoc={renderedSlides[imageModal.slideIndex]}
+                          className="absolute inset-0 w-full h-full pointer-events-none"
+                          sandbox="allow-same-origin"
+                          title={`Slide Preview ${imageModal.slideIndex + 1}`}
+                          style={{ left: 0, top: 0, width: imageModal.slideW, height: imageModal.slideH }}
+                        />
 
-                      {(() => {
-                        const containerLeft = imageModal.targetLeftPx;
-                        const containerTop = imageModal.targetTopPx;
-                        const containerWidth = imageModal.targetWidthPx;
-                        const containerHeight = imageModal.containerHeightPx;
+                        {(() => {
+                          const containerLeft = imageModal.targetLeftPx;
+                          const containerTop = imageModal.targetTopPx;
+                          const containerWidth = imageModal.targetWidthPx;
+                          const containerHeight = imageModal.containerHeightPx;
 
-                        const imgDisplayH = containerWidth * (imageModal.naturalH / imageModal.naturalW);
-                        const minTop = Math.min(0, containerHeight - imgDisplayH);
-                        const maxTop = 0;
-                        const clampedTop = Math.max(minTop, Math.min(maxTop, imageModal.imgOffsetTopPx));
+                          // cover manual
+                          const Wc = containerWidth, Hc = containerHeight;
+                          const nW = imageModal.naturalW, nH = imageModal.naturalH;
+                          const scale = Math.max(Wc / nW, Hc / nH);
+                          const displayW = nW * scale;
+                          const displayH = nH * scale;
 
-                        const rightW = imageModal.slideW - (containerLeft + containerWidth);
-                        const bottomH = imageModal.slideH - (containerTop + containerHeight);
+                          const minLeft = Wc - displayW; // <= 0
+                          const minTop  = Hc - displayH; // <= 0
+                          const maxLeft = 0;
+                          const maxTop  = 0;
 
-                        return (
-                          <>
-                            {/* destaque do alvo */}
-                            <div
-                              className="absolute rounded-lg pointer-events-none"
-                              style={{
-                                left: containerLeft - 2,
-                                top: containerTop - 2,
-                                width: containerWidth + 4,
-                                height: containerHeight + 4,
-                                boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
-                              }}
-                            />
+                          const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, maxLeft);
+                          const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop,  maxTop);
 
-                            {/* overlays esmaecidos (fora da máscara) */}
-                            <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop }} />
-                            <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight }} />
-                            <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight }} />
-                            <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH }} />
+                          const rightW = imageModal.slideW - (containerLeft + containerWidth);
+                          const bottomH = imageModal.slideH - (containerTop + containerHeight);
 
-                            {/* MÁSCARA (área visível) */}
-                            <div
-                              className="absolute bg-white rounded-lg"
-                              style={{
-                                left: containerLeft,
-                                top: containerTop,
-                                width: containerWidth,
-                                height: containerHeight,
-                                overflow: 'hidden',
-                              }}
-                            >
-                              {/* imagem com width:100% e drag vertical */}
-                              <img
-                                src={imageModal.imageUrl}
-                                alt="to-edit"
-                                draggable={false}
+                          return (
+                            <>
+                              {/* destaque do alvo */}
+                              <div
+                                className="absolute rounded-lg pointer-events-none"
                                 style={{
-                                  position: 'absolute',
-                                  left: 0,
-                                  top: `${clampedTop}px`,
-                                  width: '100%',
-                                  height: `${imgDisplayH}px`,
-                                  userSelect: 'none',
-                                  pointerEvents: 'none',
+                                  left: containerLeft - 2,
+                                  top: containerTop - 2,
+                                  width: containerWidth + 4,
+                                  height: containerHeight + 4,
+                                  boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
                                 }}
                               />
 
-                              {/* drag vertical */}
-                              <DragSurface
-                                onDrag={(dy) => {
-                                  const newTop = Math.max(minTop, Math.min(maxTop, clampedTop + dy));
-                                  setImageModal({ ...imageModal, imgOffsetTopPx: newTop });
-                                }}
-                              />
+                              {/* overlays esmaecidos (fora da máscara) */}
+                              <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop }} />
+                              <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight }} />
+                              <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight }} />
+                              <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH }} />
 
-                              {/* resize só na borda inferior */}
-                              <ResizeBar
-                                position="bottom"
-                                onResize={(dy) => {
-                                  const newH = Math.max(60, containerHeight + dy);
-                                  const newMinTop = Math.min(0, newH - imgDisplayH);
-                                  const adjustedTop = Math.max(newMinTop, Math.min(0, imageModal.imgOffsetTopPx));
-                                  setImageModal({ ...imageModal, containerHeightPx: newH, imgOffsetTopPx: adjustedTop });
+                              {/* MÁSCARA (área visível) */}
+                              <div
+                                className="absolute bg-white rounded-lg"
+                                style={{
+                                  left: containerLeft,
+                                  top: containerTop,
+                                  width: containerWidth,
+                                  height: containerHeight,
+                                  overflow: 'hidden',
+                                  zIndex: 5,
+                                }}
+                              >
+                                {/* imagem com cover manual + pan X/Y */}
+                                <img
+                                  src={imageModal.imageUrl}
+                                  alt="to-edit"
+                                  draggable={false}
+                                  style={{
+                                    position: 'absolute',
+                                    left: `${clampedLeft}px`,
+                                    top: `${clampedTop}px`,
+                                    width: `${displayW}px`,
+                                    height: `${displayH}px`,
+                                    userSelect: 'none',
+                                    pointerEvents: 'none',
+                                  }}
+                                />
+
+                                {/* drag vertical/horizontal da IMAGEM */}
+                                <DragSurface
+                                  onDrag={(dx, dy) => {
+                                    const newLeft = clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft);
+                                    const newTop  = clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop);
+                                    setImageModal({ ...imageModal, imgOffsetLeftPx: newLeft, imgOffsetTopPx: newTop });
+                                  }}
+                                />
+
+                                {/* resize só na borda inferior */}
+                                <ResizeBar
+                                  position="bottom"
+                                  onResize={(dy) => {
+                                    const newH = Math.max(60, containerHeight + dy);
+                                    // recomputar limites com novo H
+                                    const scale2 = Math.max(Wc / nW, newH / nH);
+                                    const dispW2 = nW * scale2;
+                                    const dispH2 = nH * scale2;
+                                    const minLeft2 = Wc - dispW2;
+                                    const minTop2  = newH - dispH2;
+
+                                    const adjLeft = clamp(imageModal.imgOffsetLeftPx, minLeft2, 0);
+                                    const adjTop  = clamp(imageModal.imgOffsetTopPx,  minTop2,  0);
+                                    setImageModal({ ...imageModal, containerHeightPx: newH, imgOffsetLeftPx: adjLeft, imgOffsetTopPx: adjTop });
+                                  }}
+                                />
+                              </div>
+
+                              {/* Camada para PAN do preview (atrás da máscara) */}
+                              <div
+                                className="absolute inset-0 cursor-grab"
+                                style={{ zIndex: 1 }}
+                                onMouseDown={(e) => {
+                                  if (e.button !== 0) return;
+                                  const startX = e.clientX, startY = e.clientY;
+                                  const startPanX = imageModal.previewPanX;
+                                  const startPanY = imageModal.previewPanY;
+
+                                  const move = (ev: MouseEvent) => {
+                                    const dx = ev.clientX - startX;
+                                    const dy = ev.clientY - startY;
+                                    setImageModal(m => m.open ? { ...m, previewPanX: startPanX + dx, previewPanY: startPanY + dy } : m);
+                                  };
+                                  const up = () => {
+                                    window.removeEventListener('mousemove', move);
+                                    window.removeEventListener('mouseup', up);
+                                  };
+                                  window.addEventListener('mousemove', move);
+                                  window.addEventListener('mouseup', up);
                                 }}
                               />
-                            </div>
-                          </>
-                        );
-                      })()}
+                            </>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>
