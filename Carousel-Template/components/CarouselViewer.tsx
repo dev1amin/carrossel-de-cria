@@ -46,6 +46,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const slideHeight = 1350;
   const gap = 40;
 
+  // ===== ESC / mensagens
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -75,7 +76,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // ========= Video crop handles (já existia) =========
+  // ========= Video crop (já existente)
   useEffect(() => {
     if (!cropMode) return;
 
@@ -108,13 +109,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const handle = iframeDoc.createElement('div');
       handle.className = `resize-handle resize-handle-${position}`;
       handle.style.cssText = `position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1000;`;
-      if (['nw','ne','sw','se'].includes(position)) {
-        handle.style.width='12px';handle.style.height='12px';handle.style.borderRadius='50%';handle.style.cursor=`${position}-resize`;
-      } else if (['n','s'].includes(position)) {
-        handle.style.width='40px';handle.style.height='8px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.left='50%';handle.style.transform='translateX(-50%)';
-      } else {
-        handle.style.width='8px';handle.style.height='40px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.top='50%';handle.style.transform='translateY(-50%)';
-      }
+      if (['nw','ne','sw','se'].includes(position)) { handle.style.width='12px';handle.style.height='12px';handle.style.borderRadius='50%';handle.style.cursor=`${position}-resize`; }
+      else if (['n','s'].includes(position)) { handle.style.width='40px';handle.style.height='8px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.left='50%';handle.style.transform='translateX(-50%)'; }
+      else { handle.style.width='8px';handle.style.height='40px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.top='50%';handle.style.transform='translateY(-50%)'; }
       if (position==='nw'){handle.style.top='-6px';handle.style.left='-6px';}
       if (position==='ne'){handle.style.top='-6px';handle.style.right='-6px';}
       if (position==='sw'){handle.style.bottom='-6px';handle.style.left='-6px';}
@@ -185,7 +182,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
   }, [cropMode, zoom, videoDimensions]);
 
-  // ======== Helpers =========
+  // ===== Helpers
   const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
 
   const injectEditableIds = (html: string, slideIndex: number): string => {
@@ -228,7 +225,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         img[data-editable]{display:block!important}
         img[data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px}
         .img-edit-wrapper{position:relative;display:inline-block;overflow:hidden;border-radius:inherit}
-        .img-edit-wrapper .img-edit-overlay{position:absolute;inset:0;z-index:1000;pointer-events:none}
+        .img-edit-overlay{position:absolute;inset:0;z-index:1002;cursor:move;pointer-events:auto;background:transparent}
+        .img-edit-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1003}
       `
     );
 
@@ -252,14 +250,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setFocusedSlide(0);
   }, []);
 
-  // ====== Aplicação de estilos/alterações no iframe ======
+  // ===== Aplicação no iframe (troca de texto/cores + marca imagens/bg como editáveis)
   useEffect(() => {
     iframeRefs.current.forEach((iframe, index) => {
       if (!iframe || !iframe.contentWindow) return;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
-      // marca imagens editáveis e (novo) marca elementos com background como editáveis também
       const markEditables = () => {
         const allImages = iframeDoc.querySelectorAll('img');
         let imgIdx = 0;
@@ -271,19 +268,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (imgElement.getAttribute('data-protected') !== 'true') {
             imgElement.setAttribute('data-editable', 'image');
             if (!imgElement.id) imgElement.id = `slide-${index}-img-${imgIdx++}`;
+            // garante estilo pra poder ficar absoluta quando entrar no modo edição
+            (imgElement as HTMLElement).style.willChange = 'transform,left,top,width,height';
           }
         });
 
-        // qualquer elemento grande com background vira editável (para arrastar/resize)
-        const elements = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
-        elements.forEach(el => {
+        const candidates = Array.from(
+          iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article')
+        );
+        candidates.forEach(el => {
           const cs = iframeDoc.defaultView?.getComputedStyle(el);
           if (!cs) return;
           if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
-            const rect = el.getBoundingClientRect();
-            if (rect.width * rect.height > 12000) {
+            const r = el.getBoundingClientRect();
+            if (r.width * r.height > 9000) {
               el.setAttribute('data-editable', 'image');
               if (!el.id) el.id = `slide-${index}-bg-${Math.random().toString(36).slice(2,7)}`;
+              el.style.willChange = 'background-position,width,height';
+              if (cs.position === 'static') el.style.position = 'relative';
             }
           }
         });
@@ -328,19 +330,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (titleStyles || titleContent !== undefined) updateElement(`slide-${index}-title`, titleStyles, titleContent);
       if (subtitleStyles || subtitleContent !== undefined) updateElement(`slide-${index}-subtitle`, subtitleStyles, subtitleContent);
 
-      // aplica background trocado (preview ao vivo já feito; aqui garantimos sincronismo)
+      // se tiver background já escolhido, sincroniza
       const bgImage = editedContent[`${index}-background`];
       if (bgImage) {
-        // tentar o maior visual primeiro
         const best = findLargestVisual(iframeDoc);
         if (best) {
           if (best.type === 'img') {
             const img = best.el as HTMLImageElement;
-            img.removeAttribute('srcset');
-            img.removeAttribute('sizes');
-            img.loading = 'eager';
-            img.src = bgImage;
-            img.setAttribute('data-bg-image-url', bgImage);
+            img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
+            img.src = bgImage; img.setAttribute('data-bg-image-url', bgImage);
           } else {
             best.el.style.setProperty('background-image', `url('${bgImage}')`, 'important');
           }
@@ -362,32 +360,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }, 100);
 
-      const allElements = iframeDoc.querySelectorAll('[data-editable]');
-      allElements.forEach(el => { (el as HTMLElement).style.pointerEvents = 'auto'; });
+      iframeDoc.querySelectorAll('[data-editable]').forEach(el => { (el as HTMLElement).style.pointerEvents = 'auto'; });
     });
-  }, [elementStyles, editedContent]);
+  }, [elementStyles, editedContent, originalStyles]);
 
-  // ============ Image Edit: criar / limpar overlay, arrastar e redimensionar ============
+  // ===== Image edit robusto (overlay + doc listeners)
   const cleanupImageEdit = (slideIndex: number) => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return;
     const doc = iframe.contentDocument || iframe.contentWindow.document;
     if (!doc) return;
 
-    // remover handles/overlay e botão Done
-    const overlays = doc.querySelectorAll('.img-edit-resize-handle, .img-edit-done-btn');
-    overlays.forEach(el => el.remove());
-
-    // borda visual do wrapper/elemento
-    const wrappers = doc.querySelectorAll('.img-edit-wrapper, [data-img-editing="true"]');
-    wrappers.forEach(el => {
+    doc.querySelectorAll('.img-edit-overlay, .img-edit-handle, .img-edit-done-btn').forEach(el => el.remove());
+    doc.querySelectorAll('[data-img-editing="true"]').forEach(el => {
       (el as HTMLElement).style.outline = '';
-      (el as HTMLElement).removeAttribute('data-img-editing');
+      el.removeAttribute('data-img-editing');
     });
-
-    // restaurar pointer-events
-    const img = doc.querySelector('[data-img-dragging="true"]') as HTMLElement | null;
-    if (img) img.removeAttribute('data-img-dragging');
+    const dragging = doc.querySelector('[data-img-dragging="true"]') as HTMLElement | null;
+    if (dragging) dragging.removeAttribute('data-img-dragging');
   };
 
   const startImageEdit = (slideIndex: number, target: HTMLElement, type: 'img'|'bg') => {
@@ -398,6 +388,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     cleanupImageEdit(slideIndex);
 
+    // define wrapper (para img) ou o próprio elemento (para bg)
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
     let bgEl: HTMLElement | null = null;
@@ -405,19 +396,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (type === 'img') {
       imgEl = target as HTMLImageElement;
 
-      // garante wrapper
+      // garante wrapper com overflow hidden
       if (!imgEl.parentElement || !imgEl.parentElement.classList.contains('img-edit-wrapper')) {
         const w = doc.createElement('div');
         w.className = 'img-edit-wrapper';
-        const rectW = imgEl.offsetWidth || imgEl.getBoundingClientRect().width;
-        const rectH = imgEl.offsetHeight || imgEl.getBoundingClientRect().height;
-        w.style.width = `${rectW}px`;
-        w.style.height = `${rectH}px`;
+        const rect = imgEl.getBoundingClientRect();
+        w.style.width = `${rect.width || imgEl.width}px`;
+        w.style.height = `${rect.height || imgEl.height}px`;
         w.style.borderRadius = getComputedStyle(imgEl).borderRadius;
         w.style.display = 'inline-block';
         w.style.overflow = 'hidden';
         w.style.position = 'relative';
-        // posiciona IMG absoluta pra poder arrastar
+
+        // imagem absoluta pra poder arrastar
         imgEl.style.position = 'absolute';
         if (!imgEl.style.left) imgEl.style.left = '0px';
         if (!imgEl.style.top) imgEl.style.top = '0px';
@@ -437,188 +428,154 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       wrapper = bgEl;
       wrapper.setAttribute('data-img-editing', 'true');
       wrapper.style.outline = '3px solid #3B82F6';
-      // garante propriedades pra arrastar background
       const cs = doc.defaultView?.getComputedStyle(wrapper);
-      if (cs && (!cs.backgroundSize || cs.backgroundSize === 'auto auto')) {
-        wrapper.style.backgroundSize = 'cover';
-      }
-      if (cs && (!cs.backgroundPosition || cs.backgroundPosition === '0% 0%')) {
-        wrapper.style.backgroundPosition = 'center center';
-      }
-      if (cs && cs.position === 'static') {
-        wrapper.style.position = 'relative';
-      }
+      if (cs && (!cs.backgroundSize || cs.backgroundSize === 'auto auto')) wrapper.style.backgroundSize = 'cover';
+      if (cs && (!cs.backgroundPosition || cs.backgroundPosition === '0% 0%')) wrapper.style.backgroundPosition = 'center center';
+      if (cs && cs.position === 'static') wrapper.style.position = 'relative';
     }
 
-    // ----- Drag para mover (img: left/top) (bg: background-position) -----
+    // overlay que cobre o wrapper — captura drag independente do HTML interno
+    const overlay = doc.createElement('div');
+    overlay.className = 'img-edit-overlay';
+    overlay.style.pointerEvents = 'auto';
+    wrapper.appendChild(overlay);
+
     const start = { x: 0, y: 0, imgLeft: 0, imgTop: 0, bgPosX: 0, bgPosY: 0 };
-    const onMouseDownDrag = (e: MouseEvent) => {
+    const onOverlayDown = (e: MouseEvent) => {
       e.preventDefault(); e.stopPropagation();
       start.x = e.clientX;
       start.y = e.clientY;
 
-      if (type === 'img' && imgEl) {
-        start.imgLeft = parseFloat(imgEl.style.left || '0');
-        start.imgTop = parseFloat(imgEl.style.top || '0');
-        imgEl.setAttribute('data-img-dragging', 'true');
-      } else if (type === 'bg' && bgEl) {
-        const cs = doc.defaultView?.getComputedStyle(bgEl);
+      if (type === 'img' && wrapper.querySelector('img')) {
+        const img = wrapper.querySelector('img') as HTMLImageElement;
+        start.imgLeft = parseFloat(img.style.left || '0');
+        start.imgTop = parseFloat(img.style.top || '0');
+        img.setAttribute('data-img-dragging', 'true');
+      } else if (type === 'bg') {
+        const cs = doc.defaultView?.getComputedStyle(wrapper);
         const pos = (cs?.backgroundPosition || '0px 0px').split(' ');
-        const toPx = (v: string) => (v.endsWith('%') ? (parseFloat(v) / 100) * bgEl!.clientWidth : parseFloat(v));
-        start.bgPosX = toPx(pos[0] || '0px');
-        start.bgPosY = toPx(pos[1] || '0px');
+        const toPx = (v: string, total: number) => (v.endsWith('%') ? (parseFloat(v) / 100) * total : parseFloat(v));
+        start.bgPosX = toPx(pos[0] || '0px', wrapper.clientWidth);
+        start.bgPosY = toPx(pos[1] || '0px', wrapper.clientHeight);
       }
 
-      const onMouseMove = (e: MouseEvent) => {
+      const onMove = (e: MouseEvent) => {
         const dx = (e.clientX - start.x) / zoom;
         const dy = (e.clientY - start.y) / zoom;
 
-        if (type === 'img' && imgEl) {
-          imgEl.style.left = `${start.imgLeft + dx}px`;
-          imgEl.style.top = `${start.imgTop + dy}px`;
-        } else if (type === 'bg' && bgEl) {
+        if (type === 'img') {
+          const img = wrapper.querySelector('img') as HTMLImageElement;
+          if (img) {
+            img.style.left = `${start.imgLeft + dx}px`;
+            img.style.top = `${start.imgTop + dy}px`;
+          }
+        } else {
           const newX = start.bgPosX + dx;
           const newY = start.bgPosY + dy;
-          bgEl.style.backgroundPosition = `${newX}px ${newY}px`;
+          wrapper.style.backgroundPosition = `${newX}px ${newY}px`;
         }
       };
 
-      const onMouseUp = () => {
-        doc.removeEventListener('mousemove', onMouseMove);
-        doc.removeEventListener('mouseup', onMouseUp);
-        if (imgEl) imgEl.removeAttribute('data-img-dragging');
+      const onUp = () => {
+        doc.removeEventListener('mousemove', onMove);
+        doc.removeEventListener('mouseup', onUp);
+        const img = wrapper.querySelector('img') as HTMLImageElement | null;
+        if (img) img.removeAttribute('data-img-dragging');
       };
 
-      doc.addEventListener('mousemove', onMouseMove);
-      doc.addEventListener('mouseup', onMouseUp);
+      doc.addEventListener('mousemove', onMove);
+      doc.addEventListener('mouseup', onUp);
     };
+    overlay.addEventListener('mousedown', onOverlayDown);
 
-    // área de drag: para IMG, clique no próprio img; para BG, clique no wrapper
-    if (type === 'img' && imgEl) {
-      imgEl.style.cursor = 'move';
-      imgEl.addEventListener('mousedown', onMouseDownDrag);
-    } else if (type === 'bg') {
-      wrapper.style.cursor = 'move';
-      wrapper.addEventListener('mousedown', onMouseDownDrag);
-    }
-
-    // ----- Resize handles no wrapper -----
+    // alças de resize
     const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
-    const addHandle = (position: typeof handles[number]) => {
-      const handle = doc.createElement('div');
-      handle.className = `img-edit-resize-handle img-edit-resize-${position}`;
-      handle.style.cssText = `position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1001;`;
-      if (['nw','ne','sw','se'].includes(position)) {
-        handle.style.width='12px';handle.style.height='12px';handle.style.borderRadius='50%';handle.style.cursor=`${position}-resize`;
-      } else if (['n','s'].includes(position)) {
-        handle.style.width='40px';handle.style.height='8px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.left='50%';handle.style.transform='translateX(-50%)';
+    const makeHandle = (pos: typeof handles[number]) => {
+      const h = doc.createElement('div');
+      h.className = `img-edit-handle img-edit-h-${pos}`;
+      if (['nw','ne','sw','se'].includes(pos)) {
+        h.style.width='12px'; h.style.height='12px'; h.style.borderRadius='50%'; h.style.cursor=`${pos}-resize`;
+      } else if (['n','s'].includes(pos)) {
+        h.style.width='40px'; h.style.height='8px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`; h.style.left='50%'; h.style.transform='translateX(-50%)';
       } else {
-        handle.style.width='8px';handle.style.height='40px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.top='50%';handle.style.transform='translateY(-50%)';
+        h.style.width='8px'; h.style.height='40px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`; h.style.top='50%'; h.style.transform='translateY(-50%)';
       }
-      if (position==='nw'){handle.style.top='-6px';handle.style.left='-6px';}
-      if (position==='ne'){handle.style.top='-6px';handle.style.right='-6px';}
-      if (position==='sw'){handle.style.bottom='-6px';handle.style.left='-6px';}
-      if (position==='se'){handle.style.bottom='-6px';handle.style.right='-6px';}
-      if (position==='n'){handle.style.top='-4px';}
-      if (position==='s'){handle.style.bottom='-4px';}
-      if (position==='e'){handle.style.right='-4px';}
-      if (position==='w'){handle.style.left='-4px';}
+      if (pos==='nw'){h.style.top='-6px'; h.style.left='-6px';}
+      if (pos==='ne'){h.style.top='-6px'; h.style.right='-6px';}
+      if (pos==='sw'){h.style.bottom='-6px'; h.style.left='-6px';}
+      if (pos==='se'){h.style.bottom='-6px'; h.style.right='-6px';}
+      if (pos==='n'){h.style.top='-4px';}
+      if (pos==='s'){h.style.bottom='-4px';}
+      if (pos==='e'){h.style.right='-4px';}
+      if (pos==='w'){h.style.left='-4px';}
 
       let isResizing = false;
       let startX = 0, startY = 0, startW = 0, startH = 0;
 
-      const onMouseDown = (e: MouseEvent) => {
+      const onDown = (e: MouseEvent) => {
         e.preventDefault(); e.stopPropagation();
         isResizing = true;
         startX = e.clientX; startY = e.clientY;
         startW = wrapper.offsetWidth; startH = wrapper.offsetHeight;
 
-        const onMouseMove = (e: MouseEvent) => {
+        const onMove = (e: MouseEvent) => {
           if (!isResizing) return;
           const dx = (e.clientX - startX) / zoom;
           const dy = (e.clientY - startY) / zoom;
           let newW = startW;
           let newH = startH;
-
-          if (position.includes('e')) newW = startW + dx;
-          if (position.includes('w')) newW = startW - dx;
-          if (position.includes('s')) newH = startH + dy;
-          if (position.includes('n')) newH = startH - dy;
+          if (pos.includes('e')) newW = startW + dx;
+          if (pos.includes('w')) newW = startW - dx;
+          if (pos.includes('s')) newH = startH + dy;
+          if (pos.includes('n')) newH = startH - dy;
 
           if (newW > 50) wrapper.style.width = `${newW}px`;
           if (newH > 50) wrapper.style.height = `${newH}px`;
         };
 
-        const onMouseUp = () => {
+        const onUp = () => {
           isResizing = false;
-          doc.removeEventListener('mousemove', onMouseMove);
-          doc.removeEventListener('mouseup', onMouseUp);
+          doc.removeEventListener('mousemove', onMove);
+          doc.removeEventListener('mouseup', onUp);
         };
 
-        doc.addEventListener('mousemove', onMouseMove);
-        doc.addEventListener('mouseup', onMouseUp);
+        doc.addEventListener('mousemove', onMove);
+        doc.addEventListener('mouseup', onUp);
       };
 
-      handle.addEventListener('mousedown', onMouseDown);
-      wrapper.appendChild(handle);
+      h.addEventListener('mousedown', onDown);
+      wrapper.appendChild(h);
     };
-    handles.forEach(addHandle);
+    handles.forEach(makeHandle);
 
     // botão Done
-    const doneBtn = doc.createElement('button');
-    doneBtn.className = 'img-edit-done-btn';
-    doneBtn.textContent = 'Done';
-    doneBtn.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1002;';
-    doneBtn.onclick = (e) => {
-      e.preventDefault(); e.stopPropagation();
-      cleanupImageEdit(slideIndex);
-      setImageEdit(null);
-    };
-    wrapper.appendChild(doneBtn);
+    const done = doc.createElement('button');
+    done.className = 'img-edit-done-btn';
+    done.textContent = 'Done';
+    done.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1004;';
+    done.onclick = (e) => { e.preventDefault(); e.stopPropagation(); cleanupImageEdit(slideIndex); setImageEdit(null); };
+    wrapper.appendChild(done);
 
-    // salva estado
-    const targetId = (type === 'img' ? (imgEl as HTMLElement) : wrapper).id || `img-edit-${Date.now()}`;
-    (type === 'img' ? (imgEl as HTMLElement) : wrapper).id = targetId;
+    // salva estado pro painel
+    const targetId = (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id || `img-edit-${Date.now()}`;
+    (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id = targetId;
     setImageEdit({ slideIndex, type, targetId });
   };
 
   const enableImageEditFromElement = (slideIndex: number, el: HTMLElement) => {
     const isImg = el.tagName === 'IMG';
-    startImageEdit(slideIndex, el, isImg ? 'img' : 'bg');
+    // atrasa um tick pra não conflitar com seleções
+    setTimeout(() => startImageEdit(slideIndex, isImg ? (el as HTMLImageElement) : el, isImg ? 'img' : 'bg'), 0);
   };
 
-  // quando muda o zoom, manter drag/resize coerente (já corrigimos no cálculo com 1/zoom)
-  useEffect(() => {
-    // nada a fazer aqui além de já usar zoom nos listeners
-  }, [zoom]);
-
-  // ====== Clique/teclas nos iframes ======
+  // ===== Setup click dentro do iframe
   useEffect(() => {
     const setupIframeInteraction = (iframe: HTMLIFrameElement, slideIndex: number) => {
       if (!iframe.contentWindow) return;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
       if (!iframeDoc) return;
 
-      // play buttons de vídeo (pré-existente)
-      const playButtons = iframeDoc.querySelectorAll('.video-play-btn');
-      playButtons.forEach(btn => {
-        const button = btn as HTMLButtonElement;
-        button.onclick = (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const container = button.parentElement;
-          if (container) {
-            const video = container.querySelector('video') as HTMLVideoElement;
-            if (video) {
-              video.play();
-              button.style.display = 'none';
-              video.onended = () => { button.style.display = 'flex'; };
-              video.onclick = () => { if (!video.paused) { video.pause(); button.style.display = 'flex'; } };
-            }
-          }
-        };
-      });
-
-      // elementos editáveis
+      // clique em elementos editáveis
       const editableElements = iframeDoc.querySelectorAll('[data-editable]');
       editableElements.forEach((element) => {
         const editableType = element.getAttribute('data-editable');
@@ -630,13 +587,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           e.preventDefault(); e.stopPropagation();
           if (htmlElement.getAttribute('contenteditable') === 'true') return;
 
-          // limpa seleções globais
-          iframeRefs.current.forEach((iframe) => {
-            if (!iframe || !iframe.contentWindow) return;
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
-            if (!doc) return;
-            doc.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
-            doc.body.classList.remove('selected');
+          // limpa seleções visuais
+          iframeRefs.current.forEach((f) => {
+            if (!f || !f.contentWindow) return;
+            const d = f.contentDocument || f.contentWindow.document;
+            if (!d) return;
+            d.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
+            d.body.classList.remove('selected');
           });
 
           element.classList.add('selected');
@@ -647,7 +604,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             else selectedImageRefs.current[slideIndex] = null;
 
             handleElementClick(slideIndex, 'background');
-            // entra no modo edição de imagem
             enableImageEditFromElement(slideIndex, htmlElement);
           } else {
             selectedImageRefs.current[slideIndex] = null;
@@ -696,51 +652,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // ====== Pan/zoom da área de trabalho ======
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey) {
-      const delta = e.deltaY > 0 ? -0.05 : 0.05;
-      setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
-    } else {
-      setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
-    }
-  };
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && e.currentTarget === e.target) {
-      setIsDragging(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
-  };
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  };
-  const handleMouseUp = () => setIsDragging(false);
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.1, 2));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.1, 0.1));
-
-  // ====== Funções de estado/estilo ======
-  const getElementKey = (slideIndex: number, element: ElementType) => `${slideIndex}-${element}`;
-  const getEditedValue = (slideIndex: number, field: string, defaultValue: any) => {
-    const key = `${slideIndex}-${field}`;
-    return editedContent[key] !== undefined ? editedContent[key] : defaultValue;
-  };
-  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
-    const key = `${slideIndex}-${field}`;
-    setEditedContent(prev => ({ ...prev, [key]: value }));
-  };
-  const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
-    const key = getElementKey(slideIndex, element);
-    if (elementStyles[key]) return elementStyles[key];
-    if (originalStyles[key]) return originalStyles[key];
-    return { fontSize: element === 'title' ? '24px' : '16px', fontWeight: element === 'title' ? '700' : '400', textAlign: 'left', color: '#FFFFFF' };
-  };
-  const updateElementStyle = (slideIndex: number, element: ElementType, property: keyof ElementStyles, value: string) => {
-    const key = getElementKey(slideIndex, element);
-    setElementStyles(prev => ({ ...prev, [key]: { ...getElementStyle(slideIndex, element), [property]: value } }));
-  };
-
-  // ====== util: achar maior visual para sincronismo ======
+  // ===== util: achar maior visual
   const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
     let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
 
@@ -749,7 +661,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
       const r = img.getBoundingClientRect();
       const area = r.width * r.height;
-      if (area > 12000) {
+      if (area > 9000) {
         if (!best || area > best.area) best = { type: 'img', el: img, area };
       }
     });
@@ -761,7 +673,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
         const r = el.getBoundingClientRect();
         const area = r.width * r.height;
-        if (area > 12000) {
+        if (area > 9000) {
           if (!best || area > best.area) best = { type: 'bg', el, area };
         }
       }
@@ -770,7 +682,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return best ? { type: best.type, el: best.el } : null;
   };
 
-  // ====== Troca de imagem (já com seleção) ======
+  // ===== Troca imediata + entra em edição
   const applyBackgroundImageImmediate = (slideIndex: number, imageUrl: string): HTMLElement | null => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return null;
@@ -781,25 +693,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (targetImg && targetImg.getAttribute('data-protected') !== 'true') {
       const asVideo = /\.(mp4|webm|ogg|mov)($|\?)/i.test(imageUrl);
       if (!asVideo) {
-        targetImg.removeAttribute('srcset');
-        targetImg.removeAttribute('sizes');
-        targetImg.loading = 'eager';
+        targetImg.removeAttribute('srcset'); targetImg.removeAttribute('sizes'); targetImg.loading = 'eager';
         targetImg.src = imageUrl;
         targetImg.setAttribute('data-bg-image-url', imageUrl);
         return targetImg;
       }
-      // (vídeo: manter como antes – omitido aqui pq foco é imagem)
     }
 
     const best = findLargestVisual(iframeDoc);
     if (best) {
       if (best.type === 'img') {
         const img = best.el as HTMLImageElement;
-        img.removeAttribute('srcset');
-        img.removeAttribute('sizes');
-        img.loading = 'eager';
-        img.src = imageUrl;
-        img.setAttribute('data-bg-image-url', imageUrl);
+        img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
+        img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
         return img;
       } else {
         best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
@@ -819,7 +725,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
 
-    // seleciona o que foi alterado e entra no modo edição para permitir mover/resize
+    // selecionar e entrar no modo edição
     iframeRefs.current.forEach((f) => {
       if (!f || !f.contentWindow) return;
       const d = f.contentDocument || f.contentWindow.document;
@@ -834,7 +740,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (isImg) selectedImageRefs.current[slideIndex] = updatedEl as HTMLImageElement;
       else selectedImageRefs.current[slideIndex] = null;
 
-      // entra no modo edição
       enableImageEditFromElement(slideIndex, updatedEl);
     }
 
@@ -845,7 +750,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     updateEditedValue(slideIndex, 'background', imageUrl);
   };
 
-  // ====== Busca / Upload ======
+  // ===== Busca / Upload
   const handleSearchImages = async () => {
     if (!searchKeyword.trim()) return;
     setIsSearching(true);
@@ -870,7 +775,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     reader.readAsDataURL(file);
   };
 
-  // ====== UI auxiliares ======
+  // ===== UI auxiliares
   const toggleLayer = (index: number) => {
     const newExpanded = new Set(expandedLayers);
     if (newExpanded.has(index)) newExpanded.delete(index);
@@ -921,6 +826,55 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setTimeout(() => setIsLoadingProperties(false), 100);
   };
 
+  const getElementKey = (slideIndex: number, element: ElementType) => `${slideIndex}-${element}`;
+  const getEditedValue = (slideIndex: number, field: string, defaultValue: any) => {
+    const key = `${slideIndex}-${field}`;
+    return editedContent[key] !== undefined ? editedContent[key] : defaultValue;
+  };
+  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
+    const key = `${slideIndex}-${field}`;
+    setEditedContent(prev => ({ ...prev, [key]: value }));
+  };
+  const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
+    const key = getElementKey(slideIndex, element);
+    if (elementStyles[key]) return elementStyles[key];
+    if (originalStyles[key]) return originalStyles[key];
+    return { fontSize: element === 'title' ? '24px' : '16px', fontWeight: element === 'title' ? '700' : '400', textAlign: 'left', color: '#FFFFFF' };
+  };
+  const updateElementStyle = (slideIndex: number, element: ElementType, property: keyof ElementStyles, value: string) => {
+    const key = getElementKey(slideIndex, element);
+    setElementStyles(prev => ({ ...prev, [key]: { ...getElementStyle(slideIndex, element), [property]: value } }));
+  };
+
+  const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
+    let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
+
+    const imgs = Array.from(iframeDoc.querySelectorAll('img')) as HTMLImageElement[];
+    imgs.forEach(img => {
+      if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
+      const r = img.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area > 9000) {
+        if (!best || area > best.area) best = { type: 'img', el: img, area };
+      }
+    });
+
+    const allEls = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
+    allEls.forEach(el => {
+      const cs = iframeDoc.defaultView?.getComputedStyle(el);
+      if (!cs) return;
+      if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
+        const r = el.getBoundingClientRect();
+        const area = r.width * r.height;
+        if (area > 9000) {
+          if (!best || area > best.area) best = { type: 'bg', el, area };
+        }
+      }
+    });
+
+    return best ? { type: best.type, el: best.el } : null;
+  };
+
   const getElementIcon = (element: string) => {
     if (element.includes('title') || element.includes('subtitle')) return <Type className="w-4 h-4 text-neutral-500" />;
     return <ImageIcon className="w-4 h-4 text-neutral-500" />;
@@ -940,7 +894,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
-  // ====== JSX ======
+  // ===== JSX
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
@@ -1033,11 +987,26 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           ref={containerRef}
           className="flex-1 overflow-hidden relative bg-neutral-800"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onWheel={(e) => {
+            e.preventDefault();
+            if (e.ctrlKey) {
+              const delta = e.deltaY > 0 ? -0.05 : 0.05;
+              setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
+            } else {
+              setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+            }
+          }}
+          onMouseDown={(e) => {
+            if (e.button === 0 && e.currentTarget === e.target) {
+              setIsDragging(true);
+              setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+            }
+          }}
+          onMouseMove={(e) => {
+            if (isDragging) setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+          }}
+          onMouseUp={() => setIsDragging(false)}
+          onMouseLeave={() => setIsDragging(false)}
         >
           <div
             className="absolute"
@@ -1185,77 +1154,93 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     </div>
                   ) : (
                     <>
-                      <div>
+                      <div className="flex items-center justify-between">
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
-                        <div className="space-y-2">
-                          {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (() => {
-                            const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo;
-                            const isVid = isVideoUrl(bgUrl);
-                            const thumbnailUrl = carouselData.conteudos[selectedElement.slideIndex]?.thumbnail_url;
-                            const displayUrl = isVid && thumbnailUrl ? thumbnailUrl : bgUrl;
-                            const currentBg = getEditedValue(selectedElement.slideIndex, 'background', bgUrl);
-                            return (
-                              <div
-                                className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
-                                onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
-                              >
-                                <div className="text-neutral-400 text-xs mb-1 flex items-center justify-between">
-                                  <span>{isVid ? 'Video 1' : 'Image 1'}</span>
-                                  {isVid && <Play className="w-3 h-3" />}
-                                </div>
-                                <div className="relative">
-                                  <img src={displayUrl} alt="Background 1" className="w-full h-24 object-cover rounded" />
-                                  {isVid && <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded"><Play className="w-8 h-8 text-white" fill="white" /></div>}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (() => {
-                            const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2!;
-                            const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
-                            return (
-                              <div
-                                className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
-                                onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
-                              >
-                                <div className="text-neutral-400 text-xs mb-1">Image 2</div>
-                                <img src={bgUrl} alt="Background 2" className="w-full h-24 object-cover rounded" />
-                              </div>
-                            );
-                          })()}
-
-                          {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (() => {
-                            const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3!;
-                            const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
-                            return (
-                              <div
-                                className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
-                                onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
-                              >
-                                <div className="text-neutral-400 text-xs mb-1">Image 3</div>
-                                <img src={bgUrl} alt="Background 3" className="w-full h-24 object-cover rounded" />
-                              </div>
-                            );
-                          })()}
-
-                          {uploadedImages[selectedElement.slideIndex] && (() => {
-                            const bgUrl = uploadedImages[selectedElement.slideIndex];
-                            const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
-                            return (
-                              <div
-                                className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
-                                onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
-                              >
-                                <div className="text-neutral-400 text-xs mb-1">Image 4 (Uploaded)</div>
-                                <img src={bgUrl} alt="Background 4 (Uploaded)" className="w-full h-24 object-cover rounded" />
-                              </div>
-                            );
-                          })()}
-                        </div>
+                        <button
+                          onClick={() => {
+                            // tenta reativar edição no maior visual se não tiver um selecionado
+                            const iframe = iframeRefs.current[selectedElement.slideIndex];
+                            const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+                            if (!doc) return;
+                            const currentSelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
+                            const target = currentSelected || (findLargestVisual(doc)?.el ?? null);
+                            if (target) enableImageEditFromElement(selectedElement.slideIndex, target);
+                          }}
+                          className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
+                          title="Entrar no modo de edição da imagem selecionada"
+                        >
+                          Editar esta imagem
+                        </button>
                       </div>
 
-                      <div>
+                      <div className="space-y-2">
+                        {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (() => {
+                          const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo;
+                          const isVid = isVideoUrl(bgUrl);
+                          const thumbnailUrl = carouselData.conteudos[selectedElement.slideIndex]?.thumbnail_url;
+                          const displayUrl = isVid && thumbnailUrl ? thumbnailUrl : bgUrl;
+                          const currentBg = getEditedValue(selectedElement.slideIndex, 'background', bgUrl);
+                          return (
+                            <div
+                              className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
+                              onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                            >
+                              <div className="text-neutral-400 text-xs mb-1 flex items-center justify-between">
+                                <span>{isVid ? 'Video 1' : 'Image 1'}</span>
+                                {isVid && <Play className="w-3 h-3" />}
+                              </div>
+                              <div className="relative">
+                                <img src={displayUrl} alt="Background 1" className="w-full h-24 object-cover rounded" />
+                                {isVid && <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded"><Play className="w-8 h-8 text-white" fill="white" /></div>}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2 && (() => {
+                          const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo2!;
+                          const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+                          return (
+                            <div
+                              className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
+                              onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                            >
+                              <div className="text-neutral-400 text-xs mb-1">Image 2</div>
+                              <img src={bgUrl} alt="Background 2" className="w-full h-24 object-cover rounded" />
+                            </div>
+                          );
+                        })()}
+
+                        {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3 && (() => {
+                          const bgUrl = carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo3!;
+                          const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+                          return (
+                            <div
+                              className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
+                              onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                            >
+                              <div className="text-neutral-400 text-xs mb-1">Image 3</div>
+                              <img src={bgUrl} alt="Background 3" className="w-full h-24 object-cover rounded" />
+                            </div>
+                          );
+                        })()}
+
+                        {uploadedImages[selectedElement.slideIndex] && (() => {
+                          const bgUrl = uploadedImages[selectedElement.slideIndex];
+                          const currentBg = getEditedValue(selectedElement.slideIndex, 'background', carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo);
+                          return (
+                            <div
+                              className={`bg-neutral-900 border rounded p-2 cursor-pointer transition-all ${currentBg === bgUrl ? 'border-blue-500' : 'border-neutral-800 hover:border-blue-400'}`}
+                              onClick={() => handleBackgroundImageChange(selectedElement.slideIndex, bgUrl)}
+                            >
+                              <div className="text-neutral-400 text-xs mb-1">Image 4 (Uploaded)</div>
+                              <img src={bgUrl} alt="Background 4 (Uploaded)" className="w-full h-24 object-cover rounded" />
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="mt-3">
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Search Images</label>
                         <div className="relative">
                           <input
@@ -1294,7 +1279,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         )}
                       </div>
 
-                      <div>
+                      <div className="mt-3">
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Upload Image (Image 4)</label>
                         <label className="flex items-center justify-center w-full h-24 bg-neutral-900 border-2 border-dashed border-neutral-800 rounded cursor-pointer hover:border-blue-500 transition-colors">
                           <div className="flex flex-col items-center">
@@ -1305,7 +1290,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         </label>
                       </div>
 
-                      <div>
+                      <div className="mt-3">
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Image Size</label>
                         <select className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors">
                           <option>Cover</option>
