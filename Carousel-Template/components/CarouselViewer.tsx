@@ -487,7 +487,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const cs = doc.defaultView?.getComputedStyle(chosen);
     let imageUrl = '', targetType: TargetKind = 'img';
     if (chosen.tagName === 'IMG') { imageUrl = (chosen as HTMLImageElement).src; targetType = 'img'; }
-    else if (cs?.backgroundImage && cs.backgroundImage.includes('url('))) {
+    else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
       const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
       imageUrl = m?.[1] || ''; targetType = 'bg';
     }
