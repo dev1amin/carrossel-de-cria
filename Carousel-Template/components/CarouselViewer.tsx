@@ -440,8 +440,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   video.src = bgImage;
                   video.className = imgElement.className;
                   video.id = videoId;
-                  video.style.cssText = `width: 100%; border-radius: 24px; ${imgElement.style.cssText}`;
-                  video.setAttribute('data-video-src', bgImage);
+                  (video as HTMLVideoElement).style.cssText = `width: 100%; border-radius: 24px; ${imgElement.style.cssText}`;
+                  (video as HTMLVideoElement).setAttribute('data-video-src', bgImage);
 
                   const playBtn = iframeDoc.createElement('button');
                   playBtn.className = 'video-play-btn';
@@ -456,18 +456,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   playBtn.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    video.play();
+                    (video as HTMLVideoElement).play();
                     playBtn.style.display = 'none';
                     cropBtn.style.display = 'flex';
 
-                    video.onended = () => {
+                    (video as HTMLVideoElement).onended = () => {
                       playBtn.style.display = 'flex';
                       cropBtn.style.display = 'none';
                     };
 
-                    video.onclick = () => {
-                      if (!video.paused) {
-                        video.pause();
+                    (video as HTMLVideoElement).onclick = () => {
+                      if (!(video as HTMLVideoElement).paused) {
+                        (video as HTMLVideoElement).pause();
                         playBtn.style.display = 'flex';
                         cropBtn.style.display = 'none';
                       }
@@ -505,7 +505,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               if (isVid) {
                 video.src = bgImage;
                 video.setAttribute('data-video-src', bgImage);
-                video.style.cssText = `width: 100%; border-radius: 24px; ${video.style.cssText.replace(/width:\s*[^;]+;?/gi, '').replace(/border-radius:\s*[^;]+;?/gi, '')}`;
+                (video as HTMLVideoElement).style.cssText = `width: 100%; border-radius: 24px; ${video.style.cssText.replace(/width:\s*[^;]+;?/gi, '').replace(/border-radius:\s*[^;]+;?/gi, '')}`;
                 const playBtn = element.querySelector('.video-play-btn') as HTMLButtonElement;
                 if (playBtn) {
                   playBtn.style.display = 'flex';
@@ -517,7 +517,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 img.setAttribute('data-processed-bg', 'true');
 
                 const containerStyle = element.style.cssText;
-                const videoStyles = video.style.cssText
+                const videoStyles = (video as HTMLVideoElement).style.cssText
                   .replace(/width:\s*[^;]+;?/gi, '')
                   .replace(/border-radius:\s*[^;]+;?/gi, '');
 
@@ -547,13 +547,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                   if (!video) {
                     video = iframeDoc.createElement('video');
-                    video.loop = true;
-                    video.muted = true;
-                    video.playsInline = true;
-                    video.id = videoId;
-                    video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
-                    video.src = bgImage;
-                    video.setAttribute('data-video-src', bgImage);
+                    (video as HTMLVideoElement).loop = true;
+                    (video as HTMLVideoElement).muted = true;
+                    (video as HTMLVideoElement).playsInline = true;
+                    (video as HTMLVideoElement).id = videoId;
+                    (video as HTMLVideoElement).style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
+                    (video as HTMLVideoElement).src = bgImage;
+                    (video as HTMLVideoElement).setAttribute('data-video-src', bgImage);
 
                     playBtn = iframeDoc.createElement('button');
                     playBtn.className = 'video-play-btn-bg';
@@ -568,18 +568,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     playBtn.onclick = (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      video!.play();
+                      (video as HTMLVideoElement).play();
                       playBtn!.style.display = 'none';
                       cropBtn!.style.display = 'flex';
 
-                      video!.onended = () => {
+                      (video as HTMLVideoElement).onended = () => {
                         playBtn!.style.display = 'flex';
                         cropBtn!.style.display = 'none';
                       };
 
-                      video!.onclick = () => {
-                        if (!video!.paused) {
-                          video!.pause();
+                      (video as HTMLVideoElement).onclick = () => {
+                        if (!(video as HTMLVideoElement).paused) {
+                          (video as HTMLVideoElement).pause();
                           playBtn!.style.display = 'flex';
                           cropBtn!.style.display = 'none';
                         }
@@ -660,11 +660,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               if (!video) {
                 const videoId = `video-bg-attr-${index}-${Date.now()}`;
                 video = iframeDoc.createElement('video');
-                video.loop = true;
-                video.muted = true;
-                video.playsInline = true;
-                video.id = videoId;
-                video.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
+                (video as HTMLVideoElement).loop = true;
+                (video as HTMLVideoElement).muted = true;
+                (video as HTMLVideoElement).playsInline = true;
+                (video as HTMLVideoElement).id = videoId;
+                (video as HTMLVideoElement).style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;';
                 (video as HTMLVideoElement).src = videoBgUrl;
                 (video as HTMLVideoElement).setAttribute('data-video-src', videoBgUrl);
 
@@ -932,11 +932,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return url.includes('i.imgur.com');
   };
 
-  const applyBackgroundImageImmediate = (slideIndex: number, imageUrl: string) => {
+  // === PATCH: aplica e retorna o elemento alvo para seleção imediata ===
+  const applyBackgroundImageImmediate = (
+    slideIndex: number,
+    imageUrl: string
+  ): HTMLElement | null => {
     const iframe = iframeRefs.current[slideIndex];
-    if (!iframe || !iframe.contentWindow) return;
+    if (!iframe || !iframe.contentWindow) return null;
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!iframeDoc) return;
+    if (!iframeDoc) return null;
 
     // Se o usuário clicou numa imagem específica, atualiza ela
     const targetImg = selectedImageRefs.current[slideIndex];
@@ -945,7 +949,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (!asVideo) {
         targetImg.src = imageUrl;
         targetImg.setAttribute('data-bg-image-url', imageUrl);
-        return;
+        return targetImg;
       }
       // se for vídeo, troca por container mantendo estilo
       const container = iframeDoc.createElement('div');
@@ -960,11 +964,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (video as HTMLVideoElement).setAttribute('data-video-src', imageUrl);
       container.appendChild(video);
       if (targetImg.parentNode) targetImg.parentNode.replaceChild(container, targetImg);
-      return;
+      return container;
     }
 
     // Fallback: primeira img grande não-protegida ou background
     let applied = false;
+    let appliedEl: HTMLElement | null = null;
     const allEls = iframeDoc.querySelectorAll('*');
     for (const el of Array.from(allEls)) {
       if (applied) break;
@@ -977,14 +982,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           img.src = imageUrl;
           img.setAttribute('data-bg-image-url', imageUrl);
           applied = true;
+          appliedEl = img;
         }
       }
     }
     if (!applied) {
       iframeDoc.body.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
+      appliedEl = iframeDoc.body;
     }
+    return appliedEl;
   };
 
+  // === PATCH: aplica, seleciona alvo, sincroniza estado ===
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return;
@@ -992,37 +1001,32 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
     if (!iframeDoc) return;
 
-    const allImages = iframeDoc.querySelectorAll('img');
-    let hasProtectedImgurImage = false;
+    // 1) Aplica no preview e obtém o elemento realmente atualizado
+    const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
 
-    allImages.forEach(img => {
-      const imgElement = img as HTMLImageElement;
-      if (isImgurUrl(imgElement.src) && imgElement.getAttribute('data-protected') === 'true') {
-        hasProtectedImgurImage = true;
+    // 2) Se aplicou, limpa seleções nos iframes e marca o novo alvo como selecionado
+    if (updatedEl) {
+      iframeRefs.current.forEach((f) => {
+        if (!f || !f.contentWindow) return;
+        const d = f.contentDocument || f.contentWindow.document;
+        if (!d) return;
+        d.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
+      });
+      if (updatedEl.tagName === 'IMG') {
+        selectedImageRefs.current[slideIndex] = updatedEl as HTMLImageElement;
+      } else {
+        selectedImageRefs.current[slideIndex] = null;
       }
-    });
-
-    const bodyStyle = iframeDoc.body.style.backgroundImage;
-    if (bodyStyle && bodyStyle.includes('i.imgur.com')) {
-      hasProtectedImgurImage = true;
+      updatedEl.classList.add('selected');
     }
 
-    const allElements = iframeDoc.querySelectorAll('*');
-    allElements.forEach(el => {
-      const element = el as HTMLElement;
-      const computedStyle = iframeDoc.defaultView?.getComputedStyle(element);
-      if (computedStyle?.backgroundImage && computedStyle.backgroundImage.includes('i.imgur.com')) {
-        hasProtectedImgurImage = true;
-      }
-    });
-
-    if (hasProtectedImgurImage) {
-      console.warn('Cannot replace Imgur images - they are protected');
-      return;
+    // 3) Garante que o painel esteja no elemento certo
+    setSelectedElement({ slideIndex, element: 'background' });
+    if (!expandedLayers.has(slideIndex)) {
+      toggleLayer(slideIndex);
     }
+    setFocusedSlide(slideIndex);
 
-    // preview imediato
-    applyBackgroundImageImmediate(slideIndex, imageUrl);
     // persistência no estado
     updateEditedValue(slideIndex, 'background', imageUrl);
   };
