@@ -13,7 +13,26 @@ interface CarouselViewerProps {
   onClose: () => void;
 }
 
-type ImageEditState = { slideIndex: number; type: 'img' | 'bg'; targetId: string } | null;
+type ImageEditorModalState =
+  | {
+      slideIndex: number;
+      // o alvo dentro do IFRAME modal (resolvido ao abrir)
+      targetHint?: 'img' | 'bg';
+      // dados da edição (preenchidos durante o modal)
+      final?: {
+        type: 'img' | 'bg';
+        // seletor/id aplicado para replicar no preview
+        targetSelector: string;
+        // dimensões finais
+        wrapperWidth: number;
+        wrapperHeight: number;
+        imgWidth: number;
+        imgHeight: number;
+        imgLeft: number;
+        imgTop: number;
+      };
+    }
+  | null;
 
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
   const [zoom, setZoom] = useState(0.35);
@@ -36,7 +55,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [previousSelection, setPreviousSelection] = useState<{ slideIndex: number; element: ElementType }>({ slideIndex: 0, element: null });
   const [cropMode, setCropMode] = useState<{ slideIndex: number; videoId: string } | null>(null);
   const [videoDimensions, setVideoDimensions] = useState<Record<string, { width: number; height: number }>>({});
-  const [imageEdit, setImageEdit] = useState<ImageEditState>(null);
+
+  // NOVO: modal de edição
+  const [imageEditorModal, setImageEditorModal] = useState<ImageEditorModalState>(null);
+  const modalIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,15 +68,53 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const slideHeight = 1350;
   const gap = 40;
 
-  // ==== ESC / mensagens
+  // =============================
+  // Utilidades
+  const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
+
+  const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
+    let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
+
+    // imagens
+    const imgs = Array.from(iframeDoc.querySelectorAll('img')) as HTMLImageElement[];
+    imgs.forEach(img => {
+      if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
+      const r = img.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area > 8000) {
+        if (!best || area > best.area) best = { type: 'img', el: img, area };
+      }
+    });
+
+    // elementos com bg-image
+    const allEls = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
+    allEls.forEach(el => {
+      const cs = iframeDoc.defaultView?.getComputedStyle(el);
+      if (!cs) return;
+      if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
+        const r = el.getBoundingClientRect();
+        const area = r.width * r.height;
+        if (area > 8000) {
+          if (!best || area > best.area) best = { type: 'bg', el, area };
+        }
+      }
+    });
+
+    return best ? { type: best.type, el: best.el } : null;
+  };
+
+  // =============================
+  // Inicialização / atalho de teclado
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (imageEditorModal) {
+          // fecha modal sem aplicar
+          closeImageEditor(false);
+          return;
+        }
         if (cropMode) {
           setCropMode(null);
-        } else if (imageEdit) {
-          cleanupImageEdit(imageEdit.slideIndex);
-          setImageEdit(null);
         } else if (selectedElement.element !== null) {
           setSelectedElement({ slideIndex: selectedElement.slideIndex, element: null });
         } else {
@@ -64,8 +124,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElement, cropMode, onClose, imageEdit]);
+  }, [selectedElement, cropMode, onClose, imageEditorModal]);
 
+  // placeholder de mensagens vindo do iframe original (vídeos, etc.)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'enterCropMode') {
@@ -76,118 +137,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // ========= Video crop (já existente)
-  useEffect(() => {
-    if (!cropMode) return;
-
-    const iframe = iframeRefs.current[cropMode.slideIndex];
-    if (!iframe || !iframe.contentWindow) return;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!iframeDoc) return;
-
-    let container = iframeDoc.querySelector(`[data-video-id="${cropMode.videoId}"]`) as HTMLElement;
-    let video = container?.querySelector('video') as HTMLVideoElement;
-
-    if (!container) {
-      video = iframeDoc.getElementById(cropMode.videoId) as HTMLVideoElement;
-      if (video) container = video.parentElement as HTMLElement;
-    }
-    if (!container || !video) return;
-
-    const currentWidth = videoDimensions[cropMode.videoId]?.width || video.offsetWidth;
-    const currentHeight = videoDimensions[cropMode.videoId]?.height || video.offsetHeight;
-
-    container.style.width = `${currentWidth}px`;
-    container.style.height = `${currentHeight}px`;
-    container.style.border = '3px solid #3B82F6';
-    container.style.boxShadow = '0 0 20px rgba(59,130,246,.5)';
-
-    const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
-    const handleElements: HTMLElement[] = [];
-
-    const addHandle = (position: typeof handles[number]) => {
-      const handle = iframeDoc.createElement('div');
-      handle.className = `resize-handle resize-handle-${position}`;
-      handle.style.cssText = `position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1000;`;
-      if (['nw','ne','sw','se'].includes(position)) { handle.style.width='12px';handle.style.height='12px';handle.style.borderRadius='50%';handle.style.cursor=`${position}-resize`; }
-      else if (['n','s'].includes(position)) { handle.style.width='40px';handle.style.height='8px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.left='50%';handle.style.transform='translateX(-50%)'; }
-      else { handle.style.width='8px';handle.style.height='40px';handle.style.borderRadius='4px';handle.style.cursor=`${position}-resize`;handle.style.top='50%';handle.style.transform='translateY(-50%)'; }
-      if (position==='nw'){handle.style.top='-6px';handle.style.left='-6px';}
-      if (position==='ne'){handle.style.top='-6px';handle.style.right='-6px';}
-      if (position==='sw'){handle.style.bottom='-6px';handle.style.left='-6px';}
-      if (position==='se'){handle.style.bottom='-6px';handle.style.right='-6px';}
-      if (position==='n'){handle.style.top='-4px';}
-      if (position==='s'){handle.style.bottom='-4px';}
-      if (position==='e'){handle.style.right='-4px';}
-      if (position==='w'){handle.style.left='-4px';}
-
-      let isResizing = false;
-      let startX = 0, startY = 0, startWidth = 0, startHeight = 0;
-
-      const onMouseDown = (e: MouseEvent) => {
-        e.preventDefault(); e.stopPropagation();
-        isResizing = true;
-        startX = e.clientX; startY = e.clientY;
-        startWidth = container.offsetWidth; startHeight = container.offsetHeight;
-
-        const onMouseMove = (e: MouseEvent) => {
-          if (!isResizing) return;
-          const deltaX = (e.clientX - startX) / zoom;
-          const deltaY = (e.clientY - startY) / zoom;
-          let newWidth = startWidth;
-          let newHeight = startHeight;
-
-          if (position.includes('e')) newWidth = startWidth + deltaX;
-          if (position.includes('w')) newWidth = startWidth - deltaX;
-          if (position.includes('s')) newHeight = startHeight + deltaY;
-          if (position.includes('n')) newHeight = startHeight - deltaY;
-
-          if (newWidth > 50) { container.style.width = `${newWidth}px`; video.style.width = `${newWidth}px`; }
-          if (newHeight > 50) { container.style.height = `${newHeight}px`; video.style.height = `${newHeight}px`; }
-
-          setVideoDimensions(prev => ({ ...prev, [cropMode.videoId]: { width: newWidth, height: newHeight } }));
-        };
-
-        const onMouseUp = () => {
-          isResizing = false;
-          iframeDoc.removeEventListener('mousemove', onMouseMove);
-          iframeDoc.removeEventListener('mouseup', onMouseUp);
-        };
-
-        iframeDoc.addEventListener('mousemove', onMouseMove);
-        iframeDoc.addEventListener('mouseup', onMouseUp);
-      };
-
-      handle.addEventListener('mousedown', onMouseDown);
-      container.appendChild(handle);
-      handleElements.push(handle);
-    };
-
-    handles.forEach(addHandle);
-
-    const exitBtn = iframeDoc.createElement('button');
-    exitBtn.className = 'crop-exit-btn';
-    exitBtn.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1001;';
-    exitBtn.textContent = 'Done';
-    exitBtn.onclick = () => setCropMode(null);
-    container.appendChild(exitBtn);
-
-    return () => {
-      handleElements.forEach(h => h.remove());
-      exitBtn.remove();
-      container.style.border = '';
-      container.style.boxShadow = '';
-      container.style.width = '';
-      container.style.height = '';
-    };
-  }, [cropMode, zoom, videoDimensions]);
-
-  // ===== Helpers
-  const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
-
+  // =============================
+  // Injeção de IDs editáveis (texto + bg)
   const injectEditableIds = (html: string, slideIndex: number): string => {
     let result = html;
     const conteudo = carouselData.conteudos[slideIndex];
+
     const titleText = conteudo?.title || '';
     const subtitleText = conteudo?.subtitle || '';
 
@@ -213,25 +168,26 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       });
     }
 
+    // estilos para hover/seleção e para o modo de edição (apenas básicos)
     result = result.replace(
       /<style>/i,
       `<style>
         [data-editable]{cursor:pointer!important;position:relative;display:inline-block!important}
         [data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px;z-index:1000}
-        [data-editable]:hover:not(.selected){outline:2px solid rgba(59,130,246,.5)!important;outline-offset:2px}
         [data-editable][contenteditable="true"]{outline:3px solid #10B981!important;outline-offset:2px;background:rgba(16,185,129,.1)!important}
-        body[data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:-3px}
-        body[data-editable]:hover:not(.selected){outline:2px solid rgba(59,130,246,.5)!important;outline-offset:-2px}
         img[data-editable]{display:block!important}
         img[data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px}
-        .img-edit-wrapper{position:relative;display:inline-block;border-radius:inherit}
-        .img-edit-overlay{position:absolute;inset:0;z-index:1002;cursor:move;pointer-events:auto;background:transparent}
-        .img-edit-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1003}
-        .img-dim-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:1001}
-        .img-dim-block{position:fixed;background:rgba(0,0,0,.55);pointer-events:none}
+        /* elementos com bg editável */
+        .cv-mask-wrapper{position:relative;display:inline-block}
+        .cv-mask-overlay{position:absolute;inset:0;cursor:move;z-index:1003;background:transparent}
+        .cv-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1004}
+        /* Dimmer fora do recorte (dentro do iframe do modal) */
+        .cv-dim{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:1002}
+        .cv-dim-block{position:fixed;background:rgba(0,0,0,.55);pointer-events:none;z-index:1002}
       `
     );
 
+    // background do body vira editável
     result = result.replace(
       /<body([^>]*)>/i,
       `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
@@ -252,7 +208,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setFocusedSlide(0);
   }, []);
 
-  // ===== Aplicação no iframe (troca de texto/cores + marca imagens/bg como editáveis)
+  // =============================
+  // Aplicar mudanças de texto/estilo e marcar editáveis
   useEffect(() => {
     iframeRefs.current.forEach((iframe, index) => {
       if (!iframe || !iframe.contentWindow) return;
@@ -282,17 +239,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (!cs) return;
           if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
             const r = el.getBoundingClientRect();
-            if (r.width * r.height > 9000) {
+            if (r.width * r.height > 8000) {
               el.setAttribute('data-editable', 'image');
               if (!el.id) el.id = `slide-${index}-bg-${Math.random().toString(36).slice(2,7)}`;
-              el.style.willChange = 'background-position,width,height';
               if (cs.position === 'static') el.style.position = 'relative';
             }
           }
         });
       };
+
       markEditables();
 
+      // Atualiza textos/estilos
       const updateElement = (elementId: string, styles?: ElementStyles, content?: string) => {
         const element = iframeDoc.getElementById(elementId);
         if (!element) return;
@@ -322,12 +280,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         return { fontSize: computedStyle.fontSize || '16px', fontWeight: computedStyle.fontWeight || '400', textAlign: (computedStyle.textAlign as any) || 'left', color: hexColor };
       };
 
-      const titleKey = getElementKey(index, 'title');
-      const subtitleKey = getElementKey(index, 'subtitle');
+      const titleKey = `${index}-title`;
+      const subtitleKey = `${index}-subtitle`;
+
       const titleStyles = elementStyles[titleKey];
       const subtitleStyles = elementStyles[subtitleKey];
       const titleContent = editedContent[`${index}-title`];
       const subtitleContent = editedContent[`${index}-subtitle`];
+
       if (titleStyles || titleContent !== undefined) updateElement(`slide-${index}-title`, titleStyles, titleContent);
       if (subtitleStyles || subtitleContent !== undefined) updateElement(`slide-${index}-subtitle`, subtitleStyles, subtitleContent);
 
@@ -347,6 +307,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }
 
+      // salva estilos originais dos textos para painel
       setTimeout(() => {
         const titleElement = iframeDoc.getElementById(`slide-${index}-title`);
         if (titleElement && !originalStyles[`${index}-title`]) {
@@ -358,123 +319,202 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           const styles = extractOriginalStyles(subtitleElement as HTMLElement);
           setOriginalStyles(prev => ({ ...prev, [`${index}-subtitle`]: styles }));
         }
-      }, 100);
-
-      iframeDoc.querySelectorAll('[data-editable]').forEach(el => { (el as HTMLElement).style.pointerEvents = 'auto'; });
+      }, 80);
     });
   }, [elementStyles, editedContent, originalStyles]);
 
-  // ===== Dimmer helpers (quatro blocos que escurecem fora do recorte)
-  const createOrUpdateDimmer = (doc: Document, wrapper: HTMLElement) => {
-    let dimLayer = doc.querySelector('.img-dim-layer') as HTMLDivElement | null;
-    const rect = wrapper.getBoundingClientRect();
+  // =============================
+  // Ações UI laterais
+  const toggleLayer = (index: number) => {
+    const newExpanded = new Set(expandedLayers);
+    if (newExpanded.has(index)) newExpanded.delete(index);
+    else newExpanded.add(index);
+    setExpandedLayers(newExpanded);
+  };
 
-    const ensure = (cls: string) => {
-      let el = doc.querySelector(`.${cls}`) as HTMLDivElement | null;
-      if (!el) {
-        el = doc.createElement('div');
-        el.className = cls;
-        (doc.body as HTMLElement).appendChild(el);
-      }
-      return el;
-    };
+  const handleSlideClick = (index: number) => {
+    setFocusedSlide(index);
+    setSelectedElement({ slideIndex: index, element: null });
+    selectedImageRefs.current[index] = null;
 
-    if (!dimLayer) {
-      dimLayer = ensure('img-dim-layer');
-      const top = ensure('img-dim-top') as HTMLDivElement; top.classList.add('img-dim-block');
-      const right = ensure('img-dim-right') as HTMLDivElement; right.classList.add('img-dim-block');
-      const bottom = ensure('img-dim-bottom') as HTMLDivElement; bottom.classList.add('img-dim-block');
-      const left = ensure('img-dim-left') as HTMLDivElement; left.classList.add('img-dim-block');
+    const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
+    const slidePosition = index * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
+    setPan({ x: -slidePosition * zoom, y: 0 });
+  };
+
+  const handleElementClick = (slideIndex: number, element: ElementType) => {
+    setIsLoadingProperties(true);
+    setPreviousSelection(selectedElement);
+    setSelectedElement({ slideIndex, element });
+    setFocusedSlide(slideIndex);
+    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
+    setTimeout(() => setIsLoadingProperties(false), 100);
+  };
+
+  const getEditedValue = (slideIndex: number, field: string, defaultValue: any) => {
+    const key = `${slideIndex}-${field}`;
+    return editedContent[key] !== undefined ? editedContent[key] : defaultValue;
+  };
+
+  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
+    const key = `${slideIndex}-${field}`;
+    setEditedContent(prev => ({ ...prev, [key]: value }));
+  };
+
+  const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
+    const key = `${slideIndex}-${element}`;
+    if (elementStyles[key]) return elementStyles[key];
+    if (originalStyles[key]) return originalStyles[key];
+    return { fontSize: element === 'title' ? '24px' : '16px', fontWeight: element === 'title' ? '700' : '400', textAlign: 'left', color: '#FFFFFF' };
+  };
+
+  const updateElementStyle = (slideIndex: number, element: ElementType, property: keyof ElementStyles, value: string) => {
+    const key = `${slideIndex}-${element}`;
+    setElementStyles(prev => ({ ...prev, [key]: { ...getElementStyle(slideIndex, element), [property]: value } }));
+  };
+
+  const getElementIcon = (element: string) => {
+    if (element.includes('title') || element.includes('subtitle')) return <Type className="w-4 h-4 text-neutral-500" />;
+    return <ImageIcon className="w-4 h-4 text-neutral-500" />;
+  };
+
+  const handleDownloadAll = () => {
+    renderedSlides.forEach((slide, index) => {
+      const blob = new Blob([slide], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `slide-${index + 1}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  // =============================
+  // Troca imediata do background + abrir modal de edição
+  const applyBackgroundImageImmediate = (slideIndex: number, imageUrl: string): HTMLElement | null => {
+    const iframe = iframeRefs.current[slideIndex];
+    if (!iframe || !iframe.contentWindow) return null;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    if (!iframeDoc) return null;
+
+    const targetImg = selectedImageRefs.current[slideIndex];
+    if (targetImg && targetImg.getAttribute('data-protected') !== 'true') {
+      targetImg.removeAttribute('srcset'); targetImg.removeAttribute('sizes'); targetImg.loading = 'eager';
+      targetImg.src = imageUrl;
+      targetImg.setAttribute('data-bg-image-url', imageUrl);
+      return targetImg;
     }
 
-    const vw = doc.defaultView?.innerWidth || 0;
-    const vh = doc.defaultView?.innerHeight || 0;
+    const best = findLargestVisual(iframeDoc);
+    if (best) {
+      if (best.type === 'img') {
+        const img = best.el as HTMLImageElement;
+        img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
+        img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
+        return img;
+      } else {
+        best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
+        return best.el;
+      }
+    }
 
-    const topB = doc.querySelector('.img-dim-top') as HTMLDivElement;
-    const rightB = doc.querySelector('.img-dim-right') as HTMLDivElement;
-    const bottomB = doc.querySelector('.img-dim-bottom') as HTMLDivElement;
-    const leftB = doc.querySelector('.img-dim-left') as HTMLDivElement;
-
-    topB.style.left = '0px'; topB.style.top = '0px';
-    topB.style.width = `${vw}px`; topB.style.height = `${Math.max(0, rect.top)}px`;
-
-    bottomB.style.left = '0px'; bottomB.style.top = `${Math.max(0, rect.bottom)}px`;
-    bottomB.style.width = `${vw}px`; bottomB.style.height = `${Math.max(0, vh - rect.bottom)}px`;
-
-    leftB.style.left = '0px'; leftB.style.top = `${Math.max(0, rect.top)}px`;
-    leftB.style.width = `${Math.max(0, rect.left)}px`; leftB.style.height = `${Math.max(0, rect.height)}px`;
-
-    rightB.style.left = `${Math.max(0, rect.right)}px`; rightB.style.top = `${Math.max(0, rect.top)}px`;
-    rightB.style.width = `${Math.max(0, vw - rect.right)}px`; rightB.style.height = `${Math.max(0, rect.height)}px`;
+    iframeDoc.body.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
+    return iframeDoc.body;
   };
 
-  const removeDimmer = (doc: Document) => {
-    ['img-dim-layer','img-dim-top','img-dim-right','img-dim-bottom','img-dim-left'].forEach(cls => {
-      const el = doc.querySelector(`.${cls}`);
-      if (el) el.remove();
-    });
+  const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
+    const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
+    setSelectedElement({ slideIndex, element: 'background' });
+    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
+    setFocusedSlide(slideIndex);
+    updateEditedValue(slideIndex, 'background', imageUrl);
+
+    // abre modal automaticamente após escolher imagem
+    if (updatedEl) {
+      const isImg = updatedEl.tagName === 'IMG';
+      openImageEditor(slideIndex, isImg ? 'img' : 'bg');
+    }
   };
 
-  // ===== limpeza do modo de edição
-  const cleanupImageEdit = (slideIndex: number) => {
-    const iframe = iframeRefs.current[slideIndex];
-    if (!iframe || !iframe.contentWindow) return;
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
+  const handleSearchImages = async () => {
+    if (!searchKeyword.trim()) return;
+    setIsSearching(true);
+    try {
+      const imageUrls = await searchImages(searchKeyword);
+      setSearchResults(imageUrls);
+    } catch (error) {
+      console.error('Error searching images:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleImageUpload = (slideIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string;
+      setUploadedImages(prev => ({ ...prev, [slideIndex]: imageUrl }));
+      handleBackgroundImageChange(slideIndex, imageUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // =============================
+  // MODO POPUP (apenas slide selecionado)
+  const openImageEditor = (slideIndex: number, targetHint?: 'img' | 'bg') => {
+    setImageEditorModal({ slideIndex, targetHint });
+  };
+
+  const setupModalIframe = () => {
+    const iframe = modalIframeRef.current;
+    if (!iframe) return;
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!doc) return;
 
-    doc.querySelectorAll('.img-edit-overlay, .img-edit-handle, .img-edit-done-btn').forEach(el => el.remove());
-    doc.querySelectorAll('[data-img-editing="true"]').forEach(el => {
-      (el as HTMLElement).style.outline = '';
-      (el as HTMLElement).style.overflow = ''; // volta overflow padrão
-      el.removeAttribute('data-img-editing');
-    });
-    const dragging = doc.querySelector('[data-img-dragging="true"]') as HTMLElement | null;
-    if (dragging) dragging.removeAttribute('data-img-dragging');
-    removeDimmer(doc);
-  };
+    // encontra alvo (preferir o selecionado no preview principal)
+    const origIframe = iframeRefs.current[imageEditorModal!.slideIndex];
+    const origDoc = origIframe?.contentDocument || origIframe?.contentWindow?.document || null;
 
-  // ===== restrições de arrasto (não deixar “vazio” no container)
-  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
-    const wW = wrapper.clientWidth;
-    const wH = wrapper.clientHeight;
-    const iW = img.offsetWidth;          // imagem ocupando 100% da largura do wrapper
-    const iH = img.offsetHeight;
+    let target: { type: 'img' | 'bg', el: HTMLElement } | null = null;
 
-    const curLeft = parseFloat(img.style.left || '0');
-    const curTop = parseFloat(img.style.top || '0');
+    if (origDoc) {
+      // se havia um [data-editable].selected no original, tenta mesmo ID no modal
+      const selectedOrig = origDoc.querySelector('[data-editable].selected') as HTMLElement | null;
+      if (selectedOrig && selectedOrig.id) {
+        const same = doc.getElementById(selectedOrig.id);
+        if (same) {
+          const type: 'img' | 'bg' = same.tagName === 'IMG' ? 'img' : 'bg';
+          target = { type, el: same as HTMLElement };
+        }
+      }
+    }
 
-    // largura da imagem == largura do wrapper -> trava horizontal em 0
-    const newLeft = 0;
+    if (!target) {
+      // fallback: maior visual
+      const best = findLargestVisual(doc);
+      if (best) target = best;
+    }
 
-    // altura geralmente maior que wrapper: limita para cobrir sempre
-    const minTop = Math.min(0, wH - iH);
-    const maxTop = 0;
-    const newTop = Math.min(maxTop, Math.max(minTop, curTop));
+    if (!target) return;
 
-    img.style.left = `${newLeft}px`;
-    img.style.top = `${newTop}px`;
-  };
-
-  // ===== Iniciar edição (container mantém o tamanho; img ocupa 100% da largura)
-  const startImageEdit = (slideIndex: number, target: HTMLElement, type: 'img'|'bg') => {
-    const iframe = iframeRefs.current[slideIndex];
-    if (!iframe || !iframe.contentWindow) return;
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!doc) return;
-
-    cleanupImageEdit(slideIndex);
-
+    // garante wrapper (máscara): mantém tamanho do elemento; imagem ocupa 100% da largura
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
 
-    if (type === 'bg') {
-      // converte background em <img> dentro do próprio elemento (wrapper)
-      const cs = doc.defaultView?.getComputedStyle(target);
+    if (target.type === 'bg') {
+      const el = target.el as HTMLElement;
+      const cs = doc.defaultView?.getComputedStyle(el);
       let bg = cs?.backgroundImage || '';
       const m = bg.match(/url\(["']?(.+?)["']?\)/i);
       const bgUrl = m?.[1] || '';
 
-      let existingImg = target.querySelector('img') as HTMLImageElement | null;
+      // zera bg-image e coloca <img> posicionado
+      let existingImg = el.querySelector('img') as HTMLImageElement | null;
       if (!existingImg) {
         existingImg = doc.createElement('img');
         existingImg.src = bgUrl;
@@ -484,110 +524,92 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         existingImg.style.top = '0px';
         existingImg.style.maxWidth = 'unset';
         existingImg.style.maxHeight = 'unset';
-        (target as HTMLElement).style.backgroundImage = 'none';
-        (target as HTMLElement).appendChild(existingImg);
+        existingImg.style.userSelect = 'none';
+        el.style.backgroundImage = 'none';
+        if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+        el.appendChild(existingImg);
       }
+      wrapper = el;
       imgEl = existingImg;
-      wrapper = target;
     } else {
-      // <img>: embrulha num wrapper para poder redimensionar container
-      const img = target as HTMLImageElement;
-      if (!img.parentElement || !img.parentElement.classList.contains('img-edit-wrapper')) {
+      const el = target.el as HTMLImageElement;
+      // wrap só se ainda não tiver
+      if (!el.parentElement || !el.parentElement.classList.contains('cv-mask-wrapper')) {
         const w = doc.createElement('div');
-        w.className = 'img-edit-wrapper';
-        const rect = img.getBoundingClientRect();
-
-        w.style.width = `${rect.width || img.width}px`;
-        w.style.height = `${rect.height || img.height}px`;
-        w.style.borderRadius = getComputedStyle(img).borderRadius;
+        w.className = 'cv-mask-wrapper';
+        const rect = el.getBoundingClientRect();
+        w.style.width = `${rect.width || el.width}px`;
+        w.style.height = `${rect.height || el.height}px`;
+        w.style.borderRadius = getComputedStyle(el).borderRadius;
         w.style.display = 'inline-block';
         w.style.position = 'relative';
+        w.style.overflow = 'hidden'; // máscara no modal
 
-        // deixar overflow visível para enxergar imagem além do container
-        w.style.overflow = 'visible';
+        el.style.position = 'absolute';
+        el.style.maxWidth = 'unset';
+        el.style.maxHeight = 'unset';
+        el.style.userSelect = 'none';
+        if (!el.style.left) el.style.left = '0px';
+        if (!el.style.top) el.style.top = '0px';
 
-        img.style.position = 'absolute';
-        img.style.maxWidth = 'unset';
-        img.style.maxHeight = 'unset';
-        if (!img.style.left) img.style.left = '0px';
-        if (!img.style.top) img.style.top = '0px';
-
-        if (img.parentNode) img.parentNode.replaceChild(w, img);
-        w.appendChild(img);
+        if (el.parentNode) el.parentNode.replaceChild(w, el);
+        w.appendChild(el);
         wrapper = w;
       } else {
-        wrapper = img.parentElement as HTMLElement;
-        wrapper.style.overflow = 'visible';
+        wrapper = el.parentElement as HTMLElement;
+        wrapper.style.overflow = 'hidden';
       }
       imgEl = wrapper.querySelector('img') as HTMLImageElement;
     }
 
-    // visual de edição
-    wrapper.setAttribute('data-img-editing', 'true');
-    wrapper.style.outline = '3px solid #3B82F6';
-    wrapper.style.overflow = 'visible'; // importante para ver a parte da imagem fora do container
-
-    // imagem ocupa 100% da largura do container (altura proporcional); container mantém tamanho
+    // imagem ocupa 100% da largura do wrapper; altura proporcional
     const fitImageToWrapperWidth = () => {
       if (!imgEl) return;
       const nW = imgEl.naturalWidth || imgEl.width;
       const nH = imgEl.naturalHeight || imgEl.height;
-
-      // força largura = largura do container; altura proporcional
-      const wW = wrapper.clientWidth;
       const ratio = nH / nW;
+
+      const wW = wrapper.clientWidth;
       const expectedH = wW * ratio;
 
       imgEl.style.width = `${wW}px`;
       imgEl.style.height = `${expectedH}px`;
 
-      // centraliza verticalmente (ou clamp se já havia posição)
       if (!imgEl.style.top) imgEl.style.top = `${(wrapper.clientHeight - expectedH) / 2}px`;
       imgEl.style.left = '0px';
-
       clampDragWithin(wrapper, imgEl);
-      createOrUpdateDimmer(doc, wrapper);
+      refreshDimmer(doc, wrapper);
     };
 
     if (imgEl?.complete) fitImageToWrapperWidth();
     else imgEl?.addEventListener('load', fitImageToWrapperWidth, { once: true });
 
-    // overlay para arrastar (apenas vertical faz efeito prático; horizontal fica 0)
+    // overlay para arrasto
     const overlay = doc.createElement('div');
-    overlay.className = 'img-edit-overlay';
-    overlay.style.pointerEvents = 'auto';
+    overlay.className = 'cv-mask-overlay';
     wrapper.appendChild(overlay);
-
-    const onWindowResize = () => {
-      fitImageToWrapperWidth();
-      createOrUpdateDimmer(doc, wrapper);
-    };
-    doc.defaultView?.addEventListener('resize', onWindowResize);
 
     const start = { x: 0, y: 0, imgLeft: 0, imgTop: 0 };
     const onOverlayDown = (e: MouseEvent) => {
       e.preventDefault(); e.stopPropagation();
       if (!imgEl) return;
-      start.x = e.clientX;
-      start.y = e.clientY;
+      start.x = e.clientX; start.y = e.clientY;
       start.imgLeft = parseFloat(imgEl.style.left || '0');
       start.imgTop = parseFloat(imgEl.style.top || '0');
-      imgEl.setAttribute('data-img-dragging', 'true');
 
       const onMove = (e: MouseEvent) => {
         if (!imgEl) return;
-        const dx = (e.clientX - start.x) / zoom;
-        const dy = (e.clientY - start.y) / zoom;
-        imgEl.style.left = `${start.imgLeft + dx}px`;  // será clampado para 0
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        imgEl.style.left = `${start.imgLeft + dx}px`;
         imgEl.style.top = `${start.imgTop + dy}px`;
         clampDragWithin(wrapper, imgEl);
-        createOrUpdateDimmer(doc, wrapper);
+        refreshDimmer(doc, wrapper);
       };
 
       const onUp = () => {
         doc.removeEventListener('mousemove', onMove);
         doc.removeEventListener('mouseup', onUp);
-        imgEl?.removeAttribute('data-img-dragging');
       };
 
       doc.addEventListener('mousemove', onMove);
@@ -595,58 +617,63 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     overlay.addEventListener('mousedown', onOverlayDown);
 
-    // handles para redimensionar o CONTAINER (não a imagem). A imagem se adapta à largura
-    const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
+    // handles para redimensionar a ALTURA do container (e também cantos)
+    const handles = ['n','s','nw','ne','sw','se'] as const;
     const makeHandle = (pos: typeof handles[number]) => {
       const h = doc.createElement('div');
-      h.className = `img-edit-handle img-edit-h-${pos}`;
+      h.className = `cv-handle cv-h-${pos}`;
       if (['nw','ne','sw','se'].includes(pos)) {
         h.style.width='12px'; h.style.height='12px'; h.style.borderRadius='50%'; h.style.cursor=`${pos}-resize`;
-      } else if (['n','s'].includes(pos)) {
-        h.style.width='40px'; h.style.height='8px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`; h.style.left='50%'; h.style.transform='translateX(-50%)';
       } else {
-        h.style.width='8px'; h.style.height='40px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`; h.style.top='50%'; h.style.transform='translateY(-50%)';
+        // n/s
+        h.style.width='40px'; h.style.height='8px'; h.style.borderRadius='4px'; h.style.cursor=`${pos}-resize`;
+        h.style.left='50%'; h.style.transform='translateX(-50%)';
       }
+      if (pos==='n'){h.style.top='-6px';}
+      if (pos==='s'){h.style.bottom='-6px';}
       if (pos==='nw'){h.style.top='-6px'; h.style.left='-6px';}
       if (pos==='ne'){h.style.top='-6px'; h.style.right='-6px';}
       if (pos==='sw'){h.style.bottom='-6px'; h.style.left='-6px';}
       if (pos==='se'){h.style.bottom='-6px'; h.style.right='-6px';}
-      if (pos==='n'){h.style.top='-4px';}
-      if (pos==='s'){h.style.bottom='-4px';}
-      if (pos==='e'){h.style.right='-4px';}
-      if (pos==='w'){h.style.left='-4px';}
 
       let isResizing = false;
-      let startX = 0, startY = 0, startW = 0, startH = 0;
+      let startY = 0, startX = 0, startH = 0, startW = 0;
 
       const onDown = (e: MouseEvent) => {
         e.preventDefault(); e.stopPropagation();
         isResizing = true;
-        startX = e.clientX; startY = e.clientY;
-        startW = wrapper.offsetWidth; startH = wrapper.offsetHeight;
+        startY = e.clientY; startX = e.clientX;
+        startH = wrapper.offsetHeight; startW = wrapper.offsetWidth;
 
         const onMove = (e: MouseEvent) => {
           if (!isResizing) return;
-          const dx = (e.clientX - startX) / zoom;
-          const dy = (e.clientY - startY) / zoom;
-          let newW = startW;
+          const dy = e.clientY - startY;
+          const dx = e.clientX - startX;
           let newH = startH;
-          if (pos.includes('e')) newW = startW + dx;
-          if (pos.includes('w')) newW = startW - dx;
+          let newW = startW;
+
           if (pos.includes('s')) newH = startH + dy;
           if (pos.includes('n')) newH = startH - dy;
+          if (pos.includes('e')) newW = startW + dx;
+          if (pos.includes('w')) newW = startW - dx;
 
-          if (newW > 50) wrapper.style.width = `${newW}px`;
-          if (newH > 50) wrapper.style.height = `${newH}px`;
+          // POR ENQUANTO, travamos a largura (mantemos máscara alinhada ao design). Se quiser liberar, remova as linhas abaixo e habilite newW.
+          if (newH > 40) wrapper.style.height = `${newH}px`;
 
-          // imagem acompanha a nova largura do container
+          // opcional: se quiser liberar largura no modal:
+          // if (newW > 80) wrapper.style.width = `${newW}px`;
+
           if (imgEl) {
-            const ratio = (imgEl.naturalHeight || imgEl.height) / (imgEl.naturalWidth || imgEl.width);
-            imgEl.style.width = `${wrapper.clientWidth}px`;
-            imgEl.style.height = `${wrapper.clientWidth * ratio}px`;
+            // imagem continua 100% da largura do wrapper
+            const nW = imgEl.naturalWidth || imgEl.width;
+            const nH = imgEl.naturalHeight || imgEl.height;
+            const ratio = nH / nW;
+            const wW = wrapper.clientWidth;
+            imgEl.style.width = `${wW}px`;
+            imgEl.style.height = `${wW * ratio}px`;
             clampDragWithin(wrapper, imgEl);
           }
-          createOrUpdateDimmer(doc, wrapper);
+          refreshDimmer(doc, wrapper);
         };
 
         const onUp = () => {
@@ -664,34 +691,232 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     handles.forEach(makeHandle);
 
-    // Botão Done
-    const done = doc.createElement('button');
-    done.className = 'img-edit-done-btn';
-    done.textContent = 'Done';
-    done.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1004;';
-    done.onclick = (e) => {
-      e.preventDefault(); e.stopPropagation();
-      cleanupImageEdit(slideIndex);
-      setImageEdit(null);
-      doc.defaultView?.removeEventListener('resize', onWindowResize);
+    // Botão Done dentro do modal (em overlay fora do iframe)
+    // -> tratado no contêiner React (fora do iframe)
+
+    // Salvar referência no dataset p/ aplicar de volta
+    // Se não houver id, cria um
+    if (!target.el.id) target.el.id = `cv-target-${Date.now()}`;
+    (doc.body as any).__cvTargetSelector = `#${target.el.id}`;
+    (doc.body as any).__cvTargetType = target.type;
+
+    // Fit inicial + dimmer
+    const onWinResize = () => {
+      fitImageToWrapperWidth();
+      refreshDimmer(doc, wrapper);
     };
-    wrapper.appendChild(done);
-
-    // Foco e dimmer dentro do iframe
-    createOrUpdateDimmer(doc, wrapper);
-
-    // guarda estado
-    const targetId = (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id || `img-edit-${Date.now()}`;
-    (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id = targetId;
-    setImageEdit({ slideIndex, type, targetId });
+    doc.defaultView?.addEventListener('resize', onWinResize);
   };
 
-  const enableImageEditFromElement = (slideIndex: number, el: HTMLElement) => {
-    const isImg = el.tagName === 'IMG';
-    setTimeout(() => startImageEdit(slideIndex, isImg ? (el as HTMLImageElement) : el, isImg ? 'img' : 'bg'), 0);
+  const refreshDimmer = (doc: Document, wrapper: HTMLElement) => {
+    // cria blocos
+    const ensure = (cls: string) => {
+      let el = doc.querySelector(`.${cls}`) as HTMLDivElement | null;
+      if (!el) {
+        el = doc.createElement('div');
+        el.className = cls;
+        doc.body.appendChild(el);
+      }
+      return el;
+    };
+    ensure('cv-dim');
+    const topB = ensure('cv-dim-top'); topB.classList.add('cv-dim-block');
+    const rightB = ensure('cv-dim-right'); rightB.classList.add('cv-dim-block');
+    const bottomB = ensure('cv-dim-bottom'); bottomB.classList.add('cv-dim-block');
+    const leftB = ensure('cv-dim-left'); leftB.classList.add('cv-dim-block');
+
+    const rect = wrapper.getBoundingClientRect();
+    const vw = doc.defaultView?.innerWidth || 0;
+    const vh = doc.defaultView?.innerHeight || 0;
+
+    topB.style.left = '0px'; topB.style.top = '0px';
+    topB.style.width = `${vw}px`; topB.style.height = `${Math.max(0, rect.top)}px`;
+
+    bottomB.style.left = '0px'; bottomB.style.top = `${Math.max(0, rect.bottom)}px`;
+    bottomB.style.width = `${vw}px`; bottomB.style.height = `${Math.max(0, vh - rect.bottom)}px`;
+
+    leftB.style.left = '0px'; leftB.style.top = `${Math.max(0, rect.top)}px`;
+    leftB.style.width = `${Math.max(0, rect.left)}px`; leftB.style.height = `${Math.max(0, rect.height)}px`;
+
+    rightB.style.left = `${Math.max(0, rect.right)}px`; rightB.style.top = `${Math.max(0, rect.top)}px`;
+    rightB.style.width = `${Math.max(0, vw - rect.right)}px`; rightB.style.height = `${Math.max(0, rect.height)}px`;
   };
 
-  // ===== Setup click dentro do iframe
+  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
+    const wW = wrapper.clientWidth;
+    const wH = wrapper.clientHeight;
+    const iW = img.offsetWidth;
+    const iH = img.offsetHeight;
+
+    // largura cola 100% -> sem arrasto horizontal (pode travar em 0)
+    let left = parseFloat(img.style.left || '0');
+    left = 0;
+
+    // vertical limitado para cobrir sempre
+    let top = parseFloat(img.style.top || '0');
+    const minTop = Math.min(0, wH - iH);
+    const maxTop = 0;
+    if (top < minTop) top = minTop;
+    if (top > maxTop) top = maxTop;
+
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+  };
+
+  const closeImageEditor = (apply: boolean) => {
+    if (!imageEditorModal) {
+      setImageEditorModal(null);
+      return;
+    }
+    const modal = modalIframeRef.current;
+    const modalDoc = modal?.contentDocument || modal?.contentWindow?.document;
+    if (!modalDoc) {
+      setImageEditorModal(null);
+      return;
+    }
+
+    // coletar estado final
+    const selector: string = (modalDoc.body as any).__cvTargetSelector;
+    const type: 'img' | 'bg' = (modalDoc.body as any).__cvTargetType || 'img';
+    const target = selector ? (modalDoc.querySelector(selector) as HTMLElement | null) : null;
+
+    if (apply && target) {
+      let wrapper: HTMLElement | null = null;
+      let img: HTMLImageElement | null = null;
+
+      if (type === 'bg') {
+        wrapper = target;
+        img = wrapper.querySelector('img');
+      } else {
+        if (target.tagName === 'IMG') {
+          img = target as HTMLImageElement;
+          wrapper = img.parentElement && img.parentElement.classList.contains('cv-mask-wrapper')
+            ? (img.parentElement as HTMLElement)
+            : null;
+        } else {
+          // caso raro
+          wrapper = target;
+          img = wrapper.querySelector('img');
+        }
+      }
+
+      if (wrapper && img) {
+        const finalState = {
+          type,
+          targetSelector: selector,
+          wrapperWidth: wrapper.clientWidth,
+          wrapperHeight: wrapper.clientHeight,
+          imgWidth: img.offsetWidth,
+          imgHeight: img.offsetHeight,
+          imgLeft: parseFloat(img.style.left || '0'),
+          imgTop: parseFloat(img.style.top || '0'),
+        };
+
+        // aplica no preview original
+        applyToPreview(imageEditorModal.slideIndex, finalState);
+      }
+    }
+
+    setImageEditorModal(null);
+  };
+
+  const applyToPreview = (
+    slideIndex: number,
+    final: {
+      type: 'img' | 'bg';
+      targetSelector: string;
+      wrapperWidth: number;
+      wrapperHeight: number;
+      imgWidth: number;
+      imgHeight: number;
+      imgLeft: number;
+      imgTop: number;
+    }
+  ) => {
+    const iframe = iframeRefs.current[slideIndex];
+    if (!iframe) return;
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) return;
+
+    const orig = doc.querySelector(final.targetSelector) as HTMLElement | null;
+    if (!orig) return;
+
+    let wrapper: HTMLElement;
+    let imgEl: HTMLImageElement | null = null;
+
+    if (final.type === 'bg') {
+      // converte bg em wrapper com img posicionado
+      const cs = doc.defaultView?.getComputedStyle(orig);
+      let bg = cs?.backgroundImage || '';
+      const m = bg.match(/url\(["']?(.+?)["']?\)/i);
+      const bgUrl = m?.[1] || '';
+
+      let existingImg = orig.querySelector('img') as HTMLImageElement | null;
+      if (!existingImg) {
+        existingImg = doc.createElement('img');
+        existingImg.src = bgUrl;
+        existingImg.alt = 'bg-final';
+        existingImg.style.position = 'absolute';
+        existingImg.style.userSelect = 'none';
+        if (getComputedStyle(orig).position === 'static') (orig as HTMLElement).style.position = 'relative';
+        orig.style.backgroundImage = 'none';
+        orig.appendChild(existingImg);
+      }
+      wrapper = orig;
+      imgEl = existingImg;
+      // aplica tamanhos/posições
+      wrapper.style.overflow = 'hidden';
+      // mantém a largura original; altura conforme final
+      wrapper.style.height = `${final.wrapperHeight}px`;
+
+      imgEl.style.width = `${wrapper.clientWidth}px`; // cola largura do wrapper
+      imgEl.style.height = `${final.imgHeight}px`;
+      imgEl.style.left = `0px`; // travado
+      imgEl.style.top = `${final.imgTop}px`;
+    } else {
+      // IMG
+      const el = orig.tagName === 'IMG' ? (orig as HTMLImageElement) : (orig.querySelector('img') as HTMLImageElement);
+      if (!el) return;
+
+      if (!el.parentElement || !el.parentElement.classList.contains('cv-mask-wrapper')) {
+        const w = doc.createElement('div');
+        w.className = 'cv-mask-wrapper';
+        const rect = el.getBoundingClientRect();
+        w.style.width = `${rect.width || el.width}px`;
+        w.style.height = `${rect.height || el.height}px`;
+        w.style.borderRadius = getComputedStyle(el).borderRadius;
+        w.style.display = 'inline-block';
+        w.style.position = 'relative';
+        w.style.overflow = 'hidden';
+
+        el.style.position = 'absolute';
+        el.style.maxWidth = 'unset';
+        el.style.maxHeight = 'unset';
+        el.style.userSelect = 'none';
+
+        if (el.parentNode) el.parentNode.replaceChild(w, el);
+        w.appendChild(el);
+        wrapper = w;
+        imgEl = el;
+      } else {
+        wrapper = el.parentElement as HTMLElement;
+        imgEl = el;
+        wrapper.style.overflow = 'hidden';
+      }
+
+      // aplica altura do wrapper (largura permanece a do design)
+      wrapper.style.height = `${final.wrapperHeight}px`;
+
+      // imagem = 100% da largura do wrapper (mantém proporção)
+      imgEl.style.width = `${wrapper.clientWidth}px`;
+      imgEl.style.height = `${final.imgHeight}px`;
+      imgEl.style.left = `0px`;
+      imgEl.style.top = `${final.imgTop}px`;
+    }
+  };
+
+  // =============================
+  // CLICK dentro do preview principal
   useEffect(() => {
     const setupIframeInteraction = (iframe: HTMLIFrameElement, slideIndex: number) => {
       if (!iframe.contentWindow) return;
@@ -702,19 +927,22 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       editableElements.forEach((element) => {
         const editableType = element.getAttribute('data-editable');
         const htmlElement = element as HTMLElement;
+
         htmlElement.style.pointerEvents = 'auto';
         htmlElement.style.cursor = 'pointer';
 
         htmlElement.onclick = (e) => {
-          e.preventDefault(); e.stopPropagation();
+          e.preventDefault();
+          e.stopPropagation();
+
           if (htmlElement.getAttribute('contenteditable') === 'true') return;
 
+          // limpa seleção
           iframeRefs.current.forEach((f) => {
             if (!f || !f.contentWindow) return;
             const d = f.contentDocument || f.contentWindow.document;
             if (!d) return;
             d.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
-            d.body.classList.remove('selected');
           });
 
           element.classList.add('selected');
@@ -725,7 +953,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             else selectedImageRefs.current[slideIndex] = null;
 
             handleElementClick(slideIndex, 'background');
-            enableImageEditFromElement(slideIndex, htmlElement);
+            // abre o modal explicitamente
+            openImageEditor(slideIndex, isImg ? 'img' : 'bg');
           } else {
             selectedImageRefs.current[slideIndex] = null;
             handleElementClick(slideIndex, editableType as ElementType);
@@ -738,6 +967,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             htmlElement.setAttribute('contenteditable', 'true');
             htmlElement.focus();
             setIsEditingInline({ slideIndex, element: editableType as ElementType });
+
             const range = iframeDoc.createRange();
             range.selectNodeContents(htmlElement);
             const selection = iframe.contentWindow?.getSelection();
@@ -764,240 +994,63 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const timer = setTimeout(() => {
       iframeRefs.current.forEach((iframe, index) => {
         if (iframe) {
-          iframe.onload = () => { setTimeout(() => setupIframeInteraction(iframe, index), 100); };
+          iframe.onload = () => { setTimeout(() => setupIframeInteraction(iframe, index), 80); };
           if (iframe.contentDocument?.readyState === 'complete') setupIframeInteraction(iframe, index);
         }
       });
-    }, 200);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // ===== util: achar maior visual
-  const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
-    let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
-
-    const imgs = Array.from(iframeDoc.querySelectorAll('img')) as HTMLImageElement[];
-    imgs.forEach(img => {
-      if (img.getAttribute('data-protected') === 'true' || isImgurUrl(img.src)) return;
-      const r = img.getBoundingClientRect();
-      const area = r.width * r.height;
-      if (area > 9000) {
-        if (!best || area > best.area) best = { type: 'img', el: img, area };
-      }
-    });
-
-    const allEls = Array.from(iframeDoc.querySelectorAll<HTMLElement>('body, div, section, header, main, figure, article'));
-    allEls.forEach(el => {
-      const cs = iframeDoc.defaultView?.getComputedStyle(el);
-      if (!cs) return;
-      if (cs.backgroundImage && cs.backgroundImage.includes('url(')) {
-        const r = el.getBoundingClientRect();
-        const area = r.width * r.height;
-        if (area > 9000) {
-          if (!best || area > best.area) best = { type: 'bg', el, area };
-        }
-      }
-    });
-
-    return best ? { type: best.type, el: best.el } : null;
-  };
-
-  // ===== Troca imediata + entra em edição
-  const applyBackgroundImageImmediate = (slideIndex: number, imageUrl: string): HTMLElement | null => {
-    const iframe = iframeRefs.current[slideIndex];
-    if (!iframe || !iframe.contentWindow) return null;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!iframeDoc) return null;
-
-    const targetImg = selectedImageRefs.current[slideIndex];
-    if (targetImg && targetImg.getAttribute('data-protected') !== 'true') {
-      const asVideo = /\.(mp4|webm|ogg|mov)($|\?)/i.test(imageUrl);
-      if (!asVideo) {
-        targetImg.removeAttribute('srcset'); targetImg.removeAttribute('sizes'); targetImg.loading = 'eager';
-        targetImg.src = imageUrl;
-        targetImg.setAttribute('data-bg-image-url', imageUrl);
-        return targetImg;
-      }
-    }
-
-    const best = findLargestVisual(iframeDoc);
-    if (best) {
-      if (best.type === 'img') {
-        const img = best.el as HTMLImageElement;
-        img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
-        img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
-        return img;
-      } else {
-        best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
-        return best.el;
-      }
-    }
-
-    iframeDoc.body.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
-    return iframeDoc.body;
-  };
-
-  const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
-    const iframe = iframeRefs.current[slideIndex];
-    if (!iframe || !iframe.contentWindow) return;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!iframeDoc) return;
-
-    const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
-
-    iframeRefs.current.forEach((f) => {
-      if (!f || !f.contentWindow) return;
-      const d = f.contentDocument || f.contentWindow.document;
-      if (!d) return;
-      d.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
-      d.body.classList.remove('selected');
-    });
-
-    if (updatedEl) {
-      updatedEl.classList.add('selected');
-      const isImg = updatedEl.tagName === 'IMG';
-      if (isImg) selectedImageRefs.current[slideIndex] = updatedEl as HTMLImageElement;
-      else selectedImageRefs.current[slideIndex] = null;
-
-      enableImageEditFromElement(slideIndex, updatedEl);
-    }
-
-    setSelectedElement({ slideIndex, element: 'background' });
-    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
-    setFocusedSlide(slideIndex);
-
-    updateEditedValue(slideIndex, 'background', imageUrl);
-  };
-
-  // ===== Busca / Upload
-  const handleSearchImages = async () => {
-    if (!searchKeyword.trim()) return;
-    setIsSearching(true);
-    try {
-      const imageUrls = await searchImages(searchKeyword);
-      setSearchResults(imageUrls);
-    } catch (error) {
-      console.error('Error searching images:', error);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-  const handleImageUpload = (slideIndex: number, event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const imageUrl = e.target?.result as string;
-      setUploadedImages(prev => ({ ...prev, [slideIndex]: imageUrl }));
-      handleBackgroundImageChange(slideIndex, imageUrl);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // ===== UI auxiliares
-  const toggleLayer = (index: number) => {
-    const newExpanded = new Set(expandedLayers);
-    if (newExpanded.has(index)) newExpanded.delete(index);
-    else newExpanded.add(index);
-    setExpandedLayers(newExpanded);
-  };
-  const handleSlideClick = (index: number) => {
-    iframeRefs.current.forEach((iframe) => {
-      if (!iframe || !iframe.contentWindow) return;
-      const doc = iframe.contentDocument || iframe.contentWindow.document;
-      if (!doc) return;
-      doc.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
-      doc.body.classList.remove('selected');
-    });
-
-    setFocusedSlide(index);
-    setSelectedElement({ slideIndex: index, element: null });
-    selectedImageRefs.current[index] = null;
-
-    const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
-    const slidePosition = index * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
-    setPan({ x: -slidePosition * zoom, y: 0 });
-  };
-  const handleElementClick = (slideIndex: number, element: ElementType) => {
-    setIsLoadingProperties(true);
-    iframeRefs.current.forEach((iframe) => {
-      if (!iframe || !iframe.contentWindow) return;
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-      if (!iframeDoc) return;
-      iframeDoc.querySelectorAll('[data-editable]').forEach(el => el.classList.remove('selected'));
-      iframeDoc.body.classList.remove('selected');
-    });
-
-    const targetIframe = iframeRefs.current[slideIndex];
-    if (targetIframe && targetIframe.contentWindow) {
-      const targetDoc = targetIframe.contentDocument || targetIframe.contentWindow.document;
-      if (targetDoc && element) {
-        const targetElement = targetDoc.getElementById(`slide-${slideIndex}-${element}`);
-        if (targetElement) targetElement.classList.add('selected');
-        else if (element === 'background') targetDoc.body.classList.add('selected');
-      }
-    }
-
-    setPreviousSelection(selectedElement);
-    setSelectedElement({ slideIndex, element });
-    setFocusedSlide(slideIndex);
-    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
-    setTimeout(() => setIsLoadingProperties(false), 100);
-  };
-
-  const getElementKey = (slideIndex: number, element: ElementType) => `${slideIndex}-${element}`;
-  const getEditedValue = (slideIndex: number, field: string, defaultValue: any) => {
-    const key = `${slideIndex}-${field}`;
-    return editedContent[key] !== undefined ? editedContent[key] : defaultValue;
-  };
-  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
-    const key = `${slideIndex}-${field}`;
-    setEditedContent(prev => ({ ...prev, [key]: value }));
-  };
-  const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
-    const key = getElementKey(slideIndex, element);
-    if (elementStyles[key]) return elementStyles[key];
-    if (originalStyles[key]) return originalStyles[key];
-    return { fontSize: element === 'title' ? '24px' : '16px', fontWeight: element === 'title' ? '700' : '400', textAlign: 'left', color: '#FFFFFF' };
-  };
-  const updateElementStyle = (slideIndex: number, element: ElementType, property: keyof ElementStyles, value: string) => {
-    const key = getElementKey(slideIndex, element);
-    setElementStyles(prev => ({ ...prev, [key]: { ...getElementStyle(slideIndex, element), [property]: value } }));
-  };
-
-  const getElementIcon = (element: string) => {
-    if (element.includes('title') || element.includes('subtitle')) return <Type className="w-4 h-4 text-neutral-500" />;
-    return <ImageIcon className="w-4 h-4 text-neutral-500" />;
-  };
-
-  const handleDownloadAll = () => {
-    renderedSlides.forEach((slide, index) => {
-      const blob = new Blob([slide], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `slide-${index + 1}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
-  };
-
-  // ===== JSX
+  // =============================
+  // UI
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* overlay/popup visual quando editando imagem */}
-      {imageEdit && (
-        <div className="pointer-events-none fixed inset-0 z-[95]">
-          <div className="absolute inset-0 bg-black/60" />
-          <div className="absolute left-1/2 -translate-x-1/2 top-4 bg-blue-600 text-white text-xs px-3 py-1 rounded shadow z-[96]">
-            Editando imagem no Slide {imageEdit.slideIndex + 1} — ESC para sair
+      {/* MODAL DE EDIÇÃO DE IMAGEM */}
+      {imageEditorModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center">
+          {/* backdrop escuro */}
+          <div className="absolute inset-0 bg-black/70" />
+          {/* contêiner do slide (centralizado) */}
+          <div className="relative z-[201] w-[90vw] h-[90vh] max-w-[1100px] flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-white text-sm">Edição da imagem — Slide {imageEditorModal.slideIndex + 1}</div>
+              <div className="space-x-2">
+                <button
+                  onClick={() => closeImageEditor(false)}
+                  className="px-3 py-1.5 rounded bg-neutral-700 hover:bg-neutral-600 text-white text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => closeImageEditor(true)}
+                  className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            <div className="relative flex-1 bg-neutral-800 rounded-lg overflow-hidden ring-2 ring-blue-500/40">
+              {/* IFRAME do modal: só o slide selecionado */}
+              <iframe
+                ref={modalIframeRef}
+                srcDoc={renderedSlides[imageEditorModal.slideIndex]}
+                className="w-full h-full border-0"
+                title={`Editor Slide ${imageEditorModal.slideIndex + 1}`}
+                sandbox="allow-same-origin allow-scripts"
+                onLoad={setupModalIframe}
+              />
+              {/* dica */}
+              <div className="absolute bottom-2 left-2 text-neutral-300 text-xs bg-black/40 rounded px-2 py-1">
+                Arraste a imagem para ajustar • Arraste as bordas/cantos para mudar a altura do recorte • ESC para sair
+              </div>
+            </div>
           </div>
         </div>
       )}
 
+      {/* Sidebar esquerda */}
       <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <Layers className="w-4 h-4 text-neutral-400 mr-2" />
@@ -1058,6 +1111,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         </div>
       </div>
 
+      {/* Centro */}
       <div className="flex-1 flex flex-col">
         <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
           <div className="flex items-center space-x-4">
@@ -1110,19 +1164,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const delta = e.deltaY > 0 ? -0.05 : 0.05;
               setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
             } else {
-              if (imageEdit) return; // não faz pan do canvas durante edição da imagem
+              if (imageEditorModal) return; // não arrastar canvas durante o modal
               setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
             }
           }}
           onMouseDown={(e) => {
-            if (imageEdit) return;
+            if (imageEditorModal) return;
             if (e.button === 0 && e.currentTarget === e.target) {
               setIsDragging(true);
               setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
             }
           }}
           onMouseMove={(e) => {
-            if (imageEdit) return;
+            if (imageEditorModal) return;
             if (isDragging) setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
           }}
           onMouseUp={() => setIsDragging(false)}
@@ -1145,7 +1199,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 <div
                   key={index}
                   className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${focusedSlide === index ? 'ring-4 ring-blue-500' : ''}`}
-                  style={{ width: `${slideWidth}px`, height: `${slideHeight}px`, zIndex: imageEdit && imageEdit.slideIndex === index ? 96 : 1 }}
+                  style={{ width: `${slideWidth}px`, height: `${slideHeight}px` }}
                 >
                   <iframe
                     ref={(el) => (iframeRefs.current[index] = el)}
@@ -1153,7 +1207,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     className="w-full h-full border-0"
                     title={`Slide ${index + 1}`}
                     sandbox="allow-same-origin allow-scripts"
-                    style={{ position: 'relative' }}
                   />
                 </div>
               ))}
@@ -1166,6 +1219,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         </div>
       </div>
 
+      {/* Sidebar direita - Properties */}
       <div className="w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <h3 className="text-white font-medium text-sm">Properties</h3>
@@ -1279,15 +1333,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Images</label>
                         <button
                           onClick={() => {
-                            const iframe = iframeRefs.current[selectedElement.slideIndex];
-                            const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-                            if (!doc) return;
-                            const currentSelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
-                            const target = currentSelected || (findLargestVisual(doc)?.el ?? null);
-                            if (target) enableImageEditFromElement(selectedElement.slideIndex, target);
+                            openImageEditor(selectedElement.slideIndex);
                           }}
                           className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
-                          title="Entrar no modo de edição da imagem selecionada"
                         >
                           Editar esta imagem
                         </button>
