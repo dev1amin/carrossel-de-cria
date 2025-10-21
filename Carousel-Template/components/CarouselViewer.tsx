@@ -30,7 +30,7 @@ type ImageEditModalState =
       slideW: number;
       slideH: number;
 
-      // PARA IMG/BG
+      // IMG/BG
       containerHeightPx: number;
       naturalW: number;
       naturalH: number;
@@ -40,13 +40,13 @@ type ImageEditModalState =
       targetLeftPx: number;
       targetTopPx: number;
 
-      // PARA VÍDEO (crop real)
+      // VÍDEO (crop real)
       isVideo: boolean;
-      videoTargetW: number; // largura renderizada do <video> no slide
-      videoTargetH: number; // altura renderizada do <video> no slide
-      videoTargetLeft: number; // posição do vídeo no slide preview
+      videoTargetW: number;
+      videoTargetH: number;
+      videoTargetLeft: number;
       videoTargetTop: number;
-      cropX: number; // pos crop dentro do vídeo (px)
+      cropX: number;
       cropY: number;
       cropW: number;
       cropH: number;
@@ -72,7 +72,7 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return ReactDOM.createPortal(children, elRef.current);
 };
 
-// DragSurface 2D
+// DragSurface 2D (IMAGEM)
 const DragSurface: React.FC<{ onDrag: (dx: number, dy: number) => void; disabled?: boolean; cursor?: React.CSSProperties['cursor'] }> = ({ onDrag, disabled, cursor }) => {
   const dragging = useRef(false);
 
@@ -145,22 +145,6 @@ const handleStyles: Record<HandlePos, React.CSSProperties> = {
   nw: { top: -6, left: -6, width: 12, height: 12, cursor: 'nwse-resize' },
   se: { bottom: -6, right: -6, width: 12, height: 12, cursor: 'nwse-resize' },
   sw: { bottom: -6, left: -6, width: 12, height: 12, cursor: 'nesw-resize' },
-};
-
-const useResizeHandle = (onResize: (dx: number, dy: number) => void) => {
-  const resizing = useRef(false);
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => { if (resizing.current) onResize(e.movementX, e.movementY); };
-    const onUp = () => { resizing.current = false; };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [onResize]);
-  const start = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); resizing.current = true; };
-  return start;
 };
 
 /** ====================== Componente principal ======================= */
@@ -377,7 +361,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         best.el.style.setProperty('background-position', '50% 50%', 'important');
         return best.el;
       } else {
-        // se maior visual for vídeo, ignoramos troca de imagem aqui
         return best.el;
       }
     }
@@ -412,13 +395,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       vids.forEach((v) => {
         (v as HTMLVideoElement).setAttribute('data-editable', 'video');
         if (!v.id) v.id = `slide-${index}-vid-${vidIdx++}`;
-        // garantir que o vídeo ocupe sua caixa atual
         (v as HTMLVideoElement).style.objectFit = 'cover';
         (v as HTMLVideoElement).style.width = '100%';
         (v as HTMLVideoElement).style.height = '100%';
       });
 
-      // aplica estilos de texto + conteúdo (igual antes)
+      // aplica estilos de texto + conteúdo
       const titleEl = doc.getElementById(`slide-${index}-title`);
       if (titleEl) {
         const styles = elementStyles[`${index}-title`];
@@ -459,7 +441,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }, 60);
 
-      // aplica bg escolhido (se houver) — cover + center
+      // aplica bg escolhido
       const bg = editedContent[`${index}-background`];
       if (bg) {
         const best = findLargestVisual(doc);
@@ -517,7 +499,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             selectedImageRefs.current[slideIndex] = isImg ? (htmlEl as HTMLImageElement) : null;
             handleElementClick(slideIndex, 'background');
           } else if (type === 'video') {
-            // selecionar vídeo como "background" para painel e abrir crop no botão
             selectedImageRefs.current[slideIndex] = null;
             handleElementClick(slideIndex, 'background');
           } else {
@@ -774,9 +755,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (wrapper as HTMLElement).style.width = `${cropW}px`;
       (wrapper as HTMLElement).style.height = `${cropH}px`;
 
-      // Vídeo posicionado para que o crop mostre a região (cropX,cropY,cropW,cropH)
-      // Consideramos o vídeo renderizado originalmente com dimensões videoTargetW x videoTargetH
-      // então aplicamos as mesmas dimensões dentro do wrapper e usamos offsets negativos
+      // Posiciona vídeo para exibir apenas a área cortada
       vid.style.position = 'absolute';
       vid.style.left = `${-cropX}px`;
       vid.style.top = `${-cropY}px`;
@@ -784,9 +763,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       vid.style.height = `${videoTargetH}px`;
       vid.style.objectFit = 'cover';
 
-      if (vid.src !== imageUrl) {
-        vid.src = imageUrl; // mantém a fonte
-      }
+      if (vid.src !== imageUrl) vid.src = imageUrl;
 
       setImageModal({ open: false });
       document.documentElement.style.overflow = '';
@@ -812,7 +789,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
       (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
 
-      // cover + bleed aplicado como antes
+      // cover + bleed
       const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
       const displayW = Math.ceil(naturalW * scale) + 2;
       const displayH = Math.ceil(naturalH * scale) + 2;
@@ -966,6 +943,53 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
+  /** ====================== VIDEO CROP RESIZE (sem hooks no render) ======================= */
+  const cropResizeRef = useRef<{ active: boolean; pos: HandlePos | null }>({ active: false, pos: null });
+
+  useEffect(() => {
+    if (!(imageModal.open && imageModal.isVideo)) return;
+
+    const onMove = (e: MouseEvent) => {
+      if (!cropResizeRef.current.active) return;
+      const pos = cropResizeRef.current.pos!;
+      const dx = e.movementX;
+      const dy = e.movementY;
+
+      setImageModal(prev => {
+        if (!prev.open || !prev.isVideo) return prev;
+        const vW = prev.videoTargetW;
+        const vH = prev.videoTargetH;
+
+        const clampRect = (x:number,y:number,w:number,h:number) => {
+          w = Math.max(40, Math.min(w, vW));
+          h = Math.max(40, Math.min(h, vH));
+          x = clamp(x, 0, vW - w);
+          y = clamp(y, 0, vH - h);
+          return { x,y,w,h };
+        };
+
+        let { cropX:x, cropY:y, cropW:w, cropH:h } = prev;
+
+        if (pos.includes('w')) { const nx = x + dx; const dw = x - nx; x = nx; w = w + dw; }
+        if (pos.includes('e')) { w = w + dx; }
+        if (pos.includes('n')) { const ny = y + dy; const dh = y - ny; y = ny; h = h + dh; }
+        if (pos.includes('s')) { h = h + dy; }
+
+        const c = clampRect(x,y,w,h);
+        return { ...prev, cropX: c.x, cropY: c.y, cropW: c.w, cropH: c.h };
+      });
+    };
+
+    const onUp = () => { cropResizeRef.current.active = false; cropResizeRef.current.pos = null; };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [imageModal.open, imageModal.isVideo]);
+
   /** ====================== Render ======================= */
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
@@ -1038,7 +1062,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                       {/* Overlay específico */}
                       {!imageModal.isVideo ? (
-                        // ======= MODO IMAGEM (já implementado antes) =======
+                        // ======= MODO IMAGEM =======
                         (() => {
                           const containerLeft = imageModal.targetLeftPx;
                           const containerTop = imageModal.targetTopPx;
@@ -1152,57 +1176,28 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           const vW    = imageModal.videoTargetW;
                           const vH    = imageModal.videoTargetH;
 
-                          const cropMinW = 40;
-                          const cropMinH = 40;
-
-                          // clamp util local
-                          const clampRect = (x:number,y:number,w:number,h:number) => {
-                            w = Math.max(cropMinW, Math.min(w, vW));
-                            h = Math.max(cropMinH, Math.min(h, vH));
-                            x = clamp(x, 0, vW - w);
-                            y = clamp(y, 0, vH - h);
-                            return { x,y,w,h };
-                          };
-
-                          // mover retângulo
-                          const moveStart = useRef<{x:number,y:number} | null>(null);
-                          const onMove = (dx:number, dy:number) => {
-                            const { x,y,w,h } = imageModal;
-                            const nx = x + dx;
-                            const ny = y + dy;
-                            const c = clampRect(nx, ny, w, h);
-                            setImageModal({ ...imageModal, cropX: c.x, cropY: c.y, cropW: c.w, cropH: c.h });
-                          };
-
-                          // redimensionamento por handle
-                          const makeHandle = (pos: HandlePos) => {
-                            const start = useResizeHandle((dx, dy) => {
-                              let { cropX: x, cropY: y, cropW: w, cropH: h } = imageModal;
-                              if (pos.includes('w')) { // left
-                                const nx = x + dx;
-                                const dw = x - nx;
-                                x = nx; w = w + dw;
-                              }
-                              if (pos.includes('e')) { // right
-                                w = w + dx;
-                              }
-                              if (pos.includes('n')) { // top
-                                const ny = y + dy;
-                                const dh = y - ny;
-                                y = ny; h = h + dh;
-                              }
-                              if (pos.includes('s')) { // bottom
-                                h = h + dy;
-                              }
-                              const c = clampRect(x,y,w,h);
-                              setImageModal({ ...imageModal, cropX: c.x, cropY: c.y, cropW: c.w, cropH: c.h });
-                            });
-                            return start;
-                          };
-
-                          // overlays fora do vídeo
                           const rightW = imageModal.slideW - (vLeft + vW);
                           const bottomH = imageModal.slideH - (vTop + vH);
+
+                          // mover retângulo (drag inteiro)
+                          const moveStart = useRef<{x:number,y:number} | null>(null);
+                          const onMoveRect = (dx:number, dy:number) => {
+                            setImageModal(prev => {
+                              if (!prev.open || !prev.isVideo) return prev;
+                              let { cropX:x, cropY:y, cropW:w, cropH:h } = prev;
+                              const nx = x + dx;
+                              const ny = y + dy;
+                              const clampRect = (x:number,y:number,w:number,h:number) => {
+                                w = Math.max(40, Math.min(w, vW));
+                                h = Math.max(40, Math.min(h, vH));
+                                x = clamp(x, 0, vW - w);
+                                y = clamp(y, 0, vH - h);
+                                return { x,y,w,h };
+                              };
+                              const c = clampRect(nx, ny, w, h);
+                              return { ...prev, cropX: c.x, cropY: c.y, cropW: c.w, cropH: c.h };
+                            });
+                          };
 
                           return (
                             <>
@@ -1241,29 +1236,28 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 onMouseLeave={() => { moveStart.current = null; }}
                                 onMouseMove={(e) => {
                                   if (!moveStart.current) return;
-                                  const dx = e.movementX;
-                                  const dy = e.movementY;
-                                  onMove(dx, dy);
+                                  onMoveRect(e.movementX, e.movementY);
                                 }}
                               >
                                 {/* Handles */}
-                                {(Object.keys(handleStyles) as HandlePos[]).map((pos) => {
-                                  const start = makeHandle(pos);
-                                  return (
-                                    <div
-                                      key={pos}
-                                      onMouseDown={start}
-                                      style={{
-                                        position: 'absolute',
-                                        background: 'white',
-                                        borderRadius: 999,
-                                        boxShadow: '0 0 0 1px rgba(0,0,0,0.4)',
-                                        ...handleStyles[pos],
-                                      }}
-                                    />
-                                  );
-                                })}
-                                {/* máscara transparente preta fora do retângulo é feita pelo overlay geral do vídeo */}
+                                {(Object.keys(handleStyles) as HandlePos[]).map((pos) => (
+                                  <div
+                                    key={pos}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      cropResizeRef.current.active = true;
+                                      cropResizeRef.current.pos = pos;
+                                    }}
+                                    style={{
+                                      position: 'absolute',
+                                      background: 'white',
+                                      borderRadius: 999,
+                                      boxShadow: '0 0 0 1px rgba(0,0,0,0.4)',
+                                      ...handleStyles[pos],
+                                    }}
+                                  />
+                                ))}
                               </div>
                             </>
                           );
@@ -1579,7 +1573,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
                           title="Abrir popup de edição"
                         >
-                          {/** Se houver vídeo selecionado, o popup já entra em modo crop de vídeo */}
                           Editar
                         </button>
                       </div>
