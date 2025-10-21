@@ -227,6 +227,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         .img-edit-wrapper{position:relative;display:inline-block;overflow:hidden;border-radius:inherit}
         .img-edit-overlay{position:absolute;inset:0;z-index:1002;cursor:move;pointer-events:auto;background:transparent}
         .img-edit-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1003}
+        .img-dim-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:1001}
+        .img-dim-block{position:fixed;background:rgba(0,0,0,.55);pointer-events:none}
       `
     );
 
@@ -362,7 +364,58 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   }, [elementStyles, editedContent, originalStyles]);
 
-  // ===== Image edit robusto (overlay + doc listeners)
+  // ===== Dimmer helpers (quatro blocos que escurecem fora do recorte)
+  const createOrUpdateDimmer = (doc: Document, wrapper: HTMLElement) => {
+    let dimLayer = doc.querySelector('.img-dim-layer') as HTMLDivElement | null;
+    const rect = wrapper.getBoundingClientRect();
+
+    const ensure = (cls: string) => {
+      let el = doc.querySelector(`.${cls}`) as HTMLDivElement | null;
+      if (!el) {
+        el = doc.createElement('div');
+        el.className = cls;
+        (doc.body as HTMLElement).appendChild(el);
+      }
+      return el;
+    };
+
+    if (!dimLayer) {
+      dimLayer = ensure('img-dim-layer');
+      const top = ensure('img-dim-top') as HTMLDivElement; top.classList.add('img-dim-block');
+      const right = ensure('img-dim-right') as HTMLDivElement; right.classList.add('img-dim-block');
+      const bottom = ensure('img-dim-bottom') as HTMLDivElement; bottom.classList.add('img-dim-block');
+      const left = ensure('img-dim-left') as HTMLDivElement; left.classList.add('img-dim-block');
+    }
+
+    const vw = doc.defaultView?.innerWidth || 0;
+    const vh = doc.defaultView?.innerHeight || 0;
+
+    const topB = doc.querySelector('.img-dim-top') as HTMLDivElement;
+    const rightB = doc.querySelector('.img-dim-right') as HTMLDivElement;
+    const bottomB = doc.querySelector('.img-dim-bottom') as HTMLDivElement;
+    const leftB = doc.querySelector('.img-dim-left') as HTMLDivElement;
+
+    topB.style.left = '0px'; topB.style.top = '0px';
+    topB.style.width = `${vw}px`; topB.style.height = `${Math.max(0, rect.top)}px`;
+
+    bottomB.style.left = '0px'; bottomB.style.top = `${Math.max(0, rect.bottom)}px`;
+    bottomB.style.width = `${vw}px`; bottomB.style.height = `${Math.max(0, vh - rect.bottom)}px`;
+
+    leftB.style.left = '0px'; leftB.style.top = `${Math.max(0, rect.top)}px`;
+    leftB.style.width = `${Math.max(0, rect.left)}px`; leftB.style.height = `${Math.max(0, rect.height)}px`;
+
+    rightB.style.left = `${Math.max(0, rect.right)}px`; rightB.style.top = `${Math.max(0, rect.top)}px`;
+    rightB.style.width = `${Math.max(0, vw - rect.right)}px`; rightB.style.height = `${Math.max(0, rect.height)}px`;
+  };
+
+  const removeDimmer = (doc: Document) => {
+    ['img-dim-layer','img-dim-top','img-dim-right','img-dim-bottom','img-dim-left'].forEach(cls => {
+      const el = doc.querySelector(`.${cls}`);
+      if (el) el.remove();
+    });
+  };
+
+  // ===== limpeza do modo de edição
   const cleanupImageEdit = (slideIndex: number) => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return;
@@ -376,8 +429,32 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
     const dragging = doc.querySelector('[data-img-dragging="true"]') as HTMLElement | null;
     if (dragging) dragging.removeAttribute('data-img-dragging');
+    removeDimmer(doc);
   };
 
+  // ===== restrições de arrasto (não deixar “vazio” no container)
+  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
+    const wW = wrapper.clientWidth;
+    const wH = wrapper.clientHeight;
+    const iW = img.naturalWidth || img.width;
+    const iH = img.naturalHeight || img.height;
+
+    const curLeft = parseFloat(img.style.left || '0');
+    const curTop = parseFloat(img.style.top || '0');
+
+    const minLeft = Math.min(0, wW - iW);
+    const maxLeft = Math.max(0, wW - iW) >= 0 ? 0 : minLeft; // se imagem menor, centralizada (0)
+    const minTop = Math.min(0, wH - iH);
+    const maxTop = Math.max(0, wH - iH) >= 0 ? 0 : minTop;
+
+    const newLeft = iW <= wW ? (wW - iW) / 2 : Math.min(0, Math.max(minLeft, curLeft));
+    const newTop = iH <= wH ? (wH - iH) / 2 : Math.min(0, Math.max(minTop, curTop));
+
+    img.style.left = `${newLeft}px`;
+    img.style.top = `${newTop}px`;
+  };
+
+  // ===== Iniciar edição (mostra tamanho real, dimmer, drag + resize)
   const startImageEdit = (slideIndex: number, target: HTMLElement, type: 'img'|'bg') => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return;
@@ -388,93 +465,120 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
-    let bgEl: HTMLElement | null = null;
 
-    if (type === 'img') {
-      imgEl = target as HTMLImageElement;
+    // 1) Se for background, converte para <img> dentro de wrapper
+    if (type === 'bg') {
+      const cs = doc.defaultView?.getComputedStyle(target);
+      let bg = cs?.backgroundImage || '';
+      const m = bg.match(/url\(["']?(.+?)["']?\)/i);
+      const bgUrl = m?.[1] || '';
 
-      if (!imgEl.parentElement || !imgEl.parentElement.classList.contains('img-edit-wrapper')) {
+      let existingImg = target.querySelector('img') as HTMLImageElement | null;
+      if (!existingImg) {
+        existingImg = doc.createElement('img');
+        existingImg.src = bgUrl;
+        existingImg.alt = 'bg-edit';
+        existingImg.style.position = 'absolute';
+        existingImg.style.left = '0px';
+        existingImg.style.top = '0px';
+        existingImg.style.maxWidth = 'unset';
+        existingImg.style.maxHeight = 'unset';
+        (target as HTMLElement).style.backgroundImage = 'none';
+        (target as HTMLElement).style.overflow = 'hidden';
+        (target as HTMLElement).appendChild(existingImg);
+      }
+      imgEl = existingImg;
+      wrapper = target;
+    } else {
+      // 2) Se for <img>, coloca num wrapper com overflow hidden
+      const img = target as HTMLImageElement;
+      if (!img.parentElement || !img.parentElement.classList.contains('img-edit-wrapper')) {
         const w = doc.createElement('div');
         w.className = 'img-edit-wrapper';
-        const rect = imgEl.getBoundingClientRect();
-        w.style.width = `${rect.width || imgEl.width}px`;
-        w.style.height = `${rect.height || imgEl.height}px`;
-        w.style.borderRadius = getComputedStyle(imgEl).borderRadius;
+        const rect = img.getBoundingClientRect();
+
+        w.style.width = `${rect.width || img.width}px`;
+        w.style.height = `${rect.height || img.height}px`;
+        w.style.borderRadius = getComputedStyle(img).borderRadius;
         w.style.display = 'inline-block';
         w.style.overflow = 'hidden';
         w.style.position = 'relative';
 
-        imgEl.style.position = 'absolute';
-        if (!imgEl.style.left) imgEl.style.left = '0px';
-        if (!imgEl.style.top) imgEl.style.top = '0px';
-        imgEl.style.maxWidth = 'unset';
-        imgEl.style.maxHeight = 'unset';
+        img.style.position = 'absolute';
+        img.style.maxWidth = 'unset';
+        img.style.maxHeight = 'unset';
+        if (!img.style.left) img.style.left = '0px';
+        if (!img.style.top) img.style.top = '0px';
 
-        if (imgEl.parentNode) imgEl.parentNode.replaceChild(w, imgEl);
-        w.appendChild(imgEl);
+        if (img.parentNode) img.parentNode.replaceChild(w, img);
+        w.appendChild(img);
         wrapper = w;
       } else {
-        wrapper = imgEl.parentElement as HTMLElement;
+        wrapper = img.parentElement as HTMLElement;
       }
-      wrapper.setAttribute('data-img-editing', 'true');
-      wrapper.style.outline = '3px solid #3B82F6';
-    } else {
-      bgEl = target as HTMLElement;
-      wrapper = bgEl;
-      wrapper.setAttribute('data-img-editing', 'true');
-      wrapper.style.outline = '3px solid #3B82F6';
-      const cs = doc.defaultView?.getComputedStyle(wrapper);
-      if (cs && (!cs.backgroundSize || cs.backgroundSize === 'auto auto')) wrapper.style.backgroundSize = 'cover';
-      if (cs && (!cs.backgroundPosition || cs.backgroundPosition === '0% 0%')) wrapper.style.backgroundPosition = 'center center';
-      if (cs && cs.position === 'static') wrapper.style.position = 'relative';
+      imgEl = wrapper.querySelector('img') as HTMLImageElement;
     }
 
+    // 3) Modo edição visual
+    wrapper.setAttribute('data-img-editing', 'true');
+    wrapper.style.outline = '3px solid #3B82F6';
+
+    // 4) Forçar tamanho real da imagem ao entrar (naturalWidth/Height) e centralizar
+    const applyNaturalSize = () => {
+      if (!imgEl) return;
+      const nW = imgEl.naturalWidth || imgEl.width;
+      const nH = imgEl.naturalHeight || imgEl.height;
+      imgEl.style.width = `${nW}px`;
+      imgEl.style.height = `${nH}px`;
+
+      // centraliza e aplica clamp pra não deixar “vazio”
+      imgEl.style.left = `${(wrapper.clientWidth - nW) / 2}px`;
+      imgEl.style.top = `${(wrapper.clientHeight - nH) / 2}px`;
+      clampDragWithin(wrapper, imgEl);
+      createOrUpdateDimmer(doc, wrapper);
+    };
+
+    if (imgEl?.complete) {
+      applyNaturalSize();
+    } else {
+      imgEl?.addEventListener('load', applyNaturalSize, { once: true });
+    }
+
+    // 5) Overlay para drag
     const overlay = doc.createElement('div');
     overlay.className = 'img-edit-overlay';
     overlay.style.pointerEvents = 'auto';
     wrapper.appendChild(overlay);
 
-    const start = { x: 0, y: 0, imgLeft: 0, imgTop: 0, bgPosX: 0, bgPosY: 0 };
+    // atualiza dimmer ao redimensionar/janela
+    const onWindowResize = () => createOrUpdateDimmer(doc, wrapper);
+    doc.defaultView?.addEventListener('resize', onWindowResize);
+
+    // 6) Drag com limites
+    const start = { x: 0, y: 0, imgLeft: 0, imgTop: 0 };
     const onOverlayDown = (e: MouseEvent) => {
       e.preventDefault(); e.stopPropagation();
+      if (!imgEl) return;
       start.x = e.clientX;
       start.y = e.clientY;
-
-      if (type === 'img' && wrapper.querySelector('img')) {
-        const img = wrapper.querySelector('img') as HTMLImageElement;
-        start.imgLeft = parseFloat(img.style.left || '0');
-        start.imgTop = parseFloat(img.style.top || '0');
-        img.setAttribute('data-img-dragging', 'true');
-      } else if (type === 'bg') {
-        const cs = doc.defaultView?.getComputedStyle(wrapper);
-        const pos = (cs?.backgroundPosition || '0px 0px').split(' ');
-        const toPx = (v: string, total: number) => (v.endsWith('%') ? (parseFloat(v) / 100) * total : parseFloat(v));
-        start.bgPosX = toPx(pos[0] || '0px', wrapper.clientWidth);
-        start.bgPosY = toPx(pos[1] || '0px', wrapper.clientHeight);
-      }
+      start.imgLeft = parseFloat(imgEl.style.left || '0');
+      start.imgTop = parseFloat(imgEl.style.top || '0');
+      imgEl.setAttribute('data-img-dragging', 'true');
 
       const onMove = (e: MouseEvent) => {
+        if (!imgEl) return;
         const dx = (e.clientX - start.x) / zoom;
         const dy = (e.clientY - start.y) / zoom;
-
-        if (type === 'img') {
-          const img = wrapper.querySelector('img') as HTMLImageElement;
-          if (img) {
-            img.style.left = `${start.imgLeft + dx}px`;
-            img.style.top = `${start.imgTop + dy}px`;
-          }
-        } else {
-          const newX = start.bgPosX + dx;
-          const newY = start.bgPosY + dy;
-          wrapper.style.backgroundPosition = `${newX}px ${newY}px`;
-        }
+        imgEl.style.left = `${start.imgLeft + dx}px`;
+        imgEl.style.top = `${start.imgTop + dy}px`;
+        clampDragWithin(wrapper, imgEl);
+        createOrUpdateDimmer(doc, wrapper);
       };
 
       const onUp = () => {
         doc.removeEventListener('mousemove', onMove);
         doc.removeEventListener('mouseup', onUp);
-        const img = wrapper.querySelector('img') as HTMLImageElement | null;
-        if (img) img.removeAttribute('data-img-dragging');
+        imgEl?.removeAttribute('data-img-dragging');
       };
 
       doc.addEventListener('mousemove', onMove);
@@ -482,6 +586,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     overlay.addEventListener('mousedown', onOverlayDown);
 
+    // 7) Handles para resize do container
     const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
     const makeHandle = (pos: typeof handles[number]) => {
       const h = doc.createElement('div');
@@ -524,6 +629,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
           if (newW > 50) wrapper.style.width = `${newW}px`;
           if (newH > 50) wrapper.style.height = `${newH}px`;
+
+          // após redimensionar, aplica clamp de novo
+          if (imgEl) clampDragWithin(wrapper, imgEl);
+          createOrUpdateDimmer(doc, wrapper);
         };
 
         const onUp = () => {
@@ -541,13 +650,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     handles.forEach(makeHandle);
 
+    // 8) Botão Done
     const done = doc.createElement('button');
     done.className = 'img-edit-done-btn';
     done.textContent = 'Done';
     done.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1004;';
-    done.onclick = (e) => { e.preventDefault(); e.stopPropagation(); cleanupImageEdit(slideIndex); setImageEdit(null); };
+    done.onclick = (e) => {
+      e.preventDefault(); e.stopPropagation();
+      // se foi bg, mantém como wrapper+img (já editável) – visual igual e editável depois
+      cleanupImageEdit(slideIndex);
+      setImageEdit(null);
+      doc.defaultView?.removeEventListener('resize', onWindowResize);
+    };
     wrapper.appendChild(done);
 
+    // 9) Foco e dimmer
+    createOrUpdateDimmer(doc, wrapper);
+
+    // guarda estado
     const targetId = (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id || `img-edit-${Date.now()}`;
     (type === 'img' ? (wrapper.querySelector('img') as HTMLElement) : wrapper).id = targetId;
     setImageEdit({ slideIndex, type, targetId });
@@ -640,7 +760,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // ===== util: achar maior visual (única definição!)
+  // ===== util: achar maior visual
   const findLargestVisual = (iframeDoc: Document): { type: 'img' | 'bg', el: HTMLElement } | null => {
     let best: { type: 'img' | 'bg', el: HTMLElement, area: number } | null = null;
 
@@ -923,19 +1043,35 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           </div>
 
         <div className="flex items-center space-x-2">
-            <button onClick={() => setZoom((p) => Math.max(p - 0.1, 0.1))} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom Out">
+            <button
+              onClick={() => setZoom((p) => Math.max(p - 0.1, 0.1))}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
+              title="Zoom Out"
+            >
               <ZoomOut className="w-4 h-4" />
             </button>
             <div className="bg-neutral-800 text-white px-3 py-1.5 rounded text-xs min-w-[70px] text-center">{Math.round(zoom * 100)}%</div>
-            <button onClick={() => setZoom((p) => Math.min(p + 0.1, 2))} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Zoom In">
+            <button
+              onClick={() => setZoom((p) => Math.min(p + 0.1, 2))}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
+              title="Zoom In"
+            >
               <ZoomIn className="w-4 h-4" />
             </button>
             <div className="w-px h-6 bg-neutral-800 mx-2" />
-            <button onClick={handleDownloadAll} className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm" title="Download All Slides">
+            <button
+              onClick={handleDownloadAll}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm"
+              title="Download All Slides"
+            >
               <Download className="w-4 h-4" />
               <span>Download</span>
             </button>
-            <button onClick={onClose} className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors" title="Close (Esc)">
+            <button
+              onClick={onClose}
+              className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
+              title="Close (Esc)"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -951,16 +1087,20 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const delta = e.deltaY > 0 ? -0.05 : 0.05;
               setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
             } else {
+              // se está editando imagem, não deixa pan do canvas
+              if (imageEdit) return;
               setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
             }
           }}
           onMouseDown={(e) => {
+            if (imageEdit) return; // bloqueia pan enquanto edita imagem
             if (e.button === 0 && e.currentTarget === e.target) {
               setIsDragging(true);
               setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
             }
           }}
           onMouseMove={(e) => {
+            if (imageEdit) return;
             if (isDragging) setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
           }}
           onMouseUp={() => setIsDragging(false)}
