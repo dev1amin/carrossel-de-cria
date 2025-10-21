@@ -122,30 +122,29 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (position==='w'){handle.style.left='-4px';}
 
       let isResizing = false;
-      let startX = 0, startY = 0, startWidth = 0, startHeight = 0;
+      let startX = 0, startY = 0, startW = 0, startH = 0;
 
       const onMouseDown = (e: MouseEvent) => {
         e.preventDefault(); e.stopPropagation();
         isResizing = true;
         startX = e.clientX; startY = e.clientY;
-        startWidth = container.offsetWidth; startHeight = container.offsetHeight;
+        startW = container.offsetWidth; startH = container.offsetHeight;
 
         const onMouseMove = (e: MouseEvent) => {
           if (!isResizing) return;
-          const deltaX = (e.clientX - startX) / zoom;
-          const deltaY = (e.clientY - startY) / zoom;
-          let newWidth = startWidth;
-          let newHeight = startHeight;
+          const dx = (e.clientX - startX) / zoom;
+          const dy = (e.clientY - startY) / zoom;
 
-          if (position.includes('e')) newWidth = startWidth + deltaX;
-          if (position.includes('w')) newWidth = startWidth - deltaX;
-          if (position.includes('s')) newHeight = startHeight + deltaY;
-          if (position.includes('n')) newHeight = startHeight - deltaY;
+          let newW = startW;
+          let newH = startH;
+          if (position.includes('e')) newW = startW + dx;
+          if (position.includes('w')) newW = startW - dx;
+          if (position.includes('s')) newH = startH + dy;
+          if (position.includes('n')) newH = startH - dy;
 
-          if (newWidth > 50) { container.style.width = `${newWidth}px`; video.style.width = `${newWidth}px`; }
-          if (newHeight > 50) { container.style.height = `${newHeight}px`; video.style.height = `${newHeight}px`; }
-
-          setVideoDimensions(prev => ({ ...prev, [cropMode.videoId]: { width: newWidth, height: newHeight } }));
+          if (newW > 50) { container.style.width = `${newW}px`; video.style.width = `${newW}px`; }
+          if (newH > 50) { container.style.height = `${newH}px`; video.style.height = `${newH}px`; }
+          setVideoDimensions(prev => ({ ...prev, [cropMode.videoId]: { width: newW, height: newH } }));
         };
 
         const onMouseUp = () => {
@@ -162,7 +161,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       container.appendChild(handle);
       handleElements.push(handle);
     };
-
     handles.forEach(addHandle);
 
     const exitBtn = iframeDoc.createElement('button');
@@ -224,7 +222,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         body[data-editable]:hover:not(.selected){outline:2px solid rgba(59,130,246,.5)!important;outline-offset:-2px}
         img[data-editable]{display:block!important}
         img[data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px}
-        .img-edit-wrapper{position:relative;display:inline-block;overflow:hidden;border-radius:inherit}
+        .img-edit-wrapper{position:relative;display:inline-block;border-radius:inherit;/* overflow visível para aparecer fora do container */}
         .img-edit-overlay{position:absolute;inset:0;z-index:1002;cursor:move;pointer-events:auto;background:transparent}
         .img-edit-handle{position:absolute;background:#3B82F6;border:2px solid #fff;z-index:1003}
         .img-dim-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:1001}
@@ -415,6 +413,45 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
+  // ===== clamp e cover
+  const ensureCoverAndClamp = (wrapper: HTMLElement, img: HTMLImageElement) => {
+    const wW = wrapper.clientWidth;
+    const wH = wrapper.clientHeight;
+    const nW = img.naturalWidth || img.width;
+    const nH = img.naturalHeight || img.height;
+
+    // 1) ajustar por largura do container
+    let scale = wW / nW;
+    let iW = nW * scale;
+    let iH = nH * scale;
+
+    // 2) se não cobrir a altura, aumentar (cover)
+    if (iH < wH) {
+      scale = wH / nH;
+      iW = nW * scale;
+      iH = nH * scale;
+    }
+
+    img.style.width = `${iW}px`;
+    img.style.height = `${iH}px`;
+
+    // 3) centralizar e clamp
+    let left = (wW - iW) / 2;
+    let top = (wH - iH) / 2;
+
+    // clamp para não deixar “vazio” aparente dentro do container
+    const minLeft = Math.min(0, wW - iW);
+    const maxLeft = 0;
+    const minTop = Math.min(0, wH - iH);
+    const maxTop = 0;
+
+    left = Math.min(maxLeft, Math.max(minLeft, left));
+    top = Math.min(maxTop, Math.max(minTop, top));
+
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+  };
+
   // ===== limpeza do modo de edição
   const cleanupImageEdit = (slideIndex: number) => {
     const iframe = iframeRefs.current[slideIndex];
@@ -432,29 +469,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     removeDimmer(doc);
   };
 
-  // ===== restrições de arrasto (não deixar “vazio” no container)
-  const clampDragWithin = (wrapper: HTMLElement, img: HTMLImageElement) => {
-    const wW = wrapper.clientWidth;
-    const wH = wrapper.clientHeight;
-    const iW = img.naturalWidth || img.width;
-    const iH = img.naturalHeight || img.height;
-
-    const curLeft = parseFloat(img.style.left || '0');
-    const curTop = parseFloat(img.style.top || '0');
-
-    const minLeft = Math.min(0, wW - iW);
-    const maxLeft = Math.max(0, wW - iW) >= 0 ? 0 : minLeft; // se imagem menor, centralizada (0)
-    const minTop = Math.min(0, wH - iH);
-    const maxTop = Math.max(0, wH - iH) >= 0 ? 0 : minTop;
-
-    const newLeft = iW <= wW ? (wW - iW) / 2 : Math.min(0, Math.max(minLeft, curLeft));
-    const newTop = iH <= wH ? (wH - iH) / 2 : Math.min(0, Math.max(minTop, curTop));
-
-    img.style.left = `${newLeft}px`;
-    img.style.top = `${newTop}px`;
-  };
-
-  // ===== Iniciar edição (mostra tamanho real, dimmer, drag + resize)
+  // ===== Iniciar edição (container mantém tamanho, imagem ajusta na largura e cobre; parte fora fica dim)
   const startImageEdit = (slideIndex: number, target: HTMLElement, type: 'img'|'bg') => {
     const iframe = iframeRefs.current[slideIndex];
     if (!iframe || !iframe.contentWindow) return;
@@ -466,7 +481,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     let wrapper: HTMLElement;
     let imgEl: HTMLImageElement | null = null;
 
-    // 1) Se for background, converte para <img> dentro de wrapper
+    // 1) Se for background, converte para <img> dentro de wrapper (sem cortar)
     if (type === 'bg') {
       const cs = doc.defaultView?.getComputedStyle(target);
       let bg = cs?.backgroundImage || '';
@@ -484,13 +499,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         existingImg.style.maxWidth = 'unset';
         existingImg.style.maxHeight = 'unset';
         (target as HTMLElement).style.backgroundImage = 'none';
-        (target as HTMLElement).style.overflow = 'hidden';
         (target as HTMLElement).appendChild(existingImg);
       }
-      imgEl = existingImg;
+      // importante: NÃO cortar — overflow visível
+      (target as HTMLElement).style.overflow = 'visible';
       wrapper = target;
+      imgEl = existingImg;
     } else {
-      // 2) Se for <img>, coloca num wrapper com overflow hidden
+      // 2) Se for <img>, coloca num wrapper (sem cortar)
       const img = target as HTMLImageElement;
       if (!img.parentElement || !img.parentElement.classList.contains('img-edit-wrapper')) {
         const w = doc.createElement('div');
@@ -501,8 +517,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         w.style.height = `${rect.height || img.height}px`;
         w.style.borderRadius = getComputedStyle(img).borderRadius;
         w.style.display = 'inline-block';
-        w.style.overflow = 'hidden';
         w.style.position = 'relative';
+        w.style.overflow = 'visible'; // mostra fora do container
 
         img.style.position = 'absolute';
         img.style.maxWidth = 'unset';
@@ -515,63 +531,62 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         wrapper = w;
       } else {
         wrapper = img.parentElement as HTMLElement;
+        wrapper.style.overflow = 'visible';
       }
       imgEl = wrapper.querySelector('img') as HTMLImageElement;
     }
 
-    // 3) Modo edição visual
     wrapper.setAttribute('data-img-editing', 'true');
     wrapper.style.outline = '3px solid #3B82F6';
 
-    // 4) Forçar tamanho real da imagem ao entrar (naturalWidth/Height) e centralizar
-    const applyNaturalSize = () => {
+    // 3) Ajustar imagem: width = largura do container, cobrindo altura se necessário
+    const applyCover = () => {
       if (!imgEl) return;
-      const nW = imgEl.naturalWidth || imgEl.width;
-      const nH = imgEl.naturalHeight || imgEl.height;
-      imgEl.style.width = `${nW}px`;
-      imgEl.style.height = `${nH}px`;
-
-      // centraliza e aplica clamp pra não deixar “vazio”
-      imgEl.style.left = `${(wrapper.clientWidth - nW) / 2}px`;
-      imgEl.style.top = `${(wrapper.clientHeight - nH) / 2}px`;
-      clampDragWithin(wrapper, imgEl);
+      ensureCoverAndClamp(wrapper, imgEl);
       createOrUpdateDimmer(doc, wrapper);
     };
 
-    if (imgEl?.complete) {
-      applyNaturalSize();
-    } else {
-      imgEl?.addEventListener('load', applyNaturalSize, { once: true });
-    }
+    if (imgEl?.complete) applyCover();
+    else imgEl?.addEventListener('load', applyCover, { once: true });
 
-    // 5) Overlay para drag
+    // 4) Overlay para drag
     const overlay = doc.createElement('div');
     overlay.className = 'img-edit-overlay';
     overlay.style.pointerEvents = 'auto';
     wrapper.appendChild(overlay);
 
-    // atualiza dimmer ao redimensionar/janela
     const onWindowResize = () => createOrUpdateDimmer(doc, wrapper);
     doc.defaultView?.addEventListener('resize', onWindowResize);
 
-    // 6) Drag com limites
-    const start = { x: 0, y: 0, imgLeft: 0, imgTop: 0 };
+    // 5) Drag com clamp (não deixa “vazio” no container)
+    const startDrag = { x: 0, y: 0, imgLeft: 0, imgTop: 0 };
     const onOverlayDown = (e: MouseEvent) => {
       e.preventDefault(); e.stopPropagation();
       if (!imgEl) return;
-      start.x = e.clientX;
-      start.y = e.clientY;
-      start.imgLeft = parseFloat(imgEl.style.left || '0');
-      start.imgTop = parseFloat(imgEl.style.top || '0');
+      startDrag.x = e.clientX;
+      startDrag.y = e.clientY;
+      startDrag.imgLeft = parseFloat(imgEl.style.left || '0');
+      startDrag.imgTop = parseFloat(imgEl.style.top || '0');
       imgEl.setAttribute('data-img-dragging', 'true');
 
       const onMove = (e: MouseEvent) => {
         if (!imgEl) return;
-        const dx = (e.clientX - start.x) / zoom;
-        const dy = (e.clientY - start.y) / zoom;
-        imgEl.style.left = `${start.imgLeft + dx}px`;
-        imgEl.style.top = `${start.imgTop + dy}px`;
-        clampDragWithin(wrapper, imgEl);
+        let left = startDrag.imgLeft + (e.clientX - startDrag.x) / zoom;
+        let top = startDrag.imgTop + (e.clientY - startDrag.y) / zoom;
+
+        // clamp
+        const wW = wrapper.clientWidth, wH = wrapper.clientHeight;
+        const iW = parseFloat(imgEl.style.width), iH = parseFloat(imgEl.style.height);
+        const minLeft = Math.min(0, wW - iW);
+        const maxLeft = 0;
+        const minTop = Math.min(0, wH - iH);
+        const maxTop = 0;
+
+        left = Math.min(maxLeft, Math.max(minLeft, left));
+        top = Math.min(maxTop, Math.max(minTop, top));
+
+        imgEl.style.left = `${left}px`;
+        imgEl.style.top = `${top}px`;
         createOrUpdateDimmer(doc, wrapper);
       };
 
@@ -586,7 +601,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     overlay.addEventListener('mousedown', onOverlayDown);
 
-    // 7) Handles para resize do container
+    // 6) Handles para resize do container (e manter cover)
     const handles = ['nw','ne','sw','se','n','s','e','w'] as const;
     const makeHandle = (pos: typeof handles[number]) => {
       const h = doc.createElement('div');
@@ -630,8 +645,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           if (newW > 50) wrapper.style.width = `${newW}px`;
           if (newH > 50) wrapper.style.height = `${newH}px`;
 
-          // após redimensionar, aplica clamp de novo
-          if (imgEl) clampDragWithin(wrapper, imgEl);
+          if (imgEl) ensureCoverAndClamp(wrapper, imgEl);
           createOrUpdateDimmer(doc, wrapper);
         };
 
@@ -650,21 +664,20 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     };
     handles.forEach(makeHandle);
 
-    // 8) Botão Done
+    // 7) Botão Done dentro do iframe
     const done = doc.createElement('button');
     done.className = 'img-edit-done-btn';
     done.textContent = 'Done';
     done.style.cssText = 'position:absolute;top:-40px;right:0;padding:8px 16px;background:#3B82F6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;z-index:1004;';
     done.onclick = (e) => {
       e.preventDefault(); e.stopPropagation();
-      // se foi bg, mantém como wrapper+img (já editável) – visual igual e editável depois
       cleanupImageEdit(slideIndex);
       setImageEdit(null);
       doc.defaultView?.removeEventListener('resize', onWindowResize);
     };
     wrapper.appendChild(done);
 
-    // 9) Foco e dimmer
+    // 8) “Popup” (dimmer/spotlight) no slide
     createOrUpdateDimmer(doc, wrapper);
 
     // guarda estado
@@ -975,7 +988,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   // ===== JSX
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
+      {/* overlay/popup de edição (top bar + dim UI) */}
+      {imageEdit && (
+        <div className="pointer-events-none absolute inset-0 z-[95]">
+          {/* barra superior informativa */}
+          <div className="pointer-events-auto fixed left-1/2 -translate-x-1/2 top-4 bg-neutral-900/90 border border-neutral-700 text-white px-4 py-2 rounded shadow">
+            <span className="font-medium">Editando imagem</span>
+            <span className="text-neutral-400 ml-3 text-sm">Arraste a imagem, redimensione o container nas bordas. Pressione Esc para sair.</span>
+          </div>
+          {/* escurece painéis laterais enquanto edita */}
+        </div>
+      )}
+
+      <div className={`w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col transition-opacity ${imageEdit ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <Layers className="w-4 h-4 text-neutral-400 mr-2" />
           <h3 className="text-white font-medium text-sm">Layers</h3>
@@ -990,7 +1015,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             return (
               <div key={index} className={`border-b border-neutral-800 ${isFocused ? 'bg-neutral-900' : ''}`}>
                 <button
-                  onClick={() => { toggleLayer(index); handleSlideClick(index); }}
+                  onClick={() => { if (imageEdit) return; toggleLayer(index); handleSlideClick(index); }}
                   className="w-full px-3 py-2 flex items-center justify-between hover:bg-neutral-900 transition-colors"
                 >
                   <div className="flex items-center space-x-2">
@@ -1003,7 +1028,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 {isExpanded && conteudo && (
                   <div className="ml-3 border-l border-neutral-800">
                     <button
-                      onClick={() => handleElementClick(index, 'background')}
+                      onClick={() => { if (imageEdit) return; handleElementClick(index, 'background'); }}
                       className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${selectedElement.slideIndex === index && selectedElement.element === 'background' ? 'bg-neutral-800' : ''}`}
                     >
                       {getElementIcon('background')}
@@ -1011,7 +1036,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     </button>
 
                     <button
-                      onClick={() => handleElementClick(index, 'title')}
+                      onClick={() => { if (imageEdit) return; handleElementClick(index, 'title'); }}
                       className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${selectedElement.slideIndex === index && selectedElement.element === 'title' ? 'bg-neutral-800' : ''}`}
                     >
                       {getElementIcon('title')}
@@ -1020,7 +1045,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                     {conteudo.subtitle && (
                       <button
-                        onClick={() => handleElementClick(index, 'subtitle')}
+                        onClick={() => { if (imageEdit) return; handleElementClick(index, 'subtitle'); }}
                         className={`w-full px-3 py-1.5 flex items-center space-x-2 hover:bg-neutral-900 transition-colors ${selectedElement.slideIndex === index && selectedElement.element === 'subtitle' ? 'bg-neutral-800' : ''}`}
                       >
                         {getElementIcon('subtitle')}
@@ -1036,13 +1061,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       </div>
 
       <div className="flex-1 flex flex-col">
-        <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
+        <div className={`h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6 transition-opacity ${imageEdit ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex items-center space-x-4">
             <h2 className="text-white font-semibold">Carousel Editor</h2>
             <div className="text-neutral-500 text-sm">{slides.length} slides</div>
           </div>
 
-        <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
             <button
               onClick={() => setZoom((p) => Math.max(p - 0.1, 0.1))}
               className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
@@ -1087,13 +1112,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               const delta = e.deltaY > 0 ? -0.05 : 0.05;
               setZoom((prev) => Math.min(Math.max(0.1, prev + delta), 2));
             } else {
-              // se está editando imagem, não deixa pan do canvas
-              if (imageEdit) return;
+              if (imageEdit) return; // não pan enquanto edita imagem
               setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
             }
           }}
           onMouseDown={(e) => {
-            if (imageEdit) return; // bloqueia pan enquanto edita imagem
+            if (imageEdit) return;
             if (e.button === 0 && e.currentTarget === e.target) {
               setIsDragging(true);
               setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -1122,8 +1146,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               {renderedSlides.map((slide, index) => (
                 <div
                   key={index}
-                  className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${focusedSlide === index ? 'ring-4 ring-blue-500' : ''}`}
-                  style={{ width: `${slideWidth}px`, height: `${slideHeight}px` }}
+                  className={`relative bg-white rounded-lg shadow-2xl overflow-hidden flex-shrink-0 transition-all ${focusedSlide === index ? 'ring-4 ring-blue-500' : ''} ${imageEdit && imageEdit.slideIndex !== index ? 'opacity-40' : 'opacity-100'}`}
+                  style={{ width: `${slideWidth}px`, height: `${slideHeight}px`, zIndex: imageEdit && imageEdit.slideIndex === index ? 96 : 1 }}
                 >
                   <iframe
                     ref={(el) => (iframeRefs.current[index] = el)}
@@ -1143,7 +1167,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         </div>
       </div>
 
-      <div className="w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col">
+      <div className={`w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col transition-opacity ${imageEdit ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <h3 className="text-white font-medium text-sm">Properties</h3>
         </div>
@@ -1264,9 +1288,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                             if (target) enableImageEditFromElement(selectedElement.slideIndex, target);
                           }}
                           className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
-                          title="Entrar no modo de edição da imagem selecionada"
+                          title="Entrar no modo de edição"
                         >
-                          Editar esta imagem
+                          Editar imagem
                         </button>
                       </div>
 
@@ -1385,16 +1409,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           </div>
                           <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(selectedElement.slideIndex, e)} />
                         </label>
-                      </div>
-
-                      <div className="mt-3">
-                        <label className="text-neutral-400 text-xs mb-2 block font-medium">Image Size</label>
-                        <select className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors">
-                          <option>Cover</option>
-                          <option>Contain</option>
-                          <option>Auto</option>
-                          <option>Stretch</option>
-                        </select>
                       </div>
                     </>
                   )}
