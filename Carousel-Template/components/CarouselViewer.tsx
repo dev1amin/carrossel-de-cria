@@ -229,7 +229,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const slidePosition = 0 * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
     setPan({ x: -slidePosition * zoom, y: 0 });
     setFocusedSlide(0);
-  }, []); // apenas no mount
+  }, []); // mount only
+
+  /** ====================== Helpers COVER/OFFSET ======================= */
+  const computeCover = (natW: number, natH: number, contW: number, contH: number) => {
+    const scale = Math.max(contW / natW, contH / natH);
+    return { displayW: natW * scale, displayH: natH * scale };
+  };
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+  const centeredOffsets = (displayW: number, displayH: number, contW: number, contH: number) => {
+    const minLeft = contW - displayW; // <= 0
+    const minTop  = contH - displayH; // <= 0
+    return {
+      left: minLeft / 2,
+      top:  minTop  / 2,
+      minLeft, minTop
+    };
+  };
 
   /** ====================== Helpers de DOM (iframe) ======================= */
 
@@ -301,12 +317,20 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
         return img;
       } else {
+        // GARANTE COVER + CENTER IMEDIATO
         best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
+        best.el.style.setProperty('background-repeat', 'no-repeat', 'important');
+        best.el.style.setProperty('background-size', 'cover', 'important');
+        best.el.style.setProperty('background-position', '50% 50%', 'important');
         return best.el;
       }
     }
 
+    // fallback no body
     doc.body.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
+    doc.body.style.setProperty('background-repeat', 'no-repeat', 'important');
+    doc.body.style.setProperty('background-size', 'cover', 'important');
+    doc.body.style.setProperty('background-position', '50% 50%', 'important');
     return doc.body;
   };
 
@@ -370,7 +394,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }, 60);
 
-      // aplica bg escolhido (se houver)
+      // aplica bg escolhido (se houver) — JÁ FORÇA cover + center
       const bg = editedContent[`${index}-background`];
       if (bg) {
         const best = findLargestVisual(doc);
@@ -381,9 +405,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             img.src = bg; img.setAttribute('data-bg-image-url', bg);
           } else {
             best.el.style.setProperty('background-image', `url('${bg}')`, 'important');
+            best.el.style.setProperty('background-repeat', 'no-repeat', 'important');
+            best.el.style.setProperty('background-size', 'cover', 'important');
+            best.el.style.setProperty('background-position', '50% 50%', 'important');
           }
         } else {
           doc.body.style.setProperty('background-image', `url('${bg}')`, 'important');
+          doc.body.style.setProperty('background-repeat', 'no-repeat', 'important');
+          doc.body.style.setProperty('background-size', 'cover', 'important');
+          doc.body.style.setProperty('background-position', '50% 50%', 'important');
         }
       }
     });
@@ -536,35 +566,33 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     tmp.src = imageUrl;
 
     const finalizeOpen = (natW: number, natH: number) => {
-      // offsets iniciais (top/left)
-      let imgOffsetTopPx = 0;
-      let imgOffsetLeftPx = 0;
+      // container (alvo) e cover
+      const contW = targetWidthPx;
+      const contH = containerHeightPx;
+      const { displayW, displayH } = computeCover(natW, natH, contW, contH);
+      const { left: centerLeft, top: centerTop, minLeft, minTop } = centeredOffsets(displayW, displayH, contW, contH);
+
+      // offsets iniciais
+      let imgOffsetTopPx = centerTop;
+      let imgOffsetLeftPx = centerLeft;
 
       if (targetType === 'img') {
-        const top = parseFloat((chosen as HTMLImageElement).style.top || '0');
-        const left = parseFloat((chosen as HTMLImageElement).style.left || '0');
-        imgOffsetTopPx = isNaN(top) ? 0 : top;
-        imgOffsetLeftPx = isNaN(left) ? 0 : left;
+        const top = parseFloat((chosen as HTMLImageElement).style.top || `${centerTop}`);
+        const left = parseFloat((chosen as HTMLImageElement).style.left || `${centerLeft}`);
+        imgOffsetTopPx = clamp(isNaN(top) ? centerTop : top, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(left) ? centerLeft : left, minLeft, 0);
       } else {
         const cs2 = doc.defaultView?.getComputedStyle(chosen);
         const bgPosY = cs2?.backgroundPositionY || '50%';
         const bgPosX = cs2?.backgroundPositionX || '50%';
+        const toPerc = (v: string) => v.endsWith('%') ? parseFloat(v) / 100 : 0.5;
 
-        // cover: escala para cobrir completamente
-        const scale = Math.max(targetWidthPx / natW, containerHeightPx / natH);
-        const displayW = natW * scale;
-        const displayH = natH * scale;
+        const pxFromPerc = (perc: number, maxOffset: number) => -clamp(perc, 0, 1) * Math.max(0, maxOffset);
+        const offY = pxFromPerc(toPerc(bgPosY), displayH - contH);
+        const offX = pxFromPerc(toPerc(bgPosX), displayW - contW);
 
-        const maxOffsetY = Math.max(0, displayH - containerHeightPx);
-        const maxOffsetX = Math.max(0, displayW - targetWidthPx);
-
-        const toPerc = (v: string) => v.endsWith('%') ? parseFloat(v) / 100 : 0.5; // default 50%
-        const percY = toPerc(bgPosY);
-        const percX = toPerc(bgPosX);
-
-        // converter posição (%) em offset negativo
-        imgOffsetTopPx  = -percY * maxOffsetY;
-        imgOffsetLeftPx = -percX * maxOffsetX;
+        imgOffsetTopPx = clamp(isNaN(offY) ? centerTop : offY, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(offX) ? centerLeft : offX, minLeft, 0);
       }
 
       setImageModal({
@@ -625,24 +653,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         wrapper = w;
       }
 
-      // wrapper (máscara) do tamanho do alvo
+      // wrapper (máscara)
       (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
       (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
 
-      // COVER dentro do wrapper: escala mínima para cobrir
-      const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
-      const displayW = naturalW * scale;
-      const displayH = naturalH * scale;
+      // COVER + centralização/clamp
+      const { displayW, displayH } = computeCover(naturalW, naturalH, targetWidthPx, containerHeightPx);
+      const { left: centerLeft, top: centerTop, minLeft, minTop } =
+        centeredOffsets(displayW, displayH, targetWidthPx, containerHeightPx);
 
-      const minTop  = containerHeightPx - displayH; // <= 0
-      const minLeft = targetWidthPx - displayW;     // <= 0
+      const safeLeft = clamp(isNaN(imgOffsetLeftPx) ? centerLeft : imgOffsetLeftPx, minLeft, 0);
+      const safeTop  = clamp(isNaN(imgOffsetTopPx)  ? centerTop  : imgOffsetTopPx,  minTop,  0);
 
-      // aplica dimensões e offsets, **clampados**
       (el as HTMLElement).style.position = 'absolute';
       (el as HTMLElement).style.width  = `${displayW}px`;
       (el as HTMLElement).style.height = `${displayH}px`;
-      (el as HTMLElement).style.left   = `${Math.max(minLeft, Math.min(0, imgOffsetLeftPx))}px`;
-      (el as HTMLElement).style.top    = `${Math.max(minTop,  Math.min(0, imgOffsetTopPx))}px`;
+      (el as HTMLElement).style.left   = `${safeLeft}px`;
+      (el as HTMLElement).style.top    = `${safeTop}px`;
       (el as HTMLElement).style.maxWidth = 'unset';
       (el as HTMLElement).style.maxHeight = 'unset';
 
@@ -651,11 +678,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       (el as HTMLImageElement).loading = 'eager';
       if ((el as HTMLImageElement).src !== imageUrl) (el as HTMLImageElement).src = imageUrl;
 
-      // semântico: reforça cover
-      (el as HTMLImageElement).style.objectFit = 'cover';
+      (el as HTMLImageElement).style.objectFit = 'cover'; // semântico
 
     } else {
-      // BACKGROUND com cover + posição relativa aos offsets
+      // BACKGROUND com cover + posição relativa aos offsets (em %)
       const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
       const displayW = naturalW * scale;
       const displayH = naturalH * scale;
@@ -663,8 +689,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const maxOffsetX = Math.max(0, displayW - targetWidthPx);
       const maxOffsetY = Math.max(0, displayH - containerHeightPx);
 
-      const xPerc = maxOffsetX ? (-imgOffsetLeftPx / maxOffsetX) * 100 : 50;
-      const yPerc = maxOffsetY ? (-imgOffsetTopPx  / maxOffsetY) * 100 : 50;
+      let xPerc = maxOffsetX ? (-imgOffsetLeftPx / maxOffsetX) * 100 : 50;
+      let yPerc = maxOffsetY ? (-imgOffsetTopPx  / maxOffsetY) * 100 : 50;
+      if (!isFinite(xPerc)) xPerc = 50;
+      if (!isFinite(yPerc)) yPerc = 50;
 
       el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
       el.style.setProperty('background-repeat', 'no-repeat', 'important');
@@ -850,9 +878,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         const containerHeight = imageModal.containerHeightPx;
 
                         // COVER: escala mínima para cobrir a máscara
-                        const scale = Math.max(containerWidth / imageModal.naturalW, containerHeight / imageModal.naturalH);
-                        const displayW = imageModal.naturalW * scale;
-                        const displayH = imageModal.naturalH * scale;
+                        const { displayW, displayH } = computeCover(
+                          imageModal.naturalW,
+                          imageModal.naturalH,
+                          containerWidth,
+                          containerHeight
+                        );
 
                         // limites (não deixa ver fundo)
                         const minTop = containerHeight - displayH;   // <= 0
@@ -860,8 +891,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         const minLeft = containerWidth - displayW;   // <= 0
                         const maxLeft = 0;
 
-                        const clampedTop  = Math.max(minTop, Math.min(maxTop, imageModal.imgOffsetTopPx));
-                        const clampedLeft = Math.max(minLeft, Math.min(maxLeft, imageModal.imgOffsetLeftPx));
+                        const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop, 0);
+                        const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, 0);
 
                         const rightW = imageModal.slideW - (containerLeft + containerWidth);
                         const bottomH = imageModal.slideH - (containerTop + containerHeight);
@@ -917,8 +948,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                               {/* drag 2D */}
                               <DragSurface
                                 onDrag={(dx, dy) => {
-                                  const nextLeft = Math.max(minLeft, Math.min(maxLeft, imageModal.imgOffsetLeftPx + dx));
-                                  const nextTop  = Math.max(minTop,  Math.min(maxTop,  imageModal.imgOffsetTopPx  + dy));
+                                  const nextLeft = clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft);
+                                  const nextTop  = clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop);
                                   setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
                                 }}
                               />
@@ -928,17 +959,21 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 position="bottom"
                                 onResize={(dy) => {
                                   const newH = Math.max(60, containerHeight + dy);
-                                  const newScale = Math.max(containerWidth / imageModal.naturalW, newH / imageModal.naturalH);
-                                  const newDisplayW = imageModal.naturalW * newScale;
-                                  const newDisplayH = imageModal.naturalH * newScale;
+                                  const { displayW: newDisplayW, displayH: newDisplayH } =
+                                    computeCover(imageModal.naturalW, imageModal.naturalH, containerWidth, newH);
 
                                   const newMinTop  = newH - newDisplayH;
                                   const newMinLeft = containerWidth - newDisplayW;
 
-                                  const adjTop  = Math.max(newMinTop,  Math.min(0, imageModal.imgOffsetTopPx));
-                                  const adjLeft = Math.max(newMinLeft, Math.min(0, imageModal.imgOffsetLeftPx));
+                                  const adjTop  = clamp(imageModal.imgOffsetTopPx,  newMinTop,  0);
+                                  const adjLeft = clamp(imageModal.imgOffsetLeftPx, newMinLeft, 0);
 
-                                  setImageModal({ ...imageModal, containerHeightPx: newH, imgOffsetTopPx: adjTop, imgOffsetLeftPx: adjLeft });
+                                  setImageModal({
+                                    ...imageModal,
+                                    containerHeightPx: newH,
+                                    imgOffsetTopPx: adjTop,
+                                    imgOffsetLeftPx: adjLeft
+                                  });
                                 }}
                               />
                             </div>
@@ -1023,7 +1058,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             <h2 className="text-white font-semibold">Carousel Editor</h2>
             <div className="text-neutral-500 text-sm">{slides.length} slides</div>
           </div>
-        <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
             <button
               onClick={() => setZoom(p => Math.max(0.1, p - 0.1))}
               className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
