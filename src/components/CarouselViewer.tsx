@@ -335,40 +335,40 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
   };
 
   /** ====================== Modal: abrir/aplicar ======================= */  
-const openImageEditModal = (slideIndex: number) => {
-  const tryOpen = (iframe: HTMLIFrameElement | null) => {
-    if (!iframe) return false;
-    const state = openEditModalForSlide({
-      iframe,
-      slideIndex,
-      slideW: slideWidth,
-      slideH: slideHeight,
-      editedContent,
-      uploadedImages,
-      carouselData,
+  const openImageEditModal = (slideIndex: number) => {
+    const tryOpen = (iframe: HTMLIFrameElement | null) => {
+      if (!iframe) return false;
+      const state = openEditModalForSlide({
+        iframe,
+        slideIndex,
+        slideW: slideWidth,
+        slideH: slideHeight,
+        editedContent,
+        uploadedImages,
+        carouselData,
+      });
+      if (!state) return false;
+      setImageModal(state);
+      document.documentElement.style.overflow = "hidden";
+      return true;
+    };
+  
+    // 1) tenta via ref
+    if (tryOpen(iframeRefs.current[slideIndex])) return;
+  
+    // 2) tenta via query no DOM (fallback)
+    const domIframe = document.querySelector<HTMLIFrameElement>(
+      `iframe[title="Slide ${slideIndex + 1}"]`
+    );
+    if (tryOpen(domIframe)) return;
+  
+    // 3) último recurso: agenda em next frame (iframe costuma estar pronto no próximo tick)
+    requestAnimationFrame(() => {
+      const again = iframeRefs.current[slideIndex] ||
+        document.querySelector<HTMLIFrameElement>(`iframe[title="Slide ${slideIndex + 1}"]`);
+      tryOpen(again);
     });
-    if (!state) return false;
-    setImageModal(state);
-    document.documentElement.style.overflow = "hidden";
-    return true;
   };
-
-  // 1) tenta via ref
-  if (tryOpen(iframeRefs.current[slideIndex])) return;
-
-  // 2) tenta via query no DOM (fallback)
-  const domIframe = document.querySelector<HTMLIFrameElement>(
-    `iframe[title="Slide ${slideIndex + 1}"]`
-  );
-  if (tryOpen(domIframe)) return;
-
-  // 3) último recurso: agenda em next frame (iframe costuma estar pronto no próximo tick)
-  requestAnimationFrame(() => {
-    const again = iframeRefs.current[slideIndex] ||
-      document.querySelector<HTMLIFrameElement>(`iframe[title="Slide ${slideIndex + 1}"]`);
-    tryOpen(again);
-  });
-};
 
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
