@@ -558,6 +558,7 @@ export function openEditModalForSlide(args: {
   dlog("openEditModalForSlide: return(image/bg)", out);
   return out;
 }
+
   // IMAGEM/BG: cover + centralizado, sem mostrar fundo
   const tmp = new Image();
   tmp.src = imageUrl;
