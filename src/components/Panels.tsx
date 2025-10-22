@@ -319,7 +319,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             Background
           </label>
           <button
-            onClick={onOpenEditModal}
+            onClick={() => {
+              console.log("[CV][UI] Edit click", { selectedElement });
+              onOpenEditModal();
+            }}
             className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
             title="Editar enquadramento"
           >
