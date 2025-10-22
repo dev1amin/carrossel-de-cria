@@ -389,14 +389,14 @@ export function openEditModalForSlide(args: {
   uploadedImages: Record<number, string>;
   carouselData: CarouselData;
 }): ImageEditModalState | null {
-  const { iframe, slideIndex, slideW, slideH, editedContent, uploadedImages, carouselData } =
-    args;
+  const { iframe, slideIndex, slideW, slideH, editedContent, uploadedImages, carouselData } = args;
 
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) return null;
+  if (!doc) { dlog("openEditModalForSlide: no document", { slideIndex }); return null; }
 
   const selected = doc.querySelector("[data-editable].selected") as HTMLElement | null;
-  const largest = findLargestVisual(doc)?.el || null;
+  const largestFound = findLargestVisual(doc);
+  const largest = largestFound?.el || null;
 
   const c = carouselData.conteudos[slideIndex] || {};
   const fallbackUrl =
@@ -408,9 +408,16 @@ export function openEditModalForSlide(args: {
     c.imagem_fundo3 ||
     "";
 
-  // alvo: selecionado > maior visual > body
+  dlog("openEditModalForSlide: candidates", {
+    slideIndex,
+    hasSelected: !!selected,
+    largestType: largestFound?.type,
+    hasLargest: !!largest,
+    fallbackUrl
+  });
+
   let chosen: HTMLElement | null = selected || largest || (doc.body as HTMLElement);
-  if (!chosen) return null;
+  if (!chosen) { dlog("openEditModalForSlide: no chosen"); return null; }
   if (!chosen.id) chosen.id = `edit-${Date.now()}`;
   const targetSelector = `#${chosen.id}`;
 
@@ -437,10 +444,15 @@ export function openEditModalForSlide(args: {
     targetType = "bg";
   }
 
-  // Se ainda não tem URL, tenta último fallback: se nada, aborta.
-  if (!imageUrl) return null;
+  dlog("openEditModalForSlide: target resolved", {
+    tag: chosen.tagName,
+    targetType,
+    imageUrlLength: imageUrl.length,
+    hasImageUrl: !!imageUrl
+  });
 
-  // Medidas do alvo; se vier tudo 0 (body cru), usamos o tamanho do slide
+  if (!imageUrl) { dlog("openEditModalForSlide: no imageUrl -> abort"); return null; }
+
   const r = chosen.getBoundingClientRect();
   const bodyRect = doc.body.getBoundingClientRect();
   const targetLeftPx = r.left ? r.left - bodyRect.left : 0;
@@ -448,9 +460,13 @@ export function openEditModalForSlide(args: {
   const targetWidthPx = Math.max(1, r.width || slideW);
   const targetHeightPx = Math.max(1, r.height || slideH);
 
+  dlog("openEditModalForSlide: target rect", {
+    targetLeftPx, targetTopPx, targetWidthPx, targetHeightPx
+  });
+
   if (isVideo) {
     const video = chosen as HTMLVideoElement;
-    return {
+    const out: ImageEditModalState = {
       open: true,
       slideIndex,
       targetType: "vid",
@@ -476,8 +492,72 @@ export function openEditModalForSlide(args: {
       cropW: targetWidthPx,
       cropH: targetHeightPx,
     };
+    dlog("openEditModalForSlide: return(video)", out);
+    return out;
   }
 
+  const tmp = new Image();
+  tmp.src = imageUrl;
+  const natW = tmp.naturalWidth || targetWidthPx || 1;
+  const natH = tmp.naturalHeight || targetHeightPx || 1;
+  const coverScale = Math.max(targetWidthPx / natW, targetHeightPx / natH);
+  const displayW = Math.ceil(natW * coverScale);
+  const displayH = Math.ceil(natH * coverScale);
+  const startLeft = (targetWidthPx - displayW) / 2;
+  const startTop = (targetHeightPx - displayH) / 2;
+
+  let imgOffsetTopPx = startTop;
+  let imgOffsetLeftPx = startLeft;
+
+  if (targetType === "img") {
+    const top = parseFloat((chosen as HTMLImageElement).style.top || `${startTop}`);
+    const left = parseFloat((chosen as HTMLImageElement).style.left || `${startLeft}`);
+    const minLeft = targetWidthPx - displayW;
+    const minTop = targetHeightPx - displayH;
+    imgOffsetTopPx = clamp(isNaN(top) ? startTop : top, minTop, 0);
+    imgOffsetLeftPx = clamp(isNaN(left) ? startLeft : left, minLeft, 0);
+  } else {
+    const cs2 = doc.defaultView?.getComputedStyle(chosen);
+    const toPerc = (v: string) => (v && v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+    const posX = toPerc(cs2?.backgroundPositionX || "50%");
+    const posY = toPerc(cs2?.backgroundPositionY || "50%");
+    const maxOffsetX = Math.max(0, displayW - targetWidthPx);
+    const maxOffsetY = Math.max(0, displayH - targetHeightPx);
+    const offX = -posX * maxOffsetX;
+    const offY = -posY * maxOffsetY;
+    imgOffsetTopPx = clamp(offY, targetHeightPx - displayH, 0);
+    imgOffsetLeftPx = clamp(offX, targetWidthPx - displayW, 0);
+  }
+
+  const out: ImageEditModalState = {
+    open: true,
+    slideIndex,
+    targetType,
+    targetSelector,
+    imageUrl,
+    slideW,
+    slideH,
+    containerHeightPx: targetHeightPx,
+    naturalW: natW,
+    naturalH: natH,
+    imgOffsetTopPx,
+    imgOffsetLeftPx,
+    targetWidthPx,
+    targetLeftPx,
+    targetTopPx,
+    isVideo: false,
+    videoTargetW: 0,
+    videoTargetH: 0,
+    videoTargetLeft: 0,
+    videoTargetTop: 0,
+    cropX: 0,
+    cropY: 0,
+    cropW: 0,
+    cropH: 0,
+  };
+  dlog("openEditModalForSlide: return(image/bg)", out);
+  return out;
+}
   // IMAGEM/BG: cover + centralizado, sem mostrar fundo
   const tmp = new Image();
   tmp.src = imageUrl;
