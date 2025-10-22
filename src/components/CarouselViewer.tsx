@@ -335,40 +335,54 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
   };
 
   /** ====================== Modal: abrir/aplicar ======================= */  
-  const openImageEditModal = (slideIndex: number) => {
-    const tryOpen = (iframe: HTMLIFrameElement | null) => {
-      if (!iframe) return false;
-      const state = openEditModalForSlide({
-        iframe,
-        slideIndex,
-        slideW: slideWidth,
-        slideH: slideHeight,
-        editedContent,
-        uploadedImages,
-        carouselData,
-      });
-      if (!state) return false;
-      setImageModal(state);
-      document.documentElement.style.overflow = "hidden";
-      return true;
-    };
-  
-    // 1) tenta via ref
-    if (tryOpen(iframeRefs.current[slideIndex])) return;
-  
-    // 2) tenta via query no DOM (fallback)
-    const domIframe = document.querySelector<HTMLIFrameElement>(
-      `iframe[title="Slide ${slideIndex + 1}"]`
-    );
-    if (tryOpen(domIframe)) return;
-  
-    // 3) último recurso: agenda em next frame (iframe costuma estar pronto no próximo tick)
-    requestAnimationFrame(() => {
-      const again = iframeRefs.current[slideIndex] ||
-        document.querySelector<HTMLIFrameElement>(`iframe[title="Slide ${slideIndex + 1}"]`);
-      tryOpen(again);
+const openImageEditModal = (slideIndex: number) => {
+  const log = (...a: any[]) => console.log("[CV][openImageEditModal]", ...a);
+
+  const tryOpen = (iframe: HTMLIFrameElement | null, tag: string) => {
+    log("tryOpen", { tag, hasIframe: !!iframe, slideIndex });
+    if (!iframe) return false;
+    const state = openEditModalForSlide({
+      iframe,
+      slideIndex,
+      slideW: slideWidth,
+      slideH: slideHeight,
+      editedContent,
+      uploadedImages,
+      carouselData,
     });
+    log("openEditModalForSlide:state", { ok: !!state, state });
+    if (!state) return false;
+    setImageModal(state);
+    document.documentElement.style.overflow = "hidden";
+    return true;
   };
+
+  // 1) tenta via ref
+  if (tryOpen(iframeRefs.current[slideIndex], "ref")) return;
+
+  // 2) tenta via DOM
+  const domIframe = document.querySelector<HTMLIFrameElement>(
+    `iframe[title="Slide ${slideIndex + 1}"]`
+  );
+  if (tryOpen(domIframe, "domQuery")) return;
+
+  // 3) tenta no próximo frame (iframe geralmente fica pronto no próximo tick)
+  requestAnimationFrame(() => {
+    const again = iframeRefs.current[slideIndex] ||
+      document.querySelector<HTMLIFrameElement>(`iframe[title="Slide ${slideIndex + 1}"]`);
+    if (tryOpen(again, "raf")) return;
+
+    // 4) último recurso: loga dados que faltam
+    console.warn("[CV][openImageEditModal] FAILED on first try", {
+      slideIndex,
+      hasRef: !!iframeRefs.current[slideIndex],
+      hasDomQuery: !!domIframe,
+      conteudo: carouselData.conteudos[slideIndex],
+      editedBg: editedContent[`${slideIndex}-background`],
+      uploaded: uploadedImages[slideIndex],
+    });
+  });
+};
 
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
