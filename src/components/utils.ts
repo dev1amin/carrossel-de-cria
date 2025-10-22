@@ -319,9 +319,9 @@ export function setupIframeInteractions(args: {
   };
 
   // attach
-  iframe.onload = () => setTimeout(ready, 60);
+  iframe.onload = () => { dlog("iframe:onload", { index }); setTimeout(ready, 60); };
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (doc && doc.readyState === "complete") setTimeout(ready, 60);
+  if (doc && doc.readyState === "complete") { dlog("iframe:already-complete", { index }); setTimeout(ready, 60); }
 }
 
 /* ===================== Aplicar bg imediatamente ===================== */
