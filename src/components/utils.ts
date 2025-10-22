@@ -177,6 +177,8 @@ export function setupIframeInteractions(args: {
     carouselConteudo,
   } = args;
 
+  dlog("setupIframeInteractions:init", { index, readyState: iframe.contentDocument?.readyState });
+
   const applyTextAndStyles = (doc: Document, id: string, key: string) => {
     const el = doc.getElementById(id);
     if (!el) return;
