@@ -104,6 +104,7 @@ const Canvas: React.FC<Props> = ({
                 srcDoc={slide}
                 className="w-full h-full border-0"
                 title={`Slide ${i + 1}`}
+                sandbox="allow-same-origin allow-scripts"
                 // restringe o mínimo necessário pra edição dentro do iframe
                 sandbox="allow-same-origin allow-scripts"
               />
