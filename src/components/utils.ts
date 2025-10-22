@@ -163,6 +163,9 @@ export function setupIframeInteractions(args: {
   >;
   setEditedContent: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   carouselConteudo: any;
+
+  // >>> NOVO: avisa o React qual elemento foi “escolhido” no iframe
+  onPick: (slideIndex: number, element: ElementType) => void;
 }) {
   const {
     iframe,
@@ -175,6 +178,7 @@ export function setupIframeInteractions(args: {
     setIsEditingInline,
     setEditedContent,
     carouselConteudo,
+    onPick,
   } = args;
 
   dlog("setupIframeInteractions:init", { index, readyState: iframe.contentDocument?.readyState });
@@ -274,7 +278,13 @@ export function setupIframeInteractions(args: {
         e.stopPropagation();
         doc.querySelectorAll("[data-editable]").forEach((x) => x.classList.remove("selected"));
         htmlEl.classList.add("selected");
-        selectedImageRefs.current[index] = htmlEl.tagName === "IMG" ? (htmlEl as HTMLImageElement) : null;
+        // se clicar numa IMG marcamos a ref — e AVISAMOS o React: background selecionado
+        if (htmlEl.tagName === "IMG") {
+          selectedImageRefs.current[index] = htmlEl as HTMLImageElement;
+          onPick(index, "background"); // <<< chave do conserto
+        } else if (type === "background") {
+          onPick(index, "background"); // <<< idem
+        }
       };
 
       if (type === "title" || type === "subtitle") {
@@ -283,7 +293,7 @@ export function setupIframeInteractions(args: {
           e.stopPropagation();
           htmlEl.setAttribute("contenteditable", "true");
           htmlEl.focus();
-          setIsEditingInline({ slideIndex: index, element: type as ElementType });
+          onPick(index, type as ElementType);
 
           const range = doc.createRange();
           range.selectNodeContents(htmlEl);
@@ -300,7 +310,7 @@ export function setupIframeInteractions(args: {
             const newContent = htmlEl.textContent || "";
             const k = `${index}-${type}`;
             setEditedContent((prev) => ({ ...prev, [k]: newContent }));
-            setIsEditingInline(null);
+            onPick(index, null);
           }
         };
 
@@ -380,6 +390,7 @@ export function applyBackgroundImageImmediate(
   return doc.body;
 }
 
+/* ===================== Abrir modal (descobrir alvo/URL) ===================== */
 export function openEditModalForSlide(args: {
   iframe: HTMLIFrameElement;
   slideIndex: number;
@@ -496,6 +507,7 @@ export function openEditModalForSlide(args: {
     return out;
   }
 
+  // IMAGEM/BG: cover + centralizado, sem mostrar fundo
   const tmp = new Image();
   tmp.src = imageUrl;
   const natW = tmp.naturalWidth || targetWidthPx || 1;
@@ -559,131 +571,6 @@ export function openEditModalForSlide(args: {
   return out;
 }
 
-  // IMAGEM/BG: cover + centralizado, sem mostrar fundo
-  const tmp = new Image();
-  tmp.src = imageUrl;
-  const natW = tmp.naturalWidth || targetWidthPx || 1;
-  const natH = tmp.naturalHeight || targetHeightPx || 1;
-  const coverScale = Math.max(targetWidthPx / natW, targetHeightPx / natH);
-  const displayW = Math.ceil(natW * coverScale);
-  const displayH = Math.ceil(natH * coverScale);
-  const startLeft = (targetWidthPx - displayW) / 2;
-  const startTop = (targetHeightPx - displayH) / 2;
-
-  let imgOffsetTopPx = startTop;
-  let imgOffsetLeftPx = startLeft;
-
-  if (targetType === "img") {
-    const top = parseFloat((chosen as HTMLImageElement).style.top || `${startTop}`);
-    const left = parseFloat((chosen as HTMLImageElement).style.left || `${startLeft}`);
-    const minLeft = targetWidthPx - displayW;
-    const minTop = targetHeightPx - displayH;
-    imgOffsetTopPx = clamp(isNaN(top) ? startTop : top, minTop, 0);
-    imgOffsetLeftPx = clamp(isNaN(left) ? startLeft : left, minLeft, 0);
-  } else {
-    const cs2 = doc.defaultView?.getComputedStyle(chosen);
-    const toPerc = (v: string) => (v && v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
-    const posX = toPerc(cs2?.backgroundPositionX || "50%");
-    const posY = toPerc(cs2?.backgroundPositionY || "50%");
-    const maxOffsetX = Math.max(0, displayW - targetWidthPx);
-    const maxOffsetY = Math.max(0, displayH - targetHeightPx);
-    const offX = -posX * maxOffsetX;
-    const offY = -posY * maxOffsetY;
-    imgOffsetTopPx = clamp(offY, targetHeightPx - displayH, 0);
-    imgOffsetLeftPx = clamp(offX, targetWidthPx - displayW, 0);
-  }
-
-  return {
-    open: true,
-    slideIndex,
-    targetType,
-    targetSelector,
-    imageUrl,
-    slideW,
-    slideH,
-    containerHeightPx: targetHeightPx,
-    naturalW: natW,
-    naturalH: natH,
-    imgOffsetTopPx,
-    imgOffsetLeftPx,
-    targetWidthPx,
-    targetLeftPx,
-    targetTopPx,
-    isVideo: false,
-    videoTargetW: 0,
-    videoTargetH: 0,
-    videoTargetLeft: 0,
-    videoTargetTop: 0,
-    cropX: 0,
-    cropY: 0,
-    cropW: 0,
-    cropH: 0,
-  };
-}
-
-  // 8) imagem/bg: calcula cover + posição inicial centrada (sem mostrar fundo)
-  const tmp = new Image();
-  tmp.src = imageUrl;
-  const natW = tmp.naturalWidth || targetWidthPx || 1;
-  const natH = tmp.naturalHeight || targetHeightPx || 1;
-  const coverScale = Math.max(targetWidthPx / natW, targetHeightPx / natH);
-  const displayW = Math.ceil(natW * coverScale);
-  const displayH = Math.ceil(natH * coverScale);
-  const startLeft = (targetWidthPx - displayW) / 2; // <= 0
-  const startTop = (targetHeightPx - displayH) / 2; // <= 0
-
-  let imgOffsetTopPx = startTop;
-  let imgOffsetLeftPx = startLeft;
-
-  if (targetType === "img") {
-    const top = parseFloat((chosen as HTMLImageElement).style.top || `${startTop}`);
-    const left = parseFloat((chosen as HTMLImageElement).style.left || `${startLeft}`);
-    const minLeft = targetWidthPx - displayW;
-    const minTop = targetHeightPx - displayH;
-    imgOffsetTopPx = clamp(isNaN(top) ? startTop : top, minTop, 0);
-    imgOffsetLeftPx = clamp(isNaN(left) ? startLeft : left, minLeft, 0);
-  } else {
-    // bg: converte background-position (%), senão centraliza
-    const cs2 = doc.defaultView?.getComputedStyle(chosen);
-    const toPerc = (v: string) => (v && v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
-    const posX = toPerc(cs2?.backgroundPositionX || "50%");
-    const posY = toPerc(cs2?.backgroundPositionY || "50%");
-    const maxOffsetX = Math.max(0, displayW - targetWidthPx);
-    const maxOffsetY = Math.max(0, displayH - targetHeightPx);
-    const offX = -posX * maxOffsetX;
-    const offY = -posY * maxOffsetY;
-    imgOffsetTopPx = clamp(offY, targetHeightPx - displayH, 0);
-    imgOffsetLeftPx = clamp(offX, targetWidthPx - displayW, 0);
-  }
-
-  return {
-    open: true,
-    slideIndex,
-    targetType,
-    targetSelector,
-    imageUrl,
-    slideW,
-    slideH,
-    containerHeightPx: targetHeightPx,
-    naturalW: natW,
-    naturalH: natH,
-    imgOffsetTopPx,
-    imgOffsetLeftPx,
-    targetWidthPx,
-    targetLeftPx,
-    targetTopPx,
-    isVideo: false,
-    videoTargetW: 0,
-    videoTargetH: 0,
-    videoTargetLeft: 0,
-    videoTargetTop: 0,
-    cropX: 0,
-    cropY: 0,
-    cropW: 0,
-    cropH: 0,
-  };
-}
-
 /* ===================== Aplicar alterações do modal ===================== */
 export function applyModalEdits(
   state: ImageEditModalState,
@@ -691,7 +578,6 @@ export function applyModalEdits(
 ) {
   if (!state.open || !iframe) return;
   const {
-    slideIndex,
     targetType,
     targetSelector,
     imageUrl,
