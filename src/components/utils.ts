@@ -4,6 +4,9 @@ import type { CarouselData, ElementStyles, ElementType } from "../../types";
 /* ===================== Tipos usados pelo container ===================== */
 export type TargetKind = "img" | "bg" | "vid";
 
+const DEBUG = true;
+const dlog = (...args: any[]) => { if (DEBUG) console.log("[CV][utils]", ...args); };
+
 export type ImageEditModalState =
   | {
       open: true;
