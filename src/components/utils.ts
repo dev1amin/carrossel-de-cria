@@ -374,7 +374,8 @@ export function applyBackgroundImageImmediate(
   return doc.body;
 }
 
-/* ===================== Abrir modal (sem depender de troca prévia) ===================== */
+// utils.ts — SUBSTITUA a função inteira por esta versão
+
 export function openEditModalForSlide(args: {
   iframe: HTMLIFrameElement;
   slideIndex: number;
@@ -386,21 +387,38 @@ export function openEditModalForSlide(args: {
 }): ImageEditModalState | null {
   const { iframe, slideIndex, slideW, slideH, editedContent, uploadedImages, carouselData } =
     args;
+
+  // garante DOM disponível
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
   if (!doc) return null;
 
-  const selected =
-    (doc.querySelector("[data-editable].selected") as HTMLElement | null) || null;
+  // 1) tenta alvo selecionado > maior visual no DOM
+  const selected = doc.querySelector("[data-editable].selected") as HTMLElement | null;
   const largest = findLargestVisual(doc)?.el || null;
-  const chosen =
+
+  // 2) compõe fallback agressivo a partir do conteúdo padrão
+  const c = carouselData.conteudos[slideIndex] || {};
+  const fallbackUrl =
+    editedContent[`${slideIndex}-background`] ||
+    uploadedImages[slideIndex] ||
+    c.thumbnail_url ||
+    c.imagem_fundo ||
+    c.imagem_fundo2 ||
+    c.imagem_fundo3 ||
+    "";
+
+  // 3) decide alvo
+  let chosen: HTMLElement | null =
     selected ||
     largest ||
-    (doc.querySelector("img,video,body,div,section") as HTMLElement | null);
-  if (!chosen) return null;
+    // se não achou nada relevante, usa o body como área de fundo
+    (doc.body as HTMLElement);
 
+  if (!chosen) return null;
   if (!chosen.id) chosen.id = `edit-${Date.now()}`;
   const targetSelector = `#${chosen.id}`;
 
+  // 4) resolve URL + tipo
   const cs = doc.defaultView?.getComputedStyle(chosen);
   let imageUrl = "";
   let targetType: TargetKind = "img";
@@ -416,31 +434,31 @@ export function openEditModalForSlide(args: {
     imageUrl = (chosen as HTMLImageElement).src || "";
     targetType = "img";
   } else {
-    const bg =
+    // BG no elemento ou fallback do conteúdo padrão
+    const cssBg =
       cs?.backgroundImage && cs.backgroundImage.includes("url(")
         ? cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i)?.[1] || ""
         : "";
-    imageUrl =
-      bg ||
-      chosen.getAttribute("data-bg-image-url") ||
-      editedContent[`${slideIndex}-background`] ||
-      uploadedImages[slideIndex] ||
-      carouselData.conteudos[slideIndex]?.thumbnail_url ||
-      carouselData.conteudos[slideIndex]?.imagem_fundo ||
-      carouselData.conteudos[slideIndex]?.imagem_fundo2 ||
-      carouselData.conteudos[slideIndex]?.imagem_fundo3 ||
-      "";
+    imageUrl = cssBg || fallbackUrl;
     targetType = "bg";
   }
+
+  // 5) se ainda não tem URL, não tem o que editar
   if (!imageUrl) return null;
 
+  // 6) mede alvo
   const r = chosen.getBoundingClientRect();
   const bodyRect = doc.body.getBoundingClientRect();
-  const targetLeftPx = r.left - bodyRect.left;
-  const targetTopPx = r.top - bodyRect.top;
-  const targetWidthPx = r.width;
-  const targetHeightPx = r.height;
+  // se o alvo for body “cru”, r pode vir 0 em alguns templates — então usa slideW/slideH
+  const rWidth = Math.max(1, r.width || slideW);
+  const rHeight = Math.max(1, r.height || slideH);
 
+  const targetLeftPx = r.left ? r.left - bodyRect.left : 0;
+  const targetTopPx = r.top ? r.top - bodyRect.top : 0;
+  const targetWidthPx = rWidth;
+  const targetHeightPx = rHeight;
+
+  // 7) vídeo: configura crop inicial igual ao box atual
   if (isVideo) {
     const video = chosen as HTMLVideoElement;
     return {
@@ -451,7 +469,6 @@ export function openEditModalForSlide(args: {
       imageUrl,
       slideW,
       slideH,
-      // placeholders IMAGEM
       containerHeightPx: targetHeightPx,
       naturalW: video.videoWidth || targetWidthPx,
       naturalH: video.videoHeight || targetHeightPx,
@@ -460,32 +477,26 @@ export function openEditModalForSlide(args: {
       targetWidthPx,
       targetLeftPx,
       targetTopPx,
-      // vídeo
       isVideo: true,
       videoTargetW: targetWidthPx,
       videoTargetH: targetHeightPx,
       videoTargetLeft: targetLeftPx,
       videoTargetTop: targetTopPx,
-      cropX: 0,
-      cropY: 0,
+      cropX: targetLeftPx,
+      cropY: targetTopPx,
       cropW: targetWidthPx,
       cropH: targetHeightPx,
     };
   }
 
-  // IMAGEM / BG
-  // cover básico (displayW/H)
-  const scale = Math.max(targetWidthPx / 1, targetHeightPx / 1); // base 1 evita NaN
-  // precisamos do natural, então carregamos sincrono via Image se não disponível:
+  // 8) imagem/bg: calcula cover + posição inicial centrada (sem mostrar fundo)
   const tmp = new Image();
   tmp.src = imageUrl;
-
   const natW = tmp.naturalWidth || targetWidthPx || 1;
   const natH = tmp.naturalHeight || targetHeightPx || 1;
   const coverScale = Math.max(targetWidthPx / natW, targetHeightPx / natH);
   const displayW = Math.ceil(natW * coverScale);
   const displayH = Math.ceil(natH * coverScale);
-
   const startLeft = (targetWidthPx - displayW) / 2; // <= 0
   const startTop = (targetHeightPx - displayH) / 2; // <= 0
 
@@ -499,17 +510,18 @@ export function openEditModalForSlide(args: {
     const minTop = targetHeightPx - displayH;
     imgOffsetTopPx = clamp(isNaN(top) ? startTop : top, minTop, 0);
     imgOffsetLeftPx = clamp(isNaN(left) ? startLeft : left, minLeft, 0);
-  } else if (targetType === "bg") {
+  } else {
+    // bg: converte background-position (%), senão centraliza
     const cs2 = doc.defaultView?.getComputedStyle(chosen);
-    const bgPosY = cs2?.backgroundPositionY || "50%";
-    const bgPosX = cs2?.backgroundPositionX || "50%";
-    const toPerc = (v: string) => (v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+    const toPerc = (v: string) => (v && v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+    const posX = toPerc(cs2?.backgroundPositionX || "50%");
+    const posY = toPerc(cs2?.backgroundPositionY || "50%");
     const maxOffsetX = Math.max(0, displayW - targetWidthPx);
     const maxOffsetY = Math.max(0, displayH - targetHeightPx);
-    const offX = -toPerc(bgPosX) * maxOffsetX;
-    const offY = -toPerc(bgPosY) * maxOffsetY;
-    imgOffsetTopPx = clamp(isNaN(offY) ? startTop : offY, targetHeightPx - displayH, 0);
-    imgOffsetLeftPx = clamp(isNaN(offX) ? startLeft : offX, targetWidthPx - displayW, 0);
+    const offX = -posX * maxOffsetX;
+    const offY = -posY * maxOffsetY;
+    imgOffsetTopPx = clamp(offY, targetHeightPx - displayH, 0);
+    imgOffsetLeftPx = clamp(offX, targetWidthPx - displayW, 0);
   }
 
   return {
@@ -528,7 +540,6 @@ export function openEditModalForSlide(args: {
     targetWidthPx,
     targetLeftPx,
     targetTopPx,
-
     isVideo: false,
     videoTargetW: 0,
     videoTargetH: 0,
