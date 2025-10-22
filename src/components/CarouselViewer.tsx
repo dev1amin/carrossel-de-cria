@@ -121,8 +121,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
 
   // configura interações dentro dos iframes
   useEffect(() => {
-    iframeRefs.current.forEach((iframe, index) => {
-      if (!iframe) return;
       setupIframeInteractions({
         iframe,
         index,
@@ -134,6 +132,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
         setIsEditingInline,
         setEditedContent,
         carouselConteudo: carouselData.conteudos[index],
+        onPick: (slideIdx, elType) => {
+          // quando usuário clica na imagem/bg dentro do iframe
+          setSelectedElement({ slideIndex: slideIdx, element: elType });
+          setFocusedSlide(slideIdx);
+          setExpandedLayers((prev) => new Set(prev).add(slideIdx));
+        },
       });
     });
   }, [
