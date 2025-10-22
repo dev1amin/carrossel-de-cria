@@ -213,6 +213,7 @@ export function setupIframeInteractions(args: {
 
   const ready = () => {
     const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    dlog("iframe:ready", { index, hasDoc: !!doc });
     if (!doc) return;
 
     // marca imagens editáveis + ids
