@@ -97,9 +97,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
   /** ====================== Efeitos ======================= */
 
   useEffect(() => {
-  setSelectedElement({ slideIndex: 0, element: "background" });
-  setExpandedLayers(s => new Set(s).add(0));
-}, []);
+    setSelectedElement({ slideIndex: 0, element: "background" });
+    setExpandedLayers(s => new Set(s).add(0));
+  }, []);
 
   // prepara srcDoc (injeção de ids e marcações editáveis)
   useEffect(() => {
