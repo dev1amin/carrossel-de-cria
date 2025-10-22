@@ -374,8 +374,6 @@ export function applyBackgroundImageImmediate(
   return doc.body;
 }
 
-// utils.ts — SUBSTITUA a função inteira por esta versão
-
 export function openEditModalForSlide(args: {
   iframe: HTMLIFrameElement;
   slideIndex: number;
