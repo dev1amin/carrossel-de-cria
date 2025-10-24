@@ -4,12 +4,12 @@ import { X, ZoomIn, ZoomOut, Download } from "lucide-react";
 import type { CarouselData, ElementType, ElementStyles } from "../../types";
 import { searchImages } from "../../services";
 
-// Subcomponentes (entregarei depois)
+// Subcomponentes
 import Canvas from "./Canvas";
 import { LayersPanel, PropertiesPanel } from "./Panels";
 import EditModal from "./EditModal";
 
-// Utils centralizados (entregarei depois)
+// Utils centralizados
 import {
   // tipos
   TargetKind,
@@ -98,7 +98,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
 
   useEffect(() => {
     setSelectedElement({ slideIndex: 0, element: "background" });
-    setExpandedLayers(s => new Set(s).add(0));
+    setExpandedLayers((s) => new Set(s).add(0));
   }, []);
 
   // prepara srcDoc (injeção de ids e marcações editáveis)
@@ -119,32 +119,37 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // configura interações dentro dos iframes
+  // configura interações dentro dos iframes (CORRIGIDO)
   useEffect(() => {
-      setupIframeInteractions({
-        iframe,
-        index,
-        selectedImageRefs,
-        elementStyles,
-        editedContent,
-        originalStyles,
-        setOriginalStyles,
-        setIsEditingInline,
-        setEditedContent,
-        carouselConteudo: carouselData.conteudos[index],
-        onPick: (slideIdx, elType) => {
-          // quando usuário clica na imagem/bg dentro do iframe
-          setSelectedElement({ slideIndex: slideIdx, element: elType });
-          setFocusedSlide(slideIdx);
-          setExpandedLayers((prev) => new Set(prev).add(slideIdx));
-        },
-      });
+    iframeRefs.current.forEach((iframe, index) => {
+      if (!iframe) return;
+      try {
+        setupIframeInteractions({
+          iframe,
+          index,
+          selectedImageRefs,
+          elementStyles,
+          editedContent,
+          originalStyles,
+          setOriginalStyles,
+          setIsEditingInline,
+          setEditedContent,
+          carouselConteudo: carouselData.conteudos[index],
+          onPick: (slideIdx, elType) => {
+            setSelectedElement({ slideIndex: slideIdx, element: elType });
+            setFocusedSlide(slideIdx);
+            setExpandedLayers((prev) => new Set(prev).add(slideIdx));
+          },
+        });
+      } catch (err) {
+        console.error("[CV] setupIframeInteractions error", { index, err });
+      }
     });
   }, [
+    renderedSlides,
     elementStyles,
     editedContent,
     originalStyles,
-    renderedSlides,
     carouselData.conteudos,
   ]);
 
@@ -343,95 +348,96 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({
     });
   };
 
-  /** ====================== Modal: abrir/aplicar ======================= */  
-const openImageEditModal = (slideIndex: number) => {
-  const log = (...a: any[]) => console.log("[CV][openImageEditModal]", ...a);
+  /** ====================== Modal: abrir/aplicar ======================= */
+  const openImageEditModal = (slideIndex: number) => {
+    const log = (...a: any[]) => console.log("[CV][openImageEditModal]", ...a);
 
-  const tryOpen = (iframe: HTMLIFrameElement | null, tag: string) => {
-    log("tryOpen", { tag, hasIframe: !!iframe, slideIndex });
-    if (!iframe) return false;
-    const state = openEditModalForSlide({
-      iframe,
-      slideIndex,
-      slideW: slideWidth,
-      slideH: slideHeight,
-      editedContent,
-      uploadedImages,
-      carouselData,
+    const tryOpen = (iframe: HTMLIFrameElement | null, tag: string) => {
+      log("tryOpen", { tag, hasIframe: !!iframe, slideIndex });
+      if (!iframe) return false;
+      const state = openEditModalForSlide({
+        iframe,
+        slideIndex,
+        slideW: slideWidth,
+        slideH: slideHeight,
+        editedContent,
+        uploadedImages,
+        carouselData,
+      });
+      log("openEditModalForSlide:state", { ok: !!state, state });
+      if (!state) return false;
+      setImageModal(state);
+      document.documentElement.style.overflow = "hidden";
+      return true;
+    };
+
+    // 1) tenta via ref
+    if (tryOpen(iframeRefs.current[slideIndex], "ref")) return;
+
+    // 2) tenta via DOM
+    const domIframe = document.querySelector<HTMLIFrameElement>(
+      `iframe[title="Slide ${slideIndex + 1}"]`
+    );
+    if (tryOpen(domIframe, "domQuery")) return;
+
+    // 3) tenta no próximo frame
+    requestAnimationFrame(() => {
+      const again =
+        iframeRefs.current[slideIndex] ||
+        document.querySelector<HTMLIFrameElement>(
+          `iframe[title="Slide ${slideIndex + 1}"]`
+        );
+      if (tryOpen(again, "raf")) return;
+
+      // 4) FALLBACK BRUTO
+      const c = carouselData.conteudos[slideIndex] || {};
+      const fallbackUrl =
+        editedContent[`${slideIndex}-background`] ||
+        uploadedImages[slideIndex] ||
+        c.thumbnail_url ||
+        c.imagem_fundo ||
+        c.imagem_fundo2 ||
+        c.imagem_fundo3 ||
+        "";
+
+      console.warn("[CV][openImageEditModal] HARD FALLBACK", {
+        slideIndex,
+        hasRef: !!iframeRefs.current[slideIndex],
+        hasDomQuery: !!domIframe,
+        fallbackUrl,
+      });
+
+      if (!fallbackUrl) return;
+
+      setImageModal({
+        open: true,
+        slideIndex,
+        targetType: "bg",
+        targetSelector: "body",
+        imageUrl: fallbackUrl,
+        slideW: slideWidth,
+        slideH: slideHeight,
+        containerHeightPx: slideHeight,
+        naturalW: 1080,
+        naturalH: 1350,
+        imgOffsetTopPx: 0,
+        imgOffsetLeftPx: 0,
+        targetWidthPx: slideWidth,
+        targetLeftPx: 0,
+        targetTopPx: 0,
+        isVideo: false,
+        videoTargetW: 0,
+        videoTargetH: 0,
+        videoTargetLeft: 0,
+        videoTargetTop: 0,
+        cropX: 0,
+        cropY: 0,
+        cropW: 0,
+        cropH: 0,
+      });
+      document.documentElement.style.overflow = "hidden";
     });
-    log("openEditModalForSlide:state", { ok: !!state, state });
-    if (!state) return false;
-    setImageModal(state);
-    document.documentElement.style.overflow = "hidden";
-    return true;
   };
-
-  // 1) tenta via ref
-  if (tryOpen(iframeRefs.current[slideIndex], "ref")) return;
-
-  // 2) tenta via DOM
-  const domIframe = document.querySelector<HTMLIFrameElement>(
-    `iframe[title="Slide ${slideIndex + 1}"]`
-  );
-  if (tryOpen(domIframe, "domQuery")) return;
-
-  // 3) tenta no próximo frame
-  requestAnimationFrame(() => {
-    const again =
-      iframeRefs.current[slideIndex] ||
-      document.querySelector<HTMLIFrameElement>(`iframe[title="Slide ${slideIndex + 1}"]`);
-    if (tryOpen(again, "raf")) return;
-
-    // 4) FALLBACK BRUTO: abre modal mesmo sem iframe, usando dados do slide
-    const c = carouselData.conteudos[slideIndex] || {};
-    const fallbackUrl =
-      editedContent[`${slideIndex}-background`] ||
-      uploadedImages[slideIndex] ||
-      c.thumbnail_url ||
-      c.imagem_fundo ||
-      c.imagem_fundo2 ||
-      c.imagem_fundo3 ||
-      "";
-
-    console.warn("[CV][openImageEditModal] HARD FALLBACK", {
-      slideIndex,
-      hasRef: !!iframeRefs.current[slideIndex],
-      hasDomQuery: !!domIframe,
-      fallbackUrl,
-    });
-
-    if (!fallbackUrl) return; // sem URL não tem o que editar
-
-    // Estado mínimo para abrir o modal como BG do slide inteiro
-    setImageModal({
-      open: true,
-      slideIndex,
-      targetType: "bg",
-      targetSelector: "body",
-      imageUrl: fallbackUrl,
-      slideW: slideWidth,
-      slideH: slideHeight,
-      containerHeightPx: slideHeight,
-      naturalW: 1080,
-      naturalH: 1350,
-      imgOffsetTopPx: 0,
-      imgOffsetLeftPx: 0,
-      targetWidthPx: slideWidth,
-      targetLeftPx: 0,
-      targetTopPx: 0,
-      isVideo: false,
-      videoTargetW: 0,
-      videoTargetH: 0,
-      videoTargetLeft: 0,
-      videoTargetTop: 0,
-      cropX: 0,
-      cropY: 0,
-      cropW: 0,
-      cropH: 0,
-    });
-    document.documentElement.style.overflow = "hidden";
-  });
-};
 
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
