@@ -54,14 +54,12 @@ const Canvas: React.FC<Props> = ({
       className="flex-1 overflow-hidden relative bg-neutral-800"
       style={{ cursor: imageModalOpen ? "default" : isDragging ? "grabbing" : "grab" }}
       onWheel={(e) => {
-        if (imageModalOpen) return; // não pan/zoom durante modal
+        if (imageModalOpen) return;
         e.preventDefault();
-        // Sem zoom via ctrl aqui para manter a lógica no container.
         setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
       }}
       onMouseDown={(e) => {
         if (imageModalOpen) return;
-        // só inicia drag se clicou no plano de fundo do canvas (evita briga com iframe)
         if (e.button === 0 && e.currentTarget === e.target) {
           setIsDragging(true);
           setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -104,7 +102,6 @@ const Canvas: React.FC<Props> = ({
                 srcDoc={slide}
                 className="w-full h-full border-0"
                 title={`Slide ${i + 1}`}
-                sandbox="allow-same-origin allow-scripts"
                 // restringe o mínimo necessário pra edição dentro do iframe
                 sandbox="allow-same-origin allow-scripts"
               />
