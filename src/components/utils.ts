@@ -48,6 +48,23 @@ export const clamp = (v: number, min: number, max: number) =>
 const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
 const isImgurUrl = (url: string) => url.includes("i.imgur.com");
 
+/* ===================== Helpers de imagem ===================== */
+function pickFromSrcset(srcset: string | null | undefined): string {
+  if (!srcset) return "";
+  // pega a última (normalmente maior)
+  const parts = srcset.split(",").map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return "";
+  const last = parts[parts.length - 1];
+  const url = last.split(/\s+/)[0];
+  return url || "";
+}
+
+function resolveImgUrl(img: HTMLImageElement): string {
+  const ds = img.getAttribute("data-src") || img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
+  const fromSet = pickFromSrcset(img.getAttribute("srcset"));
+  return img.currentSrc || img.src || ds || fromSet || "";
+}
+
 /* ===================== DOM helpers ===================== */
 export function ensureStyleTag(html: string): string {
   if (/<style>/i.test(html)) return html;
@@ -164,7 +181,6 @@ export function setupIframeInteractions(args: {
   setEditedContent: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   carouselConteudo: any;
 
-  // >>> NOVO: avisa o React qual elemento foi “escolhido” no iframe
   onPick: (slideIndex: number, element: ElementType) => void;
 }) {
   const {
@@ -220,7 +236,7 @@ export function setupIframeInteractions(args: {
     dlog("iframe:ready", { index, hasDoc: !!doc });
     if (!doc) return;
 
-    // marca imagens editáveis + ids
+    // marca imagens editáveis + ids + normaliza URL (corrige lazy/srcset)
     const imgs = Array.from(doc.querySelectorAll("img")) as HTMLImageElement[];
     let imgIdx = 0;
     imgs.forEach((img) => {
@@ -232,6 +248,15 @@ export function setupIframeInteractions(args: {
       }
       // segurança visual
       img.style.objectFit = "cover";
+
+      // **NORMALIZAÇÃO CRÍTICA**
+      const resolved = resolveImgUrl(img);
+      if (resolved && img.src !== resolved) {
+        img.removeAttribute("srcset");
+        img.removeAttribute("sizes");
+        img.loading = "eager";
+        img.src = resolved;
+      }
     });
 
     // aplica conteúdo/estilos de title/subtitle
@@ -278,12 +303,12 @@ export function setupIframeInteractions(args: {
         e.stopPropagation();
         doc.querySelectorAll("[data-editable]").forEach((x) => x.classList.remove("selected"));
         htmlEl.classList.add("selected");
-        // se clicar numa IMG marcamos a ref — e AVISAMOS o React: background selecionado
+        // se clicar numa IMG marcamos a ref — e avisamos o React
         if (htmlEl.tagName === "IMG") {
           selectedImageRefs.current[index] = htmlEl as HTMLImageElement;
-          onPick(index, "background"); // <<< chave do conserto
+          onPick(index, "background"); // mantém semântica atual do container
         } else if (type === "background") {
-          onPick(index, "background"); // <<< idem
+          onPick(index, "background");
         }
       };
 
@@ -444,7 +469,7 @@ export function openEditModalForSlide(args: {
     targetType = "vid";
     isVideo = true;
   } else if (chosen.tagName === "IMG") {
-    imageUrl = (chosen as HTMLImageElement).src || "";
+    imageUrl = resolveImgUrl(chosen as HTMLImageElement); // <<< fix crítico
     targetType = "img";
   } else {
     const cssBg =
@@ -507,7 +532,7 @@ export function openEditModalForSlide(args: {
     return out;
   }
 
-  // IMAGEM/BG: cover + centralizado, sem mostrar fundo
+  // IMAGEM/BG: cover + centralizado
   const tmp = new Image();
   tmp.src = imageUrl;
   const natW = tmp.naturalWidth || targetWidthPx || 1;
