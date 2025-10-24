@@ -1,574 +1,617 @@
-// src/components/CarouselViewer/CarouselViewer.tsx
-import React, { useEffect, useRef, useState } from "react";
-import { X, ZoomIn, ZoomOut, Download } from "lucide-react";
-import type { CarouselData, ElementType, ElementStyles } from "../../types";
-import { searchImages } from "../../services";
+// src/components/CarouselViewer/utils.ts
+import type { CarouselData, ElementStyles, ElementType } from "../../types";
 
-// Subcomponentes
-import Canvas from "./Canvas";
-import { LayersPanel, PropertiesPanel } from "./Panels";
-import EditModal from "./EditModal";
+export type TargetKind = "img" | "bg" | "vid";
 
-// Utils centralizados
-import {
-  // tipos
-  TargetKind,
-  ImageEditModalState,
-  // html/iframe
-  ensureStyleTag,
-  injectEditableIds,
-  setupIframeInteractions,
-  applyBackgroundImageImmediate,
-  // cálculo visual
-  clamp,
-  // modal helpers
-  openEditModalForSlide,
-  applyModalEdits,
-} from "./utils";
+const DEBUG = true;
+const dlog = (...args: any[]) => { if (DEBUG) console.log("[CV][utils]", ...args); };
 
-/** ====================== Props ======================= */
-interface CarouselViewerProps {
-  slides: string[];
-  carouselData: CarouselData;
-  onClose: () => void;
+export type ImageEditModalState =
+  | {
+      open: true;
+      slideIndex: number;
+      targetType: TargetKind;
+      targetSelector: string;
+      imageUrl: string;
+
+      slideW: number;
+      slideH: number;
+
+      containerHeightPx: number;
+      naturalW: number;
+      naturalH: number;
+      imgOffsetTopPx: number;
+      imgOffsetLeftPx: number;
+      targetWidthPx: number;
+      targetLeftPx: number;
+      targetTopPx: number;
+
+      isVideo: boolean;
+      videoTargetW: number;
+      videoTargetH: number;
+      videoTargetLeft: number;
+      videoTargetTop: number;
+      cropX: number;
+      cropY: number;
+      cropW: number;
+      cropH: number;
+    }
+  | { open: false };
+
+export const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
+
+const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
+const isImgurUrl = (url: string) => url.includes("i.imgur.com");
+
+function pickFromSrcset(srcset: string | null | undefined): string {
+  if (!srcset) return "";
+  const parts = srcset.split(",").map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return "";
+  const last = parts[parts.length - 1];
+  const url = last.split(/\s+/)[0];
+  return url || "";
 }
 
-/** ====================== Componente ======================= */
-const CarouselViewer: React.FC<CarouselViewerProps> = ({
-  slides,
-  carouselData,
-  onClose,
-}) => {
-  /** ===== Layout do canvas ===== */
-  const slideWidth = 1080;
-  const slideHeight = 1350;
-  const gap = 40;
+function resolveImgUrl(img: HTMLImageElement): string {
+  const ds = img.getAttribute("data-src") || img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
+  const fromSet = pickFromSrcset(img.getAttribute("srcset"));
+  return img.currentSrc || img.src || ds || fromSet || "";
+}
 
-  /** ===== Estado global ===== */
-  const [zoom, setZoom] = useState(0.35);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+export function ensureStyleTag(html: string): string {
+  if (/<style>/i.test(html)) return html;
+  return html.replace(
+    /<head([^>]*)>/i,
+    `<head$1><style>
+      [data-editable]{cursor:pointer!important;position:relative;display:inline-block!important}
+      [data-editable].selected{outline:3px solid #3B82F6!important;outline-offset:2px;z-index:1000}
+      [data-editable]:hover:not(.selected){outline:2px solid rgba(59,130,246,.5)!important;outline-offset:2px}
+      [data-editable][contenteditable="true"]{outline:3px solid #10B981!important;outline-offset:2px;background:rgba(16,185,129,.1)!important}
+      img[data-editable]{display:block!important}
+    </style>`
+  );
+}
 
-  const [focusedSlide, setFocusedSlide] = useState<number>(0);
-  const [selectedElement, setSelectedElement] = useState<{
-    slideIndex: number;
-    element: ElementType;
-  }>({ slideIndex: 0, element: null });
+export function injectEditableIds(
+  html: string,
+  slideIndex: number,
+  conteudo?: { title?: string; subtitle?: string }
+): string {
+  let result = html;
 
-  const [expandedLayers, setExpandedLayers] = useState<Set<number>>(
-    () => new Set([0])
+  const addEditableSpan = (text: string, id: string, attr: string) => {
+    const lines = text.split("\n").filter((l) => l.trim());
+    lines.forEach((line) => {
+      const escaped = line.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`(>[^<]*)(${escaped})([^<]*<)`, "gi");
+      result = result.replace(
+        re,
+        (m, b, t, a) =>
+          `${b}<span id="${id}" data-editable="${attr}" contenteditable="false">${t}</span>${a}`
+      );
+    });
+  };
+
+  if (conteudo?.title) addEditableSpan(conteudo.title, `slide-${slideIndex}-title`, "title");
+  if (conteudo?.subtitle)
+    addEditableSpan(conteudo.subtitle, `slide-${slideIndex}-subtitle`, "subtitle");
+
+  result = result.replace(
+    /<body([^>]*)>/i,
+    `<body$1 id="slide-${slideIndex}-background" data-editable="background">`
   );
 
-  const [editedContent, setEditedContent] = useState<Record<string, any>>({});
-  const [elementStyles, setElementStyles] = useState<
-    Record<string, ElementStyles>
-  >({});
-  const [originalStyles, setOriginalStyles] = useState<
-    Record<string, ElementStyles>
-  >({});
-  const [renderedSlides, setRenderedSlides] = useState<string[]>(slides);
+  return result;
+}
 
-  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
-  const [isEditingInline, setIsEditingInline] = useState<{
-    slideIndex: number;
-    element: ElementType;
-  } | null>(null);
+function rgbToHex(rgb: string): string {
+  const m = rgb.match(/\d+/g);
+  if (!m || m.length < 3) return rgb;
+  const [r, g, b] = m.map((v) => parseInt(v, 10));
+  const hex = (n: number) => n.toString(16).padStart(2, "0").toUpperCase();
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
 
-  // busca/imagem
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [searchResults, setSearchResults] = useState<string[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [uploadedImages, setUploadedImages] = useState<Record<number, string>>(
-    {}
-  );
+function extractTextStyles(doc: Document, el: HTMLElement): ElementStyles {
+  const cs = doc.defaultView?.getComputedStyle(el);
+  if (!cs)
+    return { fontSize: "16px", fontWeight: "400", textAlign: "left", color: "#FFFFFF" };
+  const color = cs.color || "#FFFFFF";
+  return {
+    fontSize: cs.fontSize || "16px",
+    fontWeight: cs.fontWeight || "400",
+    textAlign: (cs.textAlign as any) || "left",
+    color: color.startsWith("rgb") ? rgbToHex(color) : color,
+  };
+}
 
-  // modal
-  const [imageModal, setImageModal] = useState<ImageEditModalState>({
-    open: false,
+function findLargestVisual(doc: Document): { type: TargetKind; el: HTMLElement } | null {
+  let best: { type: TargetKind; el: HTMLElement; area: number } | null = null;
+
+  const push = (type: TargetKind, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const area = r.width * r.height;
+    if (area <= 9000) return;
+    if (!best || area > best.area) best = { type, el, area };
+  };
+
+  Array.from(doc.querySelectorAll("img")).forEach((im) => {
+    const img = im as HTMLImageElement;
+    if (img.getAttribute("data-protected") === "true" || isImgurUrl(img.src)) return;
+    push("img", img);
   });
 
-  /** ===== Refs ===== */
-  const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const selectedImageRefs = useRef<Record<number, HTMLImageElement | null>>({});
-  const lastSearchId = useRef(0);
+  Array.from(doc.querySelectorAll("video")).forEach((v) => push("vid", v as HTMLElement));
 
-  /** ====================== Efeitos ======================= */
+  Array.from(doc.querySelectorAll<HTMLElement>("body,div,section,header,main,figure,article")).forEach(
+    (el) => {
+      const cs = doc.defaultView?.getComputedStyle(el);
+      if (cs?.backgroundImage && cs.backgroundImage.includes("url(")) push("bg", el);
+    }
+  );
 
-  useEffect(() => {
-    setSelectedElement({ slideIndex: 0, element: "background" });
-    setExpandedLayers((s) => new Set(s).add(0));
-  }, []);
+  if (best) return { type: best.type, el: best.el };
+  return null;
+}
 
-  // prepara srcDoc (injeção de ids e marcações editáveis)
-  useEffect(() => {
-    const injected = slides.map((s, i) =>
-      injectEditableIds(ensureStyleTag(s), i, carouselData.conteudos[i])
-    );
-    setRenderedSlides(injected);
-  }, [slides, carouselData.conteudos]);
-
-  // posiciona no slide 0 ao abrir
-  useEffect(() => {
-    const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
-    const slidePosition =
-      0 * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
-    setPan({ x: -slidePosition * zoom, y: 0 });
-    setFocusedSlide(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // configura interações dentro dos iframes (CORRIGIDO)
-  useEffect(() => {
-    iframeRefs.current.forEach((iframe, index) => {
-      if (!iframe) return;
-      try {
-        setupIframeInteractions({
-          iframe,
-          index,
-          selectedImageRefs,
-          elementStyles,
-          editedContent,
-          originalStyles,
-          setOriginalStyles,
-          setIsEditingInline,
-          setEditedContent,
-          carouselConteudo: carouselData.conteudos[index],
-          onPick: (slideIdx, elType) => {
-            setSelectedElement({ slideIndex: slideIdx, element: elType });
-            setFocusedSlide(slideIdx);
-            setExpandedLayers((prev) => new Set(prev).add(slideIdx));
-          },
-        });
-      } catch (err) {
-        console.error("[CV] setupIframeInteractions error", { index, err });
-      }
-    });
-  }, [
-    renderedSlides,
+export function setupIframeInteractions(args: {
+  iframe: HTMLIFrameElement;
+  index: number;
+  selectedImageRefs: React.MutableRefObject<Record<number, HTMLImageElement | null>>;
+  elementStyles: Record<string, ElementStyles>;
+  editedContent: Record<string, any>;
+  originalStyles: Record<string, ElementStyles>;
+  setOriginalStyles: React.Dispatch<React.SetStateAction<Record<string, ElementStyles>>>;
+  setIsEditingInline: React.Dispatch<
+    React.SetStateAction<{ slideIndex: number; element: ElementType } | null>
+  >;
+  setEditedContent: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  carouselConteudo: any;
+  onPick: (slideIndex: number, element: ElementType) => void;
+}) {
+  const {
+    iframe,
+    index,
+    selectedImageRefs,
     elementStyles,
     editedContent,
     originalStyles,
-    carouselData.conteudos,
-  ]);
+    setOriginalStyles,
+    setIsEditingInline,
+    setEditedContent,
+    carouselConteudo,
+    onPick,
+  } = args;
 
-  // atalhos: ESC fecha; setas trocam slide
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (imageModal.open) {
-          setImageModal({ open: false });
-          document.documentElement.style.overflow = "";
-          return;
-        }
-        if (selectedElement.element !== null) {
-          setSelectedElement({
-            slideIndex: selectedElement.slideIndex,
-            element: null,
-          });
-          return;
-        }
-        onClose();
-      }
-      if (e.key === "ArrowRight") {
-        handleSlideClick(Math.min(focusedSlide + 1, slides.length - 1));
-      }
-      if (e.key === "ArrowLeft") {
-        handleSlideClick(Math.max(focusedSlide - 1, 0));
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageModal.open, selectedElement, onClose, focusedSlide, slides.length]);
+  dlog("setupIframeInteractions:init", { index, readyState: iframe.contentDocument?.readyState });
 
-  /** ====================== Helpers ======================= */
-  const getElementKey = (slideIndex: number, element: ElementType) =>
-    `${slideIndex}-${element}`;
+  const applyTextAndStyles = (doc: Document, id: string, key: string) => {
+    const el = doc.getElementById(id);
+    if (!el) return;
+    const styles = elementStyles[key] || originalStyles[key];
+    if (styles) {
+      if (styles.fontSize) el.style.setProperty("font-size", styles.fontSize, "important");
+      if (styles.fontWeight) el.style.setProperty("font-weight", styles.fontWeight, "important");
+      if (styles.textAlign) el.style.setProperty("text-align", styles.textAlign, "important");
+      if (styles.color) el.style.setProperty("color", styles.color, "important");
+    }
+    const k = key;
+    const content =
+      editedContent[k] !== undefined
+        ? editedContent[k]
+        : k.endsWith("-title")
+        ? carouselConteudo?.title || ""
+        : k.endsWith("-subtitle")
+        ? carouselConteudo?.subtitle || ""
+        : "";
+    if (content && el.getAttribute("contenteditable") !== "true") el.textContent = content;
 
-  const getElementStyle = (
-    slideIndex: number,
-    element: ElementType
-  ): ElementStyles => {
-    const k = getElementKey(slideIndex, element);
-    if (elementStyles[k]) return elementStyles[k];
-    if (originalStyles[k]) return originalStyles[k];
+    setTimeout(() => {
+      if (!originalStyles[key]) {
+        const styles = extractTextStyles(doc, el as HTMLElement);
+        setOriginalStyles((p) => ({ ...p, [key]: styles }));
+      }
+    }, 50);
+  };
+
+  const ready = () => {
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    dlog("iframe:ready", { index, hasDoc: !!doc });
+    if (!doc) return;
+
+    const imgs = Array.from(doc.querySelectorAll("img")) as HTMLImageElement[];
+    let imgIdx = 0;
+    imgs.forEach((img) => {
+      if (isImgurUrl(img.src) && !img.getAttribute("data-protected"))
+        img.setAttribute("data-protected", "true");
+      if (img.getAttribute("data-protected") !== "true") {
+        img.setAttribute("data-editable", "image");
+        if (!img.id) img.id = `slide-${index}-img-${imgIdx++}`;
+      }
+      img.style.objectFit = "cover";
+
+      const resolved = resolveImgUrl(img);
+      if (resolved && img.src !== resolved) {
+        img.removeAttribute("srcset");
+        img.removeAttribute("sizes");
+        img.loading = "eager";
+        img.src = resolved;
+      }
+    });
+
+    applyTextAndStyles(doc, `slide-${index}-title`, `${index}-title`);
+    applyTextAndStyles(doc, `slide-${index}-subtitle`, `${index}-subtitle`);
+
+    const bg = editedContent[`${index}-background`];
+    if (bg) {
+      const best = findLargestVisual(doc);
+      if (best?.type === "img") {
+        const el = best.el as HTMLImageElement;
+        el.removeAttribute("srcset");
+        el.removeAttribute("sizes");
+        el.loading = "eager";
+        el.src = bg;
+        el.setAttribute("data-bg-image-url", bg);
+        el.style.objectFit = "cover";
+        el.style.width = "100%";
+        el.style.height = "100%";
+      } else {
+        (best?.el || doc.body).style.setProperty("background-image", `url('${bg}')`, "important");
+        (best?.el || doc.body).style.setProperty("background-size", "cover", "important");
+        (best?.el || doc.body).style.setProperty("background-repeat", "no-repeat", "important");
+        (best?.el || doc.body).style.setProperty("background-position", "center", "important");
+      }
+    }
+  };
+
+  iframe.onload = () => { dlog("iframe:onload", { index }); setTimeout(ready, 60); };
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (doc && doc.readyState === "complete") { dlog("iframe:already-complete", { index }); setTimeout(ready, 60); }
+}
+
+export function applyBackgroundImageImmediate(
+  iframe: HTMLIFrameElement | null | undefined,
+  slideIndex: number,
+  imageUrl: string
+): HTMLElement | null {
+  if (!iframe || !iframe.contentWindow) return null;
+  const doc = iframe.contentDocument || iframe.contentWindow.document;
+  if (!doc) return null;
+
+  const selected = doc.querySelector("[data-editable].selected") as HTMLElement | null;
+  if (selected?.tagName === "IMG" && selected.getAttribute("data-protected") !== "true") {
+    const img = selected as HTMLImageElement;
+    if (!isVideoUrl(imageUrl)) {
+      img.removeAttribute("srcset");
+      img.removeAttribute("sizes");
+      img.loading = "eager";
+      img.src = imageUrl;
+      img.setAttribute("data-bg-image-url", imageUrl);
+      img.style.objectFit = "cover";
+      img.style.width = "100%";
+      img.style.height = "100%";
+      return img;
+    }
+  }
+
+  const best = findLargestVisual(doc);
+  if (best) {
+    if (best.type === "img") {
+      const img = best.el as HTMLImageElement;
+      img.removeAttribute("srcset");
+      img.removeAttribute("sizes");
+      img.loading = "eager";
+      img.src = imageUrl;
+      img.setAttribute("data-bg-image-url", imageUrl);
+      img.style.objectFit = "cover";
+      img.style.width = "100%";
+      img.style.height = "100%";
+      return img;
+    } else {
+      best.el.style.setProperty("background-image", `url('${imageUrl}')`, "important");
+      best.el.style.setProperty("background-size", "cover", "important");
+      best.el.style.setProperty("background-repeat", "no-repeat", "important");
+      best.el.style.setProperty("background-position", "center", "important");
+      return best.el;
+    }
+  }
+
+  doc.body.style.setProperty("background-image", `url('${imageUrl}')`, "important");
+  doc.body.style.setProperty("background-size", "cover", "important");
+  doc.body.style.setProperty("background-repeat", "no-repeat", "important");
+  doc.body.style.setProperty("background-position", "center", "important");
+  return doc.body;
+}
+
+export function openEditModalForSlide(args: {
+  iframe: HTMLIFrameElement;
+  slideIndex: number;
+  slideW: number;
+  slideH: number;
+  editedContent: Record<string, any>;
+  uploadedImages: Record<number, string>;
+  carouselData: CarouselData;
+}): ImageEditModalState | null {
+  const { iframe, slideIndex, slideW, slideH, editedContent, uploadedImages, carouselData } = args;
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) { dlog("openEditModalForSlide: no document", { slideIndex }); return null; }
+
+  const selected = doc.querySelector("[data-editable].selected") as HTMLElement | null;
+  const largestFound = findLargestVisual(doc);
+  let chosen: HTMLElement | null = selected || largestFound?.el || (doc.body as HTMLElement);
+
+  const c = carouselData.conteudos[slideIndex] || {};
+  const dataFallback =
+    editedContent[`${slideIndex}-background`] ||
+    uploadedImages[slideIndex] ||
+    c.thumbnail_url ||
+    c.imagem_fundo ||
+    c.imagem_fundo2 ||
+    c.imagem_fundo3 ||
+    "";
+
+  if (!chosen) chosen = doc.body as HTMLElement;
+  if (!chosen.id) chosen.id = `edit-${Date.now()}`;
+  const targetSelector = `#${chosen.id}`;
+
+  const cs = doc.defaultView?.getComputedStyle(chosen);
+  let imageUrl = "";
+  let targetType: TargetKind = "img";
+  let isVideo = false;
+
+  if (chosen.tagName === "VIDEO") {
+    const video = chosen as HTMLVideoElement;
+    const sourceEl = video.querySelector("source") as HTMLSourceElement | null;
+    imageUrl = video.currentSrc || video.src || sourceEl?.src || "";
+    targetType = "vid";
+    isVideo = true;
+  } else if (chosen.tagName === "IMG") {
+    imageUrl = resolveImgUrl(chosen as HTMLImageElement);
+    targetType = "img";
+    if (!imageUrl && dataFallback) {
+      // IMG lazy demais: usa fallback e mantém como IMG
+      imageUrl = dataFallback;
+    }
+  } else {
+    const cssBg =
+      cs?.backgroundImage && cs.backgroundImage.includes("url(")
+        ? cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i)?.[1] || ""
+        : "";
+    imageUrl = cssBg || dataFallback;
+    targetType = "bg";
+  }
+
+  // Se ainda assim estiver vazio, força BG no body com algum URL válido
+  if (!imageUrl && dataFallback) {
+    chosen = doc.body as HTMLElement;
+    if (!chosen.id) chosen.id = `edit-${Date.now()}`;
+    imageUrl = dataFallback;
+    targetType = "bg";
+  }
+
+  dlog("openEditModalForSlide: resolved", {
+    slideIndex, tag: chosen.tagName, targetType, hasUrl: !!imageUrl
+  });
+
+  if (!imageUrl) return null;
+
+  const r = chosen.getBoundingClientRect();
+  const bodyRect = doc.body.getBoundingClientRect();
+  const targetLeftPx = r.left ? r.left - bodyRect.left : 0;
+  const targetTopPx = r.top ? r.top - bodyRect.top : 0;
+  const targetWidthPx = Math.max(1, r.width || slideW);
+  const targetHeightPx = Math.max(1, r.height || slideH);
+
+  if (isVideo) {
+    const video = chosen as HTMLVideoElement;
     return {
-      fontSize: element === "title" ? "24px" : "16px",
-      fontWeight: element === "title" ? "700" : "400",
-      textAlign: "left",
-      color: "#FFFFFF",
-    };
-  };
-
-  const getEditedValue = (slideIndex: number, field: string, def: any) => {
-    const k = `${slideIndex}-${field}`;
-    return editedContent[k] !== undefined ? editedContent[k] : def;
-  };
-
-  /** ====================== Setters ======================= */
-  const updateEditedValue = (slideIndex: number, field: string, value: any) => {
-    const k = `${slideIndex}-${field}`;
-    setEditedContent((prev) => ({ ...prev, [k]: value }));
-  };
-
-  const updateElementStyle = (
-    slideIndex: number,
-    element: ElementType,
-    prop: keyof ElementStyles,
-    value: string
-  ) => {
-    const k = getElementKey(slideIndex, element);
-    setElementStyles((prev) => ({
-      ...prev,
-      [k]: { ...getElementStyle(slideIndex, element), [prop]: value },
-    }));
-  };
-
-  /** ====================== Slides / Layers ======================= */
-  const toggleLayer = (index: number) => {
-    const s = new Set(expandedLayers);
-    s.has(index) ? s.delete(index) : s.add(index);
-    setExpandedLayers(s);
-  };
-
-  const handleSlideClick = (index: number) => {
-    // limpa seleções visuais dentro dos iframes
-    iframeRefs.current.forEach((iframe) => {
-      const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-      if (!doc) return;
-      doc
-        .querySelectorAll('[data-editable].selected')
-        .forEach((el) => el.classList.remove("selected"));
-    });
-
-    setFocusedSlide(index);
-    setSelectedElement({ slideIndex: index, element: null });
-    selectedImageRefs.current[index] = null;
-
-    const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
-    const slidePosition =
-      index * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
-    setPan({ x: -slidePosition * zoom, y: 0 });
-  };
-
-  const handleElementClick = (slideIndex: number, element: ElementType) => {
-    setIsLoadingProperties(true);
-
-    const iframe = iframeRefs.current[slideIndex];
-    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-    if (doc && element) {
-      doc
-        .querySelectorAll("[data-editable]")
-        .forEach((el) => el.classList.remove("selected"));
-      const target = doc.getElementById(`slide-${slideIndex}-${element}`);
-      if (target) target.classList.add("selected");
-      else if (element === "background") doc.body.classList.add("selected");
-    }
-
-    setSelectedElement({ slideIndex, element });
-    setFocusedSlide(slideIndex);
-    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
-    setTimeout(() => setIsLoadingProperties(false), 80);
-  };
-
-  /** ====================== Background / Upload / Busca ======================= */
-  const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
-    const updatedEl = applyBackgroundImageImmediate(
-      iframeRefs.current[slideIndex],
+      open: true,
       slideIndex,
-      imageUrl
-    );
-
-    // limpa seleções
-    iframeRefs.current.forEach((f) => {
-      const d = f?.contentDocument || f?.contentWindow?.document;
-      if (!d) return;
-      d
-        .querySelectorAll("[data-editable]")
-        .forEach((el) => el.classList.remove("selected"));
-    });
-
-    if (updatedEl) {
-      updatedEl.classList.add("selected");
-      const isImg = updatedEl.tagName === "IMG";
-      selectedImageRefs.current[slideIndex] = isImg
-        ? (updatedEl as HTMLImageElement)
-        : null;
-    }
-
-    setSelectedElement({ slideIndex, element: "background" });
-    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
-    setFocusedSlide(slideIndex);
-    updateEditedValue(slideIndex, "background", imageUrl);
-  };
-
-  const handleImageUpload = (
-    slideIndex: number,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const url = ev.target?.result as string;
-      setUploadedImages((prev) => ({ ...prev, [slideIndex]: url }));
-      handleBackgroundImageChange(slideIndex, url);
+      targetType: "vid",
+      targetSelector,
+      imageUrl,
+      slideW,
+      slideH,
+      containerHeightPx: targetHeightPx,
+      naturalW: video.videoWidth || targetWidthPx,
+      naturalH: video.videoHeight || targetHeightPx,
+      imgOffsetTopPx: 0,
+      imgOffsetLeftPx: 0,
+      targetWidthPx,
+      targetLeftPx,
+      targetTopPx,
+      isVideo: true,
+      videoTargetW: targetWidthPx,
+      videoTargetH: targetHeightPx,
+      videoTargetLeft: targetLeftPx,
+      videoTargetTop: targetTopPx,
+      cropX: targetLeftPx,
+      cropY: targetTopPx,
+      cropW: targetWidthPx,
+      cropH: targetHeightPx,
     };
-    reader.readAsDataURL(file);
-  };
+  }
 
-  const handleSearchImages = async () => {
-    if (!searchKeyword.trim()) return;
-    setIsSearching(true);
-    const id = ++lastSearchId.current;
-    try {
-      const imageUrls = await searchImages(searchKeyword);
-      if (id === lastSearchId.current) setSearchResults(imageUrls);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      if (id === lastSearchId.current) setIsSearching(false);
+  const tmp = new Image();
+  tmp.src = imageUrl;
+  const natW = tmp.naturalWidth || targetWidthPx || 1;
+  const natH = tmp.naturalHeight || targetHeightPx || 1;
+  const coverScale = Math.max(targetWidthPx / natW, targetHeightPx / natH);
+  const displayW = Math.ceil(natW * coverScale);
+  const displayH = Math.ceil(natH * coverScale);
+  const startLeft = (targetWidthPx - displayW) / 2;
+  const startTop = (targetHeightPx - displayH) / 2;
+
+  let imgOffsetTopPx = startTop;
+  let imgOffsetLeftPx = startLeft;
+
+  if (targetType === "img") {
+    const top = parseFloat((chosen as HTMLImageElement).style.top || `${startTop}`);
+    const left = parseFloat((chosen as HTMLImageElement).style.left || `${startLeft}`);
+    const minLeft = targetWidthPx - displayW;
+    const minTop = targetHeightPx - displayH;
+    imgOffsetTopPx = clamp(isNaN(top) ? startTop : top, minTop, 0);
+    imgOffsetLeftPx = clamp(isNaN(left) ? startLeft : left, minLeft, 0);
+  } else {
+    const cs2 = doc.defaultView?.getComputedStyle(chosen);
+    const toPerc = (v: string) => (v && v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+    const posX = toPerc(cs2?.backgroundPositionX || "50%");
+    const posY = toPerc(cs2?.backgroundPositionY || "50%");
+    const maxOffsetX = Math.max(0, displayW - targetWidthPx);
+    const maxOffsetY = Math.max(0, displayH - targetHeightPx);
+    const offX = -posX * maxOffsetX;
+    const offY = -posY * maxOffsetY;
+    imgOffsetTopPx = clamp(offY, targetHeightPx - displayH, 0);
+    imgOffsetLeftPx = clamp(offX, targetWidthPx - displayW, 0);
+  }
+
+  return {
+    open: true,
+    slideIndex,
+    targetType,
+    targetSelector,
+    imageUrl,
+    slideW,
+    slideH,
+    containerHeightPx: targetHeightPx,
+    naturalW: natW,
+    naturalH: natH,
+    imgOffsetTopPx,
+    imgOffsetLeftPx,
+    targetWidthPx,
+    targetLeftPx,
+    targetTopPx,
+    isVideo: false,
+    videoTargetW: 0,
+    videoTargetH: 0,
+    videoTargetLeft: 0,
+    videoTargetTop: 0,
+    cropX: 0,
+    cropY: 0,
+    cropW: 0,
+    cropH: 0,
+  };
+}
+
+export function applyModalEdits(
+  state: ImageEditModalState,
+  iframe: HTMLIFrameElement | null | undefined
+) {
+  if (!state.open || !iframe) return;
+  const {
+    targetType,
+    targetSelector,
+    imageUrl,
+    containerHeightPx,
+    imgOffsetTopPx,
+    imgOffsetLeftPx,
+    naturalW,
+    naturalH,
+    targetWidthPx,
+    isVideo,
+    videoTargetW,
+    videoTargetH,
+    cropX,
+    cropY,
+    cropW,
+    cropH,
+  } = state;
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+  const el = doc.querySelector(targetSelector) as HTMLElement | null;
+  if (!el) return;
+
+  if (isVideo && targetType === "vid") {
+    const vid = el as HTMLVideoElement;
+    let wrapper = vid.parentElement;
+    if (!wrapper || !wrapper.classList.contains("vid-crop-wrapper")) {
+      const w = doc.createElement("div");
+      w.className = "vid-crop-wrapper";
+      w.style.display = "inline-block";
+      w.style.position = "relative";
+      w.style.overflow = "hidden";
+      w.style.borderRadius = doc.defaultView?.getComputedStyle(vid).borderRadius || "";
+      if (vid.parentNode) vid.parentNode.replaceChild(w, vid);
+      w.appendChild(vid);
+      wrapper = w;
     }
-  };
+    (wrapper as HTMLElement).style.width = `${cropW}px`;
+    (wrapper as HTMLElement).style.height = `${cropH}px`;
 
-  /** ====================== Download ======================= */
-  const handleDownloadAll = () => {
-    renderedSlides.forEach((slide, index) => {
-      const blob = new Blob([slide], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `slide-${index + 1}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
-  };
+    vid.style.position = "absolute";
+    vid.style.left = `${-cropX}px`;
+    vid.style.top = `${-cropY}px`;
+    vid.style.width = `${videoTargetW}px`;
+    vid.style.height = `${videoTargetH}px`;
+    vid.style.objectFit = "cover";
+    if (vid.src !== imageUrl) vid.src = imageUrl;
+    return;
+  }
 
-  /** ====================== Modal: abrir/aplicar ======================= */
-  const openImageEditModal = (slideIndex: number) => {
-    const log = (...a: any[]) => console.log("[CV][openImageEditModal]", ...a);
+  if (targetType === "img") {
+    let wrapper = el.parentElement;
+    if (!wrapper || !wrapper.classList.contains("img-crop-wrapper")) {
+      const w = doc.createElement("div");
+      w.className = "img-crop-wrapper";
+      w.style.display = "inline-block";
+      w.style.position = "relative";
+      w.style.overflow = "hidden";
+      w.style.borderRadius = doc.defaultView?.getComputedStyle(el).borderRadius || "";
+      if (el.parentNode) el.parentNode.replaceChild(w, el);
+      w.appendChild(el);
+      wrapper = w;
+    }
+    (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
+    (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
 
-    const tryOpen = (iframe: HTMLIFrameElement | null, tag: string) => {
-      log("tryOpen", { tag, hasIframe: !!iframe, slideIndex });
-      if (!iframe) return false;
-      const state = openEditModalForSlide({
-        iframe,
-        slideIndex,
-        slideW: slideWidth,
-        slideH: slideHeight,
-        editedContent,
-        uploadedImages,
-        carouselData,
-      });
-      log("openEditModalForSlide:state", { ok: !!state, state });
-      if (!state) return false;
-      setImageModal(state);
-      document.documentElement.style.overflow = "hidden";
-      return true;
-    };
+    const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
+    const displayW = Math.ceil(naturalW * scale) + 2;
+    const displayH = Math.ceil(naturalH * scale) + 2;
 
-    // 1) tenta via ref
-    if (tryOpen(iframeRefs.current[slideIndex], "ref")) return;
+    const minLeft = targetWidthPx - displayW;
+    const minTop = containerHeightPx - displayH;
 
-    // 2) tenta via DOM
-    const domIframe = document.querySelector<HTMLIFrameElement>(
-      `iframe[title="Slide ${slideIndex + 1}"]`
-    );
-    if (tryOpen(domIframe, "domQuery")) return;
+    const safeLeft = clamp(isNaN(imgOffsetLeftPx) ? minLeft / 2 : imgOffsetLeftPx, minLeft, 0);
+    const safeTop = clamp(isNaN(imgOffsetTopPx) ? minTop / 2 : imgOffsetTopPx, minTop, 0);
 
-    // 3) tenta no próximo frame
-    requestAnimationFrame(() => {
-      const again =
-        iframeRefs.current[slideIndex] ||
-        document.querySelector<HTMLIFrameElement>(
-          `iframe[title="Slide ${slideIndex + 1}"]`
-        );
-      if (tryOpen(again, "raf")) return;
+    el.style.position = "absolute";
+    el.style.width = `${displayW}px`;
+    el.style.height = `${displayH}px`;
+    el.style.left = `${safeLeft}px`;
+    el.style.top = `${safeTop}px`;
+    (el as HTMLImageElement).removeAttribute("srcset");
+    (el as HTMLImageElement).removeAttribute("sizes");
+    (el as HTMLImageElement).loading = "eager";
+    if ((el as HTMLImageElement).src !== imageUrl) (el as HTMLImageElement).src = imageUrl;
+    (el as HTMLImageElement).style.objectFit = "cover";
+    (el as HTMLImageElement).style.backfaceVisibility = "hidden";
+    (el as HTMLImageElement).style.transform = "translateZ(0)";
+    return;
+  }
 
-      // 4) FALLBACK BRUTO
-      const c = carouselData.conteudos[slideIndex] || {};
-      const fallbackUrl =
-        editedContent[`${slideIndex}-background`] ||
-        uploadedImages[slideIndex] ||
-        c.thumbnail_url ||
-        c.imagem_fundo ||
-        c.imagem_fundo2 ||
-        c.imagem_fundo3 ||
-        "";
+  if (targetType === "bg") {
+    const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
+    const displayW = Math.ceil(naturalW * scale);
+    const displayH = Math.ceil(naturalH * scale);
 
-      console.warn("[CV][openImageEditModal] HARD FALLBACK", {
-        slideIndex,
-        hasRef: !!iframeRefs.current[slideIndex],
-        hasDomQuery: !!domIframe,
-        fallbackUrl,
-      });
+    const maxOffsetX = Math.max(0, displayW - targetWidthPx);
+    const maxOffsetY = Math.max(0, displayH - containerHeightPx);
 
-      if (!fallbackUrl) return;
+    let xPerc = maxOffsetX ? (-imgOffsetLeftPx / maxOffsetX) * 100 : 50;
+    let yPerc = maxOffsetY ? (-imgOffsetTopPx / maxOffsetY) * 100 : 50;
+    if (!isFinite(xPerc)) xPerc = 50;
+    if (!isFinite(yPerc)) yPerc = 50;
 
-      setImageModal({
-        open: true,
-        slideIndex,
-        targetType: "bg",
-        targetSelector: "body",
-        imageUrl: fallbackUrl,
-        slideW: slideWidth,
-        slideH: slideHeight,
-        containerHeightPx: slideHeight,
-        naturalW: 1080,
-        naturalH: 1350,
-        imgOffsetTopPx: 0,
-        imgOffsetLeftPx: 0,
-        targetWidthPx: slideWidth,
-        targetLeftPx: 0,
-        targetTopPx: 0,
-        isVideo: false,
-        videoTargetW: 0,
-        videoTargetH: 0,
-        videoTargetLeft: 0,
-        videoTargetTop: 0,
-        cropX: 0,
-        cropY: 0,
-        cropW: 0,
-        cropH: 0,
-      });
-      document.documentElement.style.overflow = "hidden";
-    });
-  };
-
-  const applyImageEditModal = () => {
-    if (!imageModal.open) return;
-    const iframe = iframeRefs.current[imageModal.slideIndex];
-    applyModalEdits(imageModal, iframe);
-    setImageModal({ open: false });
-    document.documentElement.style.overflow = "";
-  };
-
-  /** ====================== TopBar ======================= */
-  const topBar = (
-    <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
-      <div className="flex items-center space-x-4">
-        <h2 className="text-white font-semibold">Carousel Editor</h2>
-        <div className="text-neutral-500 text-sm">{slides.length} slides</div>
-      </div>
-      <div className="flex items-center space-x-2">
-        <button
-          onClick={() => setZoom((p) => Math.max(0.1, p - 0.1))}
-          className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
-          title="Zoom Out"
-          disabled={imageModal.open}
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <div className="bg-neutral-800 text-white px-3 py-1.5 rounded text-xs min-w-[70px] text-center">
-          {Math.round(zoom * 100)}%
-        </div>
-        <button
-          onClick={() => setZoom((p) => Math.min(2, p + 0.1))}
-          className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
-          title="Zoom In"
-          disabled={imageModal.open}
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <div className="w-px h-6 bg-neutral-800 mx-2" />
-        <button
-          onClick={handleDownloadAll}
-          className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm"
-          title="Download All Slides"
-          disabled={imageModal.open}
-        >
-          <Download className="w-4 h-4" />
-          <span>Download</span>
-        </button>
-        <button
-          onClick={onClose}
-          className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded transition-colors"
-          title="Close (Esc)"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-
-  /** ====================== Render ======================= */
-  return (
-    <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* Modal */}
-      {imageModal.open && (
-        <EditModal
-          state={imageModal}
-          renderedSlides={renderedSlides}
-          onApply={applyImageEditModal}
-          onClose={() => {
-            setImageModal({ open: false });
-            document.documentElement.style.overflow = "";
-          }}
-        />
-      )}
-
-      {/* Painel esquerdo */}
-      <LayersPanel
-        slides={slides}
-        carouselData={carouselData}
-        expandedLayers={expandedLayers}
-        focusedSlide={focusedSlide}
-        selectedElement={selectedElement}
-        onToggleLayer={toggleLayer}
-        onSlideClick={handleSlideClick}
-        onSelectElement={handleElementClick}
-      />
-
-      {/* Área central */}
-      <div className="flex-1 flex flex-col">
-        {topBar}
-        <Canvas
-          renderedSlides={renderedSlides}
-          iframeRefs={iframeRefs}
-          containerRef={containerRef}
-          zoom={zoom}
-          pan={pan}
-          setPan={setPan}
-          isDragging={isDragging}
-          setIsDragging={setIsDragging}
-          dragStart={dragStart}
-          setDragStart={setDragStart}
-          focusedSlide={focusedSlide}
-          slideWidth={slideWidth}
-          slideHeight={slideHeight}
-          gap={gap}
-          imageModalOpen={imageModal.open}
-        />
-      </div>
-
-      {/* Painel direito */}
-      <PropertiesPanel
-        selectedElement={selectedElement}
-        isLoadingProperties={isLoadingProperties}
-        carouselData={carouselData}
-        editedContent={editedContent}
-        elementStyles={elementStyles}
-        getElementStyle={getElementStyle}
-        getEditedValue={getEditedValue}
-        updateEditedValue={updateEditedValue}
-        updateElementStyle={updateElementStyle}
-        onOpenEditModal={() => openImageEditModal(selectedElement.slideIndex)}
-        onBackgroundChange={handleBackgroundImageChange}
-        searchKeyword={searchKeyword}
-        setSearchKeyword={setSearchKeyword}
-        onSearchImages={handleSearchImages}
-        isSearching={isSearching}
-        searchResults={searchResults}
-        onUploadImage={handleImageUpload}
-        uploadedImages={uploadedImages}
-        isVideoUrl={(u: string) => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(u)}
-      />
-    </div>
-  );
-};
-
-export default CarouselViewer;
+    el.style.setProperty("background-image", `url('${imageUrl}')`, "important");
+    el.style.setProperty("background-repeat", "no-repeat", "important");
+    el.style.setProperty("background-size", "cover", "important");
+    el.style.setProperty("background-position-x", `${xPerc}%`, "important");
+    el.style.setProperty("background-position-y", `${yPerc}%`, "important");
+    el.style.setProperty("height", `${containerHeightPx}px`, "important");
+    if ((doc.defaultView?.getComputedStyle(el).position || "static") === "static")
+      el.style.position = "relative";
+  }
+}
