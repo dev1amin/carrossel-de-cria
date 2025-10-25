@@ -173,7 +173,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   /** ======= ESTADO DO CANVAS DO POPUP (igual ao do editor, mas 1 slide) ======= */
   const modalCanvasRef = useRef<HTMLDivElement>(null);
-  const [modalZoom, setModalZoom] = useState(1);
+const [modalZoom, setModalZoom] = useState(0.5);
   const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
   const [modalIsDragging, setModalIsDragging] = useState(false);
   const [modalDragStart, setModalDragStart] = useState({ x: 0, y: 0 });
