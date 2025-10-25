@@ -54,7 +54,7 @@ type ImageEditModalState =
     }
   | { open: false };
 
-/** ====================== Portal ======================= */
+/** ====================== Portal para o Modal ======================= */
 const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const elRef = useRef<HTMLDivElement | null>(null);
   if (!elRef.current) elRef.current = document.createElement('div');
@@ -108,7 +108,6 @@ const DragSurface: React.FC<DragSurfaceProps> = ({ enabled, cursor, onDragStart,
       onMouseDown={(e) => {
         if (!enabled) return;
         e.preventDefault();
-        e.stopPropagation();
         dragging.current = true;
         onDragStart?.();
       }}
@@ -116,7 +115,7 @@ const DragSurface: React.FC<DragSurfaceProps> = ({ enabled, cursor, onDragStart,
   );
 };
 
-/** ====================== Helpers ======================= */
+/** ====================== Helpers numéricos ======================= */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const computeFitWidthBleed = (natW: number, natH: number, contW: number, bleedPx = 0) => {
   if (natW <= 0 || natH <= 0 || contW <= 0) return { displayW: contW, displayH: contW };
@@ -132,12 +131,12 @@ const computeCover = (natW: number, natH: number, contW: number, contH: number) 
 
 /** ====================== Componente principal ======================= */
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
-  /** ===== Layout ===== */
+  /** ===== Layout do canvas ===== */
   const slideWidth = 1080;
   const slideHeight = 1350;
   const gap = 40;
 
-  /** ===== Estado: canvas principal ===== */
+  /** ===== Estado global ===== */
   const [zoom, setZoom] = useState(0.35);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -156,22 +155,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
   const [isEditingInline, setIsEditingInline] = useState<{ slideIndex: number; element: ElementType } | null>(null);
 
-  // busca/upload
+  // busca/imagem
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<Record<number, string>>({});
 
-  // modal de imagem/vídeo
+  // modal
   const [imageModal, setImageModal] = useState<ImageEditModalState>({ open: false });
   const [isImageDragging, setIsImageDragging] = useState(false);
-
-  // ====== Canvas do POPUP (novo) ======
-  const [modalZoom, setModalZoom] = useState(1);
-  const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
-  const [modalDragging, setModalDragging] = useState(false);
-  const [modalDragStart, setModalDragStart] = useState({ x: 0, y: 0 });
-  const modalCanvasRef = useRef<HTMLDivElement>(null);
 
   /** ===== Refs ===== */
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
@@ -181,10 +173,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   /** ====================== Efeitos ======================= */
   useEffect(() => {
+    // Seleção inicial sempre no BG do slide 0
     setSelectedElement({ slideIndex: 0, element: 'background' });
     setExpandedLayers(s => new Set(s).add(0));
   }, []);
 
+  // prepara srcDoc (injeção de ids e marcações editáveis)
   const ensureStyleTag = (html: string): string => {
     if (/<style>/i.test(html)) return html;
     return html.replace(
@@ -236,6 +230,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setRenderedSlides(injected);
   }, [slides, carouselData.conteudos]);
 
+  // posiciona no slide 0 ao abrir
   useEffect(() => {
     const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
     const slidePosition = 0 * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
@@ -244,13 +239,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // marca elementos editáveis e aplica conteúdos/estilos
+  // configura interações dentro dos iframes
   useEffect(() => {
     iframeRefs.current.forEach((iframe, index) => {
       if (!iframe || !iframe.contentWindow) return;
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
 
+      // marcar imagens/vídeos
       const imgs = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
       let imgIdx = 0;
       imgs.forEach((img) => {
@@ -274,6 +270,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         v.style.height = '100%';
       });
 
+      // aplica conteúdo/estilos
       const applyText = (id: string, key: string) => {
         const el = doc.getElementById(id);
         if (!el) return;
@@ -297,6 +294,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
         if (content && el.getAttribute('contenteditable') !== 'true') el.textContent = content;
 
+        // captura originais
         setTimeout(() => {
           if (!originalStyles[key]) {
             const cs = doc.defaultView?.getComputedStyle(el as HTMLElement);
@@ -324,7 +322,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   }, [elementStyles, editedContent, originalStyles, renderedSlides, carouselData.conteudos]);
 
-  // handlers internos dos iframes: seleção/edição inline
+  // listeners para seleção/edição inline
   useEffect(() => {
     const setup = (iframe: HTMLIFrameElement, slideIndex: number) => {
       const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -395,7 +393,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // atalhos
+  // atalhos: ESC fecha; setas trocam slide
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -410,16 +408,21 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
         onClose();
       }
-      if (e.key === 'ArrowRight') handleSlideClick(Math.min(focusedSlide + 1, slides.length - 1));
-      if (e.key === 'ArrowLeft')  handleSlideClick(Math.max(focusedSlide - 1, 0));
+      if (e.key === 'ArrowRight') {
+        handleSlideClick(Math.min(focusedSlide + 1, slides.length - 1));
+      }
+      if (e.key === 'ArrowLeft') {
+        handleSlideClick(Math.max(focusedSlide - 1, 0));
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageModal.open, selectedElement, onClose, focusedSlide, slides.length]);
 
-  /** ====================== Helpers/UI ======================= */
+  /** ====================== Helpers ======================= */
   const getElementKey = (slideIndex: number, element: ElementType) => `${slideIndex}-${element}`;
+
   const getElementStyle = (slideIndex: number, element: ElementType): ElementStyles => {
     const k = getElementKey(slideIndex, element);
     if (elementStyles[k]) return elementStyles[k];
@@ -431,15 +434,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       color: '#FFFFFF',
     };
   };
+
   const getEditedValue = (slideIndex: number, field: string, def: any) => {
     const k = `${slideIndex}-${field}`;
     return editedContent[k] !== undefined ? editedContent[k] : def;
   };
 
+  /** ====================== Setters ======================= */
   const updateEditedValue = (slideIndex: number, field: string, value: any) => {
     const k = `${slideIndex}-${field}`;
     setEditedContent((prev) => ({ ...prev, [k]: value }));
   };
+
   const updateElementStyle = (slideIndex: number, element: ElementType, prop: keyof ElementStyles, value: string) => {
     const k = getElementKey(slideIndex, element);
     setElementStyles((prev) => ({
@@ -448,13 +454,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }));
   };
 
-  /** ====================== Navegação/Layers ======================= */
+  /** ====================== Slides / Layers ======================= */
   const toggleLayer = (index: number) => {
     const s = new Set(expandedLayers);
     s.has(index) ? s.delete(index) : s.add(index);
     setExpandedLayers(s);
   };
+
   const handleSlideClick = (index: number) => {
+    // limpa seleções visuais dentro dos iframes
     iframeRefs.current.forEach((iframe) => {
       const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
       if (!doc) return;
@@ -469,8 +477,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const slidePosition = index * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
     setPan({ x: -slidePosition * zoom, y: 0 });
   };
+
   const handleElementClick = (slideIndex: number, element: ElementType) => {
     setIsLoadingProperties(true);
+
     const iframe = iframeRefs.current[slideIndex];
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
     if (doc && element) {
@@ -479,13 +489,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (target) target.classList.add('selected');
       else if (element === 'background') doc.body.classList.add('selected');
     }
+
     setSelectedElement({ slideIndex, element });
     setFocusedSlide(slideIndex);
     if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
     setTimeout(() => setIsLoadingProperties(false), 80);
   };
 
-  /** ====================== BG/imagens ======================= */
+  /** ====================== Background / Upload / Busca ======================= */
   const findLargestVisual = (doc: Document): { type: TargetKind; el: HTMLElement } | null => {
     let best: { type: TargetKind; el: HTMLElement; area: number } | null = null;
     const push = (type: TargetKind, el: HTMLElement) => {
@@ -494,6 +505,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (area <= 9000) return;
       if (!best || area > best.area) best = { type, el, area };
     };
+
     Array.from(doc.querySelectorAll('video')).forEach((v) => push('vid', v as HTMLElement));
     Array.from(doc.querySelectorAll('img')).forEach((im) => {
       const img = im as HTMLImageElement;
@@ -506,6 +518,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) push('bg', el);
       }
     );
+
     return best ? { type: best.type, el: best.el } : null;
   };
 
@@ -559,6 +572,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const handleBackgroundImageChange = (slideIndex: number, imageUrl: string) => {
     const updatedEl = applyBackgroundImageImmediate(slideIndex, imageUrl);
 
+    // limpa seleções
     iframeRefs.current.forEach((f) => {
       const d = f?.contentDocument || f?.contentWindow?.document;
       if (!d) return;
@@ -669,10 +683,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const targetWidthPx = Math.max(1, r.width || slideWidth);
     const targetHeightPx = Math.max(1, r.height || slideHeight);
 
-    // reset do canvas do popup (centra o slide)
-    setModalZoom(1);
-    setModalPan({ x: 0, y: 0 });
-
+    // imagem
     if (!isVideo) {
       const tmp = new Image();
       tmp.src = imageUrl;
@@ -680,6 +691,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         const natW = tmp.naturalWidth || targetWidthPx;
         const natH = tmp.naturalHeight || targetHeightPx;
 
+        // offset inicial: center cover
         const { displayW, displayH } = computeCover(natW, natH, targetWidthPx, targetHeightPx);
         const minLeft = targetWidthPx - displayW;
         const minTop = targetHeightPx - displayH;
@@ -719,6 +731,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       return;
     }
 
+    // vídeo
     const video = chosen as HTMLVideoElement;
     setImageModal({
       open: true,
@@ -772,6 +785,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     } = imageModal;
 
     if (isVideo && targetType === 'vid') {
+      // aplica crop real com wrapper
       const vid = el as HTMLVideoElement;
       let wrapper = vid.parentElement;
       if (!wrapper || !wrapper.classList.contains('vid-crop-wrapper')) {
@@ -914,7 +928,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   /** ====================== Render ======================= */
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* ========= MODAL (com Canvas e Zoom/Pan) ========= */}
+      {/* Modal */}
       {imageModal.open && (
         <ModalPortal>
           <div className="fixed inset-0 z-[9999]">
@@ -931,26 +945,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     {imageModal.isVideo ? 'Crop do vídeo' : 'Edição da imagem'} — Slide {imageModal.slideIndex + 1}
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* Zoom Controls do popup */}
-                    <button
-                      onClick={() => setModalZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-                      className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded"
-                      title="Zoom Out"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </button>
-                    <div className="text-neutral-300 text-xs w-14 text-center">{Math.round(modalZoom * 100)}%</div>
-                    <button
-                      onClick={() => setModalZoom((z) => Math.min(4, +(z + 0.1).toFixed(2)))}
-                      className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded"
-                      title="Zoom In"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </button>
-
                     <button
                       onClick={applyImageEditModal}
-                      className="ml-3 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
+                      className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
                     >
                       Aplicar
                     </button>
@@ -964,307 +961,187 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   </div>
                 </div>
 
-                {/* Conteúdo com CANVAS */}
-                <div className="w-full h-[calc(100%-3rem)] p-3">
+                {/* conteúdo */}
+                <div className="w-full h-[calc(100%-3rem)] p-4 overflow-auto">
                   {/* Instruções */}
                   {imageModal.isVideo ? (
-                    <div className="text-neutral-400 text-xs mb-2 space-y-1">
-                      <div>• Use o mouse para pan (arraste o fundo) e Ctrl+scroll para zoom.</div>
+                    <div className="text-neutral-400 text-xs mb-3 space-y-1">
                       <div>• Arraste o <span className="text-neutral-200">retângulo</span> para mover o crop.</div>
                       <div>• Use os <span className="text-neutral-200">handles</span> nas bordas/cantos para redimensionar.</div>
+                      <div>• Apenas a área dentro do retângulo será exibida no slide.</div>
                     </div>
                   ) : (
-                    <div className="text-neutral-400 text-xs mb-2 space-y-1">
-                      <div>• Use o mouse para pan (arraste o fundo) e Ctrl+scroll para zoom.</div>
-                      <div>• Arraste a imagem dentro do container para ajustar o enquadramento.</div>
+                    <div className="text-neutral-400 text-xs mb-3 space-y-1">
+                      <div>• Arraste a imagem (quando houver margem) para ajustar o enquadramento.</div>
+                      <div>• Arraste a borda inferior do container para alterar sua altura.</div>
                       <div>• Áreas fora do container ficam visíveis a 40% durante o arrasto.</div>
                     </div>
                   )}
 
-                  {/* Canvas do popup */}
-                  <div
-                    ref={modalCanvasRef}
-                    className="relative w-full h-[calc(100%-2rem)] bg-neutral-900/60 rounded-xl border border-neutral-800 overflow-hidden"
-                    style={{ cursor: modalDragging ? 'grabbing' : 'grab' }}
-                    onWheel={(e) => {
-                      e.preventDefault();
-                      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                      const mouseX = (e.clientX - rect.left - modalPan.x) / modalZoom;
-                      const mouseY = (e.clientY - rect.top  - modalPan.y) / modalZoom;
-
-                      if (e.ctrlKey) {
-                        const delta = e.deltaY > 0 ? -0.08 : 0.08;
-                        const newZoom = clamp(+(modalZoom + delta).toFixed(2), 0.25, 4);
-                        setModalZoom(newZoom);
-                        setModalPan({
-                          x: e.clientX - rect.left - mouseX * newZoom,
-                          y: e.clientY - rect.top  - mouseY * newZoom,
-                        });
-                      } else {
-                        setModalPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
-                      }
-                    }}
-                    onMouseDown={(e) => {
-                      // só pan se clicou no fundo do canvas (não em elementos interativos)
-                      if (e.button === 0 && e.currentTarget === e.target) {
-                        setModalDragging(true);
-                        setModalDragStart({ x: e.clientX - modalPan.x, y: e.clientY - modalPan.y });
-                      }
-                    }}
-                    onMouseMove={(e) => {
-                      if (modalDragging) {
-                        setModalPan({ x: e.clientX - modalDragStart.x, y: e.clientY - modalDragStart.y });
-                      }
-                    }}
-                    onMouseUp={() => setModalDragging(false)}
-                    onMouseLeave={() => setModalDragging(false)}
-                  >
-                    {/* Grupo transformado: tudo aqui dentro escala/translada junto */}
+                  <div className="grid place-items-center">
                     <div
-                      className="absolute"
+                      className="relative bg-neutral-100 rounded-xl shadow-xl border border-neutral-800"
                       style={{
-                        transform: `translate(${modalPan.x}px, ${modalPan.y}px) scale(${modalZoom})`,
-                        transformOrigin: 'center center',
-                        left: '50%',
-                        top: '50%',
-                        marginLeft: `-${imageModal.slideW / 2}px`,
-                        marginTop: `-${imageModal.slideH / 2}px`,
                         width: `${imageModal.slideW}px`,
                         height: `${imageModal.slideH}px`,
+                        overflow: 'hidden',
                       }}
                     >
-                      {/* SLIDE em tamanho real */}
-                      <div
-                        className="relative bg-neutral-100 rounded-xl shadow-xl border border-neutral-800"
-                        style={{
-                          width: `${imageModal.slideW}px`,
-                          height: `${imageModal.slideH}px`,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <iframe
-                          srcDoc={renderedSlides[imageModal.slideIndex]}
-                          className="absolute inset-0 w-full h-full pointer-events-none"
-                          sandbox="allow-same-origin allow-scripts"
-                          title={`Slide Preview ${imageModal.slideIndex + 1}`}
-                        />
+                      {/* Preview do SLIDE COMPLETO */}
+                      <iframe
+                        srcDoc={renderedSlides[imageModal.slideIndex]}
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        sandbox="allow-same-origin allow-scripts"
+                        title={`Slide Preview ${imageModal.slideIndex + 1}`}
+                      />
 
-                        {/* ===== Overlays específicos ===== */}
-                        {!imageModal.isVideo ? (
-                          // ======= IMAGEM (fit-width + sempre cobrindo o container) =======
-                          (() => {
-                            const containerLeft = imageModal.targetLeftPx;
-                            const containerTop = imageModal.targetTopPx;
-                            const containerWidth = imageModal.targetWidthPx;
-                            const containerHeight = imageModal.containerHeightPx;
+                      {/* Overlay específico */}
+                      {!imageModal.isVideo ? (
+                        // ======= IMAGEM (fit-width + sempre cobrindo o container) =======
+                        (() => {
+                          const containerLeft = imageModal.targetLeftPx;
+                          const containerTop = imageModal.targetTopPx;
+                          const containerWidth = imageModal.targetWidthPx;
+                          const containerHeight = imageModal.containerHeightPx;
 
-                            const { displayW, displayH } = computeFitWidthBleed(
-                              imageModal.naturalW, imageModal.naturalH, containerWidth, 0
-                            );
+                          // Fit-width: mostra a imagem com altura total proporcional à largura do container
+                          const { displayW, displayH } = computeFitWidthBleed(
+                            imageModal.naturalW, imageModal.naturalH, containerWidth, 0
+                          );
 
-                            const minLeft  = containerWidth - displayW;  // <= 0
-                            const maxLeft  = 0;
-                            const minTop   = containerHeight - displayH; // <= 0
-                            const maxTop   = 0;
+                          // Limites para **sempre cobrir** o container (sem “buracos”)
+                          const minLeft  = containerWidth - displayW;  // <= 0
+                          const maxLeft  = 0;
+                          const minTop   = containerHeight - displayH; // <= 0
+                          const maxTop   = 0;
 
-                            const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, maxLeft);
-                            const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop,  maxTop);
+                          // Clamp na renderização (impede fugir e deixar fundo exposto)
+                          const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, maxLeft);
+                          const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop,  maxTop);
 
-                            const canDragX = displayW > containerWidth;
-                            const canDragY = displayH > containerHeight;
-                            const dragCursor: React.CSSProperties['cursor'] =
-                              canDragX && canDragY ? 'move' : canDragX ? 'ew-resize' : canDragY ? 'ns-resize' : 'default';
+                          const canDragX = displayW > containerWidth;
+                          const canDragY = displayH > containerHeight;
+                          const dragCursor: React.CSSProperties['cursor'] =
+                            canDragX && canDragY ? 'move' : canDragX ? 'ew-resize' : canDragY ? 'ns-resize' : 'default';
 
-                            const rightW = imageModal.slideW - (containerLeft + containerWidth);
-                            const bottomH = imageModal.slideH - (containerTop + containerHeight);
+                          const rightW = imageModal.slideW - (containerLeft + containerWidth);
+                          const bottomH = imageModal.slideH - (containerTop + containerHeight);
 
-                            return (
-                              <>
-                                {/* Destaque do container */}
-                                <div
-                                  className="absolute rounded-lg pointer-events-none"
-                                  style={{
-                                    left: containerLeft - 2,
-                                    top:  containerTop  - 2,
-                                    width:  containerWidth + 4,
-                                    height: containerHeight + 4,
-                                    boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
-                                    zIndex: 3
-                                  }}
-                                />
+                          return (
+                            <>
+                              {/* Destaque do container */}
+                              <div
+                                className="absolute rounded-lg pointer-events-none"
+                                style={{
+                                  left: containerLeft - 2,
+                                  top:  containerTop  - 2,
+                                  width:  containerWidth + 4,
+                                  height: containerHeight + 4,
+                                  boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
+                                  zIndex: 3
+                                }}
+                              />
 
-                                {/* Esmaecer fora do container */}
-                                <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop, zIndex: 2 }} />
-                                <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight, zIndex: 2 }} />
-                                <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight, zIndex: 2 }} />
-                                <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
+                              {/* Esmaecer fora do container (para contextualizar o recorte) */}
+                              <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop, zIndex: 2 }} />
+                              <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight, zIndex: 2 }} />
+                              <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight, zIndex: 2 }} />
+                              <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
 
-                                {/* GHOST sem clip (altura total), visível só durante o arrasto */}
+                              {/* GHOST sem clip (altura total), visível só durante o arrasto */}
+                              <img
+                                src={imageModal.imageUrl}
+                                alt="ghost"
+                                draggable={false}
+                                className="absolute pointer-events-none"
+                                style={{
+                                  left: `${containerLeft + clampedLeft}px`,
+                                  top:  `${containerTop  + clampedTop }px`,
+                                  width:  `${displayW}px`,
+                                  height: `${displayH}px`,
+                                  opacity: isImageDragging ? 0.4 : 0,
+                                  transition: 'opacity 120ms ease',
+                                  objectFit: 'cover',
+                                  backfaceVisibility: 'hidden',
+                                  transform: 'translateZ(0)',
+                                  zIndex: 3
+                                }}
+                              />
+
+                              {/* Container com clip (sem “buracos”) */}
+                              <div
+                                className="absolute bg-neutral-900 rounded-lg"
+                                style={{
+                                  left: containerLeft,
+                                  top:  containerTop,
+                                  width:  containerWidth,
+                                  height: containerHeight,
+                                  overflow: 'hidden',
+                                  zIndex: 4,
+                                }}
+                              >
                                 <img
                                   src={imageModal.imageUrl}
-                                  alt="ghost"
+                                  alt="to-edit"
                                   draggable={false}
-                                  className="absolute pointer-events-none"
                                   style={{
-                                    left: `${containerLeft + clampedLeft}px`,
-                                    top:  `${containerTop  + clampedTop }px`,
+                                    position: 'absolute',
+                                    left: `${clampedLeft}px`,
+                                    top:  `${clampedTop }px`,
                                     width:  `${displayW}px`,
                                     height: `${displayH}px`,
-                                    opacity: isImageDragging ? 0.4 : 0,
-                                    transition: 'opacity 120ms ease',
+                                    userSelect: 'none',
+                                    pointerEvents: 'none',
                                     objectFit: 'cover',
                                     backfaceVisibility: 'hidden',
                                     transform: 'translateZ(0)',
-                                    zIndex: 3
                                   }}
                                 />
 
-                                {/* Container com clip */}
-                                <div
-                                  className="absolute bg-neutral-900 rounded-lg"
-                                  style={{
-                                    left: containerLeft,
-                                    top:  containerTop,
-                                    width:  containerWidth,
-                                    height: containerHeight,
-                                    overflow: 'hidden',
-                                    zIndex: 4,
-                                  }}
-                                >
-                                  <img
-                                    src={imageModal.imageUrl}
-                                    alt="to-edit"
-                                    draggable={false}
-                                    style={{
-                                      position: 'absolute',
-                                      left: `${clampedLeft}px`,
-                                      top:  `${clampedTop }px`,
-                                      width:  `${displayW}px`,
-                                      height: `${displayH}px`,
-                                      userSelect: 'none',
-                                      pointerEvents: 'none',
-                                      objectFit: 'cover',
-                                      backfaceVisibility: 'hidden',
-                                      transform: 'translateZ(0)',
-                                    }}
-                                  />
+                                <DragSurface
+                                  enabled={canDragX || canDragY}
+                                  cursor={dragCursor}
+                                  onDragStart={() => setIsImageDragging(true)}
+                                  onDragEnd={() => setIsImageDragging(false)}
+                                  onDrag={(dx, dy) => {
+                                    // mantém cobertura do container
+                                    const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
+                                    const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
 
-                                  <DragSurface
-                                    enabled={canDragX || canDragY}
-                                    cursor={dragCursor}
-                                    onDragStart={() => setIsImageDragging(true)}
-                                    onDragEnd={() => setIsImageDragging(false)}
-                                    onDrag={(dx, dy) => {
-                                      const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
-                                      const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
-
-                                      if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
-                                        setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
-                                      }
-                                    }}
-                                  />
-
-                                  {/* Resize da altura do container */}
-                                  <div
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    className="absolute left-0 right-0 h-3 -bottom-1 cursor-s-resize"
-                                    style={{ zIndex: 6, background: 'transparent' }}
-                                    onMouseUp={(e) => e.preventDefault()}
-                                    onMouseMove={(e) => e.preventDefault()}
-                                    onMouseDownCapture={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      const startY = e.clientY;
-                                      const startH = containerHeight;
-                                      const onMove = (ev: MouseEvent) => {
-                                        const dy = ev.clientY - startY;
-                                        const newH = Math.max(60, startH + dy);
-
-                                        const newMinLeft = containerWidth - displayW;
-                                        const newMinTop  = newH - displayH;
-
-                                        const adjLeft = clamp(imageModal.imgOffsetLeftPx, newMinLeft, 0);
-                                        const adjTop  = clamp(imageModal.imgOffsetTopPx,  newMinTop,  0);
-
-                                        setImageModal({
-                                          ...imageModal,
-                                          containerHeightPx: newH,
-                                          imgOffsetLeftPx: adjLeft,
-                                          imgOffsetTopPx:  adjTop,
-                                        });
-                                      };
-                                      const onUp = () => {
-                                        window.removeEventListener('mousemove', onMove);
-                                        window.removeEventListener('mouseup', onUp);
-                                      };
-                                      window.addEventListener('mousemove', onMove);
-                                      window.addEventListener('mouseup', onUp);
-                                    }}
-                                  >
-                                    <div className="mx-auto w-12 h-1 rounded-full bg-blue-500/80" />
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()
-                        ) : (
-                          // ======= VÍDEO (CROP RETANGULAR) =======
-                          (() => {
-                            const vLeft = imageModal.videoTargetLeft;
-                            const vTop  = imageModal.videoTargetTop;
-                            const vW    = imageModal.videoTargetW;
-                            const vH    = imageModal.videoTargetH;
-
-                            const rightW = imageModal.slideW - (vLeft + vW);
-                            const bottomH = imageModal.slideH - (vTop + vH);
-
-                            return (
-                              <>
-                                {/* destaque */}
-                                <div
-                                  className="absolute rounded-lg pointer-events-none"
-                                  style={{
-                                    left: vLeft - 2,
-                                    top:  vTop - 2,
-                                    width: vW + 4,
-                                    height: vH + 4,
-                                    boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
-                                    zIndex: 3
+                                    if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
+                                      setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
+                                    }
                                   }}
                                 />
 
-                                {/* esmaecer fora */}
-                                <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: vTop, zIndex: 2 }} />
-                                <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: vTop, width: vLeft, height: vH, zIndex: 2 }} />
-                                <div className="absolute bg-black/30 pointer-events-none" style={{ top: vTop, right: 0, width: rightW, height: vH, zIndex: 2 }} />
-                                <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
-
-                                {/* Retângulo de crop (drag + handles) */}
+                                {/* Redimensiona só a altura do container; recalcula limites de cobertura */}
                                 <div
-                                  className="absolute"
-                                  style={{
-                                    left: vLeft + imageModal.cropX,
-                                    top:  vTop  + imageModal.cropY,
-                                    width: imageModal.cropW,
-                                    height: imageModal.cropH,
-                                    boxShadow: '0 0 0 2px rgba(59,130,246,1), inset 0 0 0 1px rgba(255,255,255,0.6)',
-                                    background: 'transparent',
-                                    cursor: 'move',
-                                    zIndex: 4
-                                  }}
-                                  onMouseDown={(e) => {
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  className="absolute left-0 right-0 h-3 -bottom-1 cursor-s-resize"
+                                  style={{ zIndex: 6, background: 'transparent' }}
+                                  onMouseUp={(e) => e.preventDefault()}
+                                  onMouseMove={(e) => e.preventDefault()}
+                                  onMouseDownCapture={(e) => {
                                     e.preventDefault();
-                                    e.stopPropagation();
-                                    const start = { x: e.clientX, y: e.clientY };
-                                    const startRect = { x: imageModal.cropX, y: imageModal.cropY, w: imageModal.cropW, h: imageModal.cropH };
+                                    const startY = e.clientY;
+                                    const startH = containerHeight;
                                     const onMove = (ev: MouseEvent) => {
-                                      const dx = ev.clientX - start.x;
-                                      const dy = ev.clientY - start.y;
-                                      const vW = imageModal.videoTargetW;
-                                      const vH = imageModal.videoTargetH;
-                                      const nx = clamp(startRect.x + dx, 0, vW - startRect.w);
-                                      const ny = clamp(startRect.y + dy, 0, vH - startRect.h);
-                                      setImageModal(prev => ({ ...prev, cropX: nx, cropY: ny }));
+                                      const dy = ev.clientY - startY;
+                                      const newH = Math.max(60, startH + dy);
+
+                                      // displayW/H (fit-width) não mudam com a altura do container
+                                      const newMinLeft = containerWidth - displayW; // igual a minLeft
+                                      const newMinTop  = newH - displayH;          // novo limite vertical
+
+                                      const adjLeft = clamp(imageModal.imgOffsetLeftPx, newMinLeft, 0);
+                                      const adjTop  = clamp(imageModal.imgOffsetTopPx,  newMinTop,  0);
+
+                                      setImageModal({
+                                        ...imageModal,
+                                        containerHeightPx: newH,
+                                        imgOffsetLeftPx: adjLeft,
+                                        imgOffsetTopPx:  adjTop,
+                                      });
                                     };
                                     const onUp = () => {
                                       window.removeEventListener('mousemove', onMove);
@@ -1274,70 +1151,136 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                     window.addEventListener('mouseup', onUp);
                                   }}
                                 >
-                                  {(['n','s','e','w','ne','nw','se','sw'] as const).map((pos) => {
-                                    const base: React.CSSProperties = {
-                                      position: 'absolute', background: 'white', borderRadius: 999,
-                                      boxShadow: '0 0 0 1px rgba(0,0,0,0.4)', width: 12, height: 12
-                                    };
-                                    const map: Record<string, React.CSSProperties> = {
-                                      n:  { top: -6, left: '50%', marginLeft: -6, cursor: 'ns-resize' },
-                                      s:  { bottom: -6, left: '50%', marginLeft: -6, cursor: 'ns-resize' },
-                                      e:  { right: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
-                                      w:  { left: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
-                                      ne: { top: -6, right: -6, cursor: 'nesw-resize' },
-                                      nw: { top: -6, left: -6, cursor: 'nwse-resize' },
-                                      se: { bottom: -6, right: -6, cursor: 'nwse-resize' },
-                                      sw: { bottom: -6, left: -6, cursor: 'nesw-resize' },
-                                    };
-                                    return (
-                                      <div
-                                        key={pos}
-                                        style={{ ...base, ...map[pos] }}
-                                        onMouseDown={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          const start = { x: e.clientX, y: e.clientY };
-                                          const s = { x: imageModal.cropX, y: imageModal.cropY, w: imageModal.cropW, h: imageModal.cropH };
-                                          const vW = imageModal.videoTargetW;
-                                          const vH = imageModal.videoTargetH;
-                                          const onMove = (ev: MouseEvent) => {
-                                            const dx = ev.clientX - start.x;
-                                            const dy = ev.clientY - start.y;
-                                            let { x, y, w, h } = s;
-
-                                            if (pos.includes('w')) { const nx = x + dx; const dw = x - nx; x = nx; w = w + dw; }
-                                            if (pos.includes('e')) { w = w + dx; }
-                                            if (pos.includes('n')) { const ny = y + dy; const dh = y - ny; y = ny; h = h + dh; }
-                                            if (pos.includes('s')) { h = h + dy; }
-
-                                            w = Math.max(40, Math.min(w, vW));
-                                            h = Math.max(40, Math.min(h, vH));
-                                            x = clamp(x, 0, vW - w);
-                                            y = clamp(y, 0, vH - h);
-
-                                            setImageModal(prev => ({ ...prev, cropX: x, cropY: y, cropW: w, cropH: h }));
-                                          };
-                                          const onUp = () => {
-                                            window.removeEventListener('mousemove', onMove);
-                                            window.removeEventListener('mouseup', onUp);
-                                          };
-                                          window.addEventListener('mousemove', onMove);
-                                          window.addEventListener('mouseup', onUp);
-                                        }}
-                                      />
-                                    );
-                                  })}
+                                  <div className="mx-auto w-12 h-1 rounded-full bg-blue-500/80" />
                                 </div>
-                              </>
-                            );
-                          })()
-                        )}
-                      </div>
-                    </div>
+                              </div>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        // ======= VÍDEO (CROP RETANGULAR) =======
+                        (() => {
+                          const vLeft = imageModal.videoTargetLeft;
+                          const vTop  = imageModal.videoTargetTop;
+                          const vW    = imageModal.videoTargetW;
+                          const vH    = imageModal.videoTargetH;
 
-                    {/* HUD de zoom do popup */}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-neutral-950/90 backdrop-blur-sm text-neutral-300 px-3 py-1.5 rounded text-xs">
-                      Zoom: {Math.round(modalZoom * 100)}%
+                          const rightW = imageModal.slideW - (vLeft + vW);
+                          const bottomH = imageModal.slideH - (vTop + vH);
+
+                          return (
+                            <>
+                              {/* destaque do vídeo */}
+                              <div
+                                className="absolute rounded-lg pointer-events-none"
+                                style={{
+                                  left: vLeft - 2,
+                                  top:  vTop - 2,
+                                  width: vW + 4,
+                                  height: vH + 4,
+                                  boxShadow: '0 0 0 2px rgba(59,130,246,0.9)',
+                                  zIndex: 3
+                                }}
+                              />
+
+                              {/* esmaecer fora do vídeo */}
+                              <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: vTop, zIndex: 2 }} />
+                              <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: vTop, width: vLeft, height: vH, zIndex: 2 }} />
+                              <div className="absolute bg-black/30 pointer-events-none" style={{ top: vTop, right: 0, width: rightW, height: vH, zIndex: 2 }} />
+                              <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
+
+                              {/* Retângulo de crop */}
+                              <div
+                                className="absolute"
+                                style={{
+                                  left: vLeft + imageModal.cropX,
+                                  top:  vTop  + imageModal.cropY,
+                                  width: imageModal.cropW,
+                                  height: imageModal.cropH,
+                                  boxShadow: '0 0 0 2px rgba(59,130,246,1), inset 0 0 0 1px rgba(255,255,255,0.6)',
+                                  background: 'transparent',
+                                  cursor: 'move',
+                                  zIndex: 4
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  const start = { x: e.clientX, y: e.clientY };
+                                  const startRect = { x: imageModal.cropX, y: imageModal.cropY, w: imageModal.cropW, h: imageModal.cropH };
+                                  const onMove = (ev: MouseEvent) => {
+                                    const dx = ev.clientX - start.x;
+                                    const dy = ev.clientY - start.y;
+                                    const vW = imageModal.videoTargetW;
+                                    const vH = imageModal.videoTargetH;
+                                    const nx = clamp(startRect.x + dx, 0, vW - startRect.w);
+                                    const ny = clamp(startRect.y + dy, 0, vH - startRect.h);
+                                    setImageModal(prev => ({ ...prev, cropX: nx, cropY: ny }));
+                                  };
+                                  const onUp = () => {
+                                    window.removeEventListener('mousemove', onMove);
+                                    window.removeEventListener('mouseup', onUp);
+                                  };
+                                  window.addEventListener('mousemove', onMove);
+                                  window.addEventListener('mouseup', onUp);
+                                }}
+                              >
+                                {/* Handles */}
+                                {(['n','s','e','w','ne','nw','se','sw'] as const).map((pos) => {
+                                  const base: React.CSSProperties = {
+                                    position: 'absolute', background: 'white', borderRadius: 999,
+                                    boxShadow: '0 0 0 1px rgba(0,0,0,0.4)', width: 12, height: 12
+                                  };
+                                  const map: Record<string, React.CSSProperties> = {
+                                    n:  { top: -6, left: '50%', marginLeft: -6, cursor: 'ns-resize' },
+                                    s:  { bottom: -6, left: '50%', marginLeft: -6, cursor: 'ns-resize' },
+                                    e:  { right: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
+                                    w:  { left: -6, top: '50%', marginTop: -6, cursor: 'ew-resize' },
+                                    ne: { top: -6, right: -6, cursor: 'nesw-resize' },
+                                    nw: { top: -6, left: -6, cursor: 'nwse-resize' },
+                                    se: { bottom: -6, right: -6, cursor: 'nwse-resize' },
+                                    sw: { bottom: -6, left: -6, cursor: 'nesw-resize' },
+                                  };
+                                  return (
+                                    <div
+                                      key={pos}
+                                      style={{ ...base, ...map[pos] }}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const start = { x: e.clientX, y: e.clientY };
+                                        const s = { x: imageModal.cropX, y: imageModal.cropY, w: imageModal.cropW, h: imageModal.cropH };
+                                        const vW = imageModal.videoTargetW;
+                                        const vH = imageModal.videoTargetH;
+                                        const onMove = (ev: MouseEvent) => {
+                                          const dx = ev.clientX - start.x;
+                                          const dy = ev.clientY - start.y;
+                                          let { x, y, w, h } = s;
+
+                                          if (pos.includes('w')) { const nx = x + dx; const dw = x - nx; x = nx; w = w + dw; }
+                                          if (pos.includes('e')) { w = w + dx; }
+                                          if (pos.includes('n')) { const ny = y + dy; const dh = y - ny; y = ny; h = h + dh; }
+                                          if (pos.includes('s')) { h = h + dy; }
+
+                                          w = Math.max(40, Math.min(w, vW));
+                                          h = Math.max(40, Math.min(h, vH));
+                                          x = clamp(x, 0, vW - w);
+                                          y = clamp(y, 0, vH - h);
+
+                                          setImageModal(prev => ({ ...prev, cropX: x, cropY: y, cropW: w, cropH: h }));
+                                        };
+                                        const onUp = () => {
+                                          window.removeEventListener('mousemove', onMove);
+                                          window.removeEventListener('mouseup', onUp);
+                                        };
+                                        window.addEventListener('mousemove', onMove);
+                                        window.addEventListener('mouseup', onUp);
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1443,8 +1386,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           className="flex-1 overflow-hidden relative bg-neutral-800"
           style={{ cursor: imageModal.open ? 'default' : isDragging ? 'grabbing' : 'grab' }}
           onWheel={(e) => {
-            if (imageModal.open) return;
+            if (imageModal.open) return; // não pan/zoom durante modal
             e.preventDefault();
+            // pan com wheel
             setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
           }}
           onMouseDown={(e) => {
@@ -1498,7 +1442,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             </div>
           </div>
 
-          {/* HUD de zoom (canvas principal) */}
+          {/* HUD de zoom */}
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-neutral-950/90 backdrop-blur-sm text-neutral-400 px-3 py-1.5 rounded text-xs z-[2]">
             Zoom: {Math.round(zoom * 100)}%
           </div>
@@ -1761,7 +1705,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     <label className="text-neutral-400 text-xs mb-2 block font-medium">Font Weight</label>
                     <select
                       className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                      value={getElementStyle[selectedElement.slideIndex, 'subtitle'].fontWeight as any}
+                      value={getElementStyle(selectedElement.slideIndex, 'subtitle').fontWeight}
                       onChange={(e) => updateElementStyle(selectedElement.slideIndex, 'subtitle', 'fontWeight', e.target.value)}
                     >
                       <option value="300">Light (300)</option>
