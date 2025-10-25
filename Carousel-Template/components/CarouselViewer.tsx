@@ -74,7 +74,8 @@ const DragSurface: React.FC<{
   cursor?: React.CSSProperties['cursor'];
   onStart?: () => void;
   onEnd?: () => void;
-}> = ({ onDrag, disabled, cursor, onStart, onEnd }) => {
+  style?: React.CSSProperties;
+}> = ({ onDrag, disabled, cursor, onStart, onEnd, style }) => {
   const dragging = useRef(false);
 
   useEffect(() => {
@@ -102,8 +103,14 @@ const DragSurface: React.FC<{
         dragging.current = true;
         if (onStart) onStart();
       }}
-      className="absolute inset-0"
-      style={{ zIndex: 10, background: 'transparent', cursor: disabled ? 'default' : (cursor || 'move'), pointerEvents: disabled ? 'none' : 'auto' }}
+      className="absolute"
+      style={{
+        zIndex: 10,
+        background: 'transparent',
+        cursor: disabled ? 'default' : (cursor || 'move'),
+        pointerEvents: disabled ? 'none' : 'auto',
+        ...style,
+      }}
     />
   );
 };
@@ -169,7 +176,6 @@ const pickFromSrcset = (srcset: string): string => {
   }
   return bestUrl;
 };
-
 const resolveImgUrl = (img: HTMLImageElement): string => {
   const ds = (img as any).dataset || {};
   const byPriority = [
@@ -213,7 +219,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
   const [isEditingInline, setIsEditingInline] = useState<{ slideIndex: number; element: ElementType } | null>(null);
 
-  // busca/imagem
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -226,7 +231,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [modalDragging, setModalDragging] = useState(false);
   const [modalDragStart, setModalDragStart] = useState({ x: 0, y: 0 });
 
-  // dragging da imagem dentro do container (mostrar imagem inteira enquanto pressiona)
+  // mostrar “fora do container” enquanto arrasta
   const [modalImgDragging, setModalImgDragging] = useState(false);
 
   /** ===== Refs ===== */
@@ -380,7 +385,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (area > 9000) if (!best || area > best.area) best = { type: 'img', el: im, area };
     });
 
-    // bg (prefer não-body se existir outro)
+    // bg
     const bgs = getBgElements(doc);
     bgs.forEach(el => {
       const r = el.getBoundingClientRect();
@@ -405,12 +410,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const targetImg = selectedImageRefs.current[slideIndex];
     if (targetImg && targetImg.getAttribute('data-protected') !== 'true') {
       if (!isVideoUrl(imageUrl)) {
+        // Apenas troca a fonte e marca – NÃO força width/height/objectFit aqui!
         targetImg.removeAttribute('srcset'); targetImg.removeAttribute('sizes'); (targetImg as HTMLImageElement).loading = 'eager';
         (targetImg as HTMLImageElement).src = imageUrl;
         targetImg.setAttribute('data-bg-image-url', imageUrl);
-        (targetImg as HTMLImageElement).style.objectFit = 'cover';
-        (targetImg as HTMLImageElement).style.width = '100%';
-        (targetImg as HTMLImageElement).style.height = '100%';
         return targetImg;
       }
     }
@@ -421,9 +424,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         const img = best.el as HTMLImageElement;
         img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
         img.src = imageUrl; img.setAttribute('data-bg-image-url', imageUrl);
-        img.style.objectFit = 'cover';
-        img.style.width = '100%';
-        img.style.height = '100%';
+        // NÃO setar width/height/objectFit aqui
         return img;
       } else if (best.type === 'bg') {
         best.el.style.setProperty('background-image', `url('${imageUrl}')`, 'important');
@@ -521,9 +522,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             const img = best.el as HTMLImageElement;
             img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
             img.src = bg; img.setAttribute('data-bg-image-url', bg);
-            img.style.objectFit = 'cover';
-            img.style.width = '100%';
-            img.style.height = '100%';
+            // não force layout aqui
           } else if (best.type === 'bg') {
             best.el.style.setProperty('background-image', `url('${bg}')`, 'important');
             best.el.style.setProperty('background-repeat', 'no-repeat', 'important');
@@ -540,7 +539,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   }, [elementStyles, editedContent, originalStyles, renderedSlides]);
 
-  /** ====================== Interações dentro dos iframes (CLICK / DBLCLICK) ======================= */
+  /** ====================== Interações dos iframes (CLICK / DBLCLICK) ======================= */
   useEffect(() => {
     const setupIframe = (iframe: HTMLIFrameElement, slideIndex: number) => {
       if (!iframe.contentWindow) return;
@@ -779,24 +778,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
     if (!doc) return;
 
-    // 1) URL “esperada” do fundo
     const fb = getFallbackBackground(slideIndex);
     const expectedUrl = fb?.url || '';
 
-    // 2) elemento selecionado no iframe
     const currentlySelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
-
-    // 3) candidatos com background-image
-    const getBgElements = (doc2: Document) =>
-      Array.from(doc2.querySelectorAll<HTMLElement>('body,div,section,header,main,figure,article'))
-        .filter(el => {
-          const cs = doc2.defaultView?.getComputedStyle(el);
-          return !!cs && cs.backgroundImage && cs.backgroundImage.includes('url(');
-        });
-
     const bgEls = getBgElements(doc);
 
-    // 3.1) tenta casar por URL
     const matchByUrl = (() => {
       if (!expectedUrl) return null;
       const norm = (u: string) => u.replace(/['"]/g, '');
@@ -811,10 +798,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       return (nonBody[0] || matches[0]) as HTMLElement;
     })();
 
-    // 3.2) maior visual
     const largest = findLargestVisual(doc);
 
-    // 4) choose
     let chosen: HTMLElement | null =
       currentlySelected ||
       matchByUrl ||
@@ -875,7 +860,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const targetTopPx  = r.top  - bodyRect.top;
     const targetWidthPx = r.width;
     const targetHeightPx = r.height;
-
     const containerHeightPx = targetHeightPx;
 
     const finalizeOpenImg = (natW: number, natH: number) => {
@@ -1287,7 +1271,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         style={{ zIndex: 1 }}
                       />
 
-                      {/* ======= MODO IMAGEM - sem “feixe de luz”, com imagem inteira enquanto pressiona ======= */}
+                      {/* ======= MODO IMAGEM ======= */}
                       {!imageModal.isVideo ? (
                         (() => {
                           const containerLeft = imageModal.targetLeftPx;
@@ -1313,6 +1297,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           const dragCursor: React.CSSProperties['cursor'] =
                             canDragX && canDragY ? 'move' : canDragX ? 'ew-resize' : canDragY ? 'ns-resize' : 'default';
 
+                          // posição absoluta da imagem no espaço do slide
+                          const imgAbsLeft = containerLeft + clampedLeft;
+                          const imgAbsTop  = containerTop  + clampedTop;
+
                           return (
                             <>
                               {/* contorno do container */}
@@ -1327,7 +1315,31 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   zIndex: 2
                                 }}
                               />
-                              {/* máscara do container: overflow visível enquanto arrasta; escondido quando solta */}
+
+                              {/* 1) Cópia DIM do lado de fora (apenas enquanto arrasta) */}
+                              {modalImgDragging && (
+                                <img
+                                  src={imageModal.imageUrl}
+                                  alt="full-dim"
+                                  draggable={false}
+                                  style={{
+                                    position: 'absolute',
+                                    left: imgAbsLeft,
+                                    top: imgAbsTop,
+                                    width: `${displayW}px`,
+                                    height: `${displayH}px`,
+                                    opacity: 0.4,                 // <— reduzido fora
+                                    pointerEvents: 'none',
+                                    userSelect: 'none',
+                                    objectFit: 'cover',
+                                    backfaceVisibility: 'hidden',
+                                    transform: 'translateZ(0)',
+                                    zIndex: 2.5, // abaixo da versão 100% (dentro do container)
+                                  }}
+                                />
+                              )}
+
+                              {/* 2) Container “máscara” com a imagem 100% */}
                               <div
                                 className="absolute bg-transparent rounded-lg"
                                 style={{
@@ -1335,11 +1347,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   top: containerTop,
                                   width: containerWidth,
                                   height: containerHeight,
-                                  overflow: modalImgDragging ? 'visible' : 'hidden',
+                                  overflow: modalImgDragging ? 'hidden' : 'hidden', // a cópia dim já cobre fora
                                   zIndex: 3
                                 }}
                               >
-                                {/* imagem (fica acima do iframe sempre) */}
                                 <img
                                   src={imageModal.imageUrl}
                                   alt="to-edit"
@@ -1358,42 +1369,48 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                     zIndex: 4,
                                   }}
                                 />
-
-                                {/* superfície de drag: ativa “show full image” apenas enquanto mouse pressionado */}
-                                <DragSurface
-                                  disabled={!canDragX && !canDragY}
-                                  cursor={dragCursor}
-                                  onStart={() => setModalImgDragging(true)}
-                                  onEnd={() => setModalImgDragging(false)}
-                                  onDrag={(dx, dy) => {
-                                    const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
-                                    const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
-                                    if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
-                                      setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
-                                    }
-                                  }}
-                                />
-
-                                {/* resize vertical do container */}
-                                <ResizeBar
-                                  position="bottom"
-                                  onResize={(dy) => {
-                                    const newH = Math.max(60, containerHeight + dy);
-                                    const { displayW: newDisplayW, displayH: newDisplayH } =
-                                      computeCoverBleed(imageModal.naturalW, imageModal.naturalH, containerWidth, newH, 2);
-                                    const newMinTop  = newH - newDisplayH;
-                                    const newMinLeft = containerWidth - newDisplayW;
-                                    const adjTop  = clamp(imageModal.imgOffsetTopPx,  newMinTop,  0);
-                                    const adjLeft = clamp(imageModal.imgOffsetLeftPx, newMinLeft, 0);
-                                    setImageModal({
-                                      ...imageModal,
-                                      containerHeightPx: newH,
-                                      imgOffsetTopPx: adjTop,
-                                      imgOffsetLeftPx: adjLeft
-                                    });
-                                  }}
-                                />
                               </div>
+
+                              {/* 3) Área de drag cobrindo TODA a imagem (para permitir clicar inclusive na parte fora do container) */}
+                              <DragSurface
+                                disabled={!canDragX && !canDragY}
+                                cursor={dragCursor}
+                                onStart={() => setModalImgDragging(true)}
+                                onEnd={() => setModalImgDragging(false)}
+                                onDrag={(dx, dy) => {
+                                  const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
+                                  const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
+                                  if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
+                                    setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
+                                  }
+                                }}
+                                style={{
+                                  left: imgAbsLeft,
+                                  top: imgAbsTop,
+                                  width: `${displayW}px`,
+                                  height: `${displayH}px`,
+                                }}
+                              />
+
+                              {/* resize vertical do container */}
+                              <ResizeBar
+                                position="bottom"
+                                onResize={(dy) => {
+                                  const newH = Math.max(60, containerHeight + dy);
+                                  const { displayW: newDisplayW, displayH: newDisplayH } =
+                                    computeCoverBleed(imageModal.naturalW, imageModal.naturalH, containerWidth, newH, 2);
+                                  const newMinTop  = newH - newDisplayH;
+                                  const newMinLeft = containerWidth - newDisplayW;
+                                  const adjTop  = clamp(imageModal.imgOffsetTopPx,  newMinTop,  0);
+                                  const adjLeft = clamp(imageModal.imgOffsetLeftPx, newMinLeft, 0);
+                                  setImageModal({
+                                    ...imageModal,
+                                    containerHeightPx: newH,
+                                    imgOffsetTopPx: adjTop,
+                                    imgOffsetLeftPx: adjLeft
+                                  });
+                                }}
+                              />
                             </>
                           );
                         })()
