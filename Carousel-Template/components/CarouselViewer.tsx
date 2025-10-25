@@ -193,150 +193,6 @@ const computeImageBox = (
   return { width, height, offsetLeft, offsetTop };
 };
 
-const WRAPPER_INLINE_PROPS = [
-  'position',
-  'top',
-  'right',
-  'bottom',
-  'left',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'display',
-  'align-self',
-  'justify-self',
-  'transform',
-  'z-index',
-  'flex',
-  'flex-grow',
-  'flex-shrink',
-  'flex-basis',
-  'grid-column',
-  'grid-row',
-  'grid-area',
-] as const;
-
-const WRAPPER_COMPUTED_PROPS = [
-  'display',
-  'position',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'transform',
-  'align-self',
-  'justify-self',
-  'z-index',
-] as const;
-
-type WrapperInlineProp = (typeof WRAPPER_INLINE_PROPS)[number];
-type WrapperComputedProp = (typeof WRAPPER_COMPUTED_PROPS)[number];
-
-type WrapperStyleSnapshot = {
-  inline: Partial<Record<WrapperInlineProp, string>>;
-  computed: Partial<Record<WrapperComputedProp, string>>;
-};
-
-const captureWrapperSnapshot = (
-  el: HTMLElement,
-  computed: CSSStyleDeclaration | null
-): WrapperStyleSnapshot => {
-  const inline: WrapperStyleSnapshot['inline'] = {};
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = el.style.getPropertyValue(prop);
-    if (value) inline[prop] = value;
-  });
-
-  const computedRecord: WrapperStyleSnapshot['computed'] = {};
-  if (computed) {
-    WRAPPER_COMPUTED_PROPS.forEach((prop) => {
-      const value = computed.getPropertyValue(prop);
-      if (value && value !== 'auto' && value !== 'normal' && value !== 'none') {
-        computedRecord[prop] = value;
-      }
-    });
-  }
-
-  return { inline, computed: computedRecord };
-};
-
-const parseWrapperSnapshot = (value: string | undefined): WrapperStyleSnapshot | null => {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as WrapperStyleSnapshot;
-  } catch (err) {
-    console.warn('Failed to parse wrapper snapshot', err);
-    return null;
-  }
-};
-
-const applyWrapperSnapshot = (
-  wrapper: HTMLElement,
-  snapshot: WrapperStyleSnapshot | null
-) => {
-  const ensureRelative = () => {
-    if (!wrapper.style.getPropertyValue('position')) {
-      wrapper.style.setProperty('position', 'relative');
-    }
-  };
-
-  if (!snapshot) {
-    ensureRelative();
-    if (!wrapper.style.getPropertyValue('display')) {
-      wrapper.style.setProperty('display', 'inline-block');
-    }
-    return;
-  }
-
-  const { inline, computed } = snapshot;
-
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = inline[prop];
-    if (value) {
-      const applied = prop === 'display' && value === 'inline' ? 'inline-block' : value;
-      wrapper.style.setProperty(prop, applied);
-    }
-  });
-
-  const positionValue = inline['position'] || computed['position'];
-  if (positionValue && positionValue !== 'static') {
-    wrapper.style.setProperty('position', positionValue);
-  } else {
-    ensureRelative();
-  }
-
-  const displayValue = inline['display'] || computed['display'];
-  if (displayValue) {
-    const applied = displayValue === 'inline' ? 'inline-block' : displayValue;
-    wrapper.style.setProperty('display', applied);
-  } else if (!wrapper.style.getPropertyValue('display')) {
-    wrapper.style.setProperty('display', 'inline-block');
-  }
-
-  (['margin-top', 'margin-right', 'margin-bottom', 'margin-left'] as const).forEach((prop) => {
-    if (inline[prop]) return;
-    const val = computed[prop];
-    if (val) wrapper.style.setProperty(prop, val);
-  });
-
-  if (!inline['transform'] && computed['transform']) {
-    wrapper.style.setProperty('transform', computed['transform']);
-  }
-
-  if (!inline['align-self'] && computed['align-self']) {
-    wrapper.style.setProperty('align-self', computed['align-self']);
-  }
-
-  if (!inline['justify-self'] && computed['justify-self']) {
-    wrapper.style.setProperty('justify-self', computed['justify-self']);
-  }
-
-  if (!inline['z-index'] && computed['z-index']) {
-    wrapper.style.setProperty('z-index', computed['z-index']);
-  }
-};
-
 /** ========= Helpers de URL/Imagem ========= */
 const pickFromSrcset = (srcset: string): string => {
   const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
@@ -1441,7 +1297,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         target.style.setProperty('background-size', 'cover', 'important');
         target.style.setProperty('background-position-x', `${xPerc}%`, 'important');
         target.style.setProperty('background-position-y', `${yPerc}%`, 'important');
-        target.style.setProperty('width', `${imageState.targetWidthPx}px`, 'important');
         target.style.setProperty('height', `${imageState.containerHeightPx}px`, 'important');
         if ((doc.defaultView?.getComputedStyle(target).position || 'static') === 'static') {
           target.style.position = 'relative';
@@ -1465,8 +1320,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
 
       const wrapperEl = imgWrapper as HTMLElement;
-      applyWrapperSnapshot(wrapperEl, imageState.wrapperSnapshot);
-      wrapperEl.style.overflow = 'hidden';
       wrapperEl.style.width = `${imageState.targetWidthPx}px`;
       wrapperEl.style.height = `${imageState.containerHeightPx}px`;
 
@@ -1795,7 +1648,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {(imageModal.targetType === 'img' || imageModal.targetType === 'bg') && (
+                              {imageModal.targetType === 'img' && (
                                 <>
                                   {/* resize horizontal */}
                                   <DragSurface
