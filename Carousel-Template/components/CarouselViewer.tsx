@@ -614,8 +614,8 @@ const [modalZoom, setModalZoom] = useState(0.5);
   /** ====================== Modal: abrir/aplicar ======================= */
   const openImageEditModal = (slideIndex: number) => {
     // reset canvas do modal
-    setModalZoom(1);
-    setModalPan({ x: 0, y: 0 });
+  setModalZoom(0.5);
+  setModalPan({ x: 0, y: 0 });
 
     const iframe = iframeRefs.current[slideIndex];
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
