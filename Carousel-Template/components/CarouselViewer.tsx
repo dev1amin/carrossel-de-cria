@@ -931,7 +931,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         className="fixed top-14 left-16 right-0 bottom-0 bg-neutral-900 flex"
         style={{ zIndex: 99 }}
       >      
-        {/* Modal */}
+      {/* Modal */}
       {imageModal.open && (
         <ModalPortal>
           <div className="fixed inset-0 z-[9999]">
