@@ -43,6 +43,7 @@ type ImageEditModalState =
       targetWidthPx: number;
       targetLeftPx: number;
       targetTopPx: number;
+      wrapperSnapshot: WrapperStyleSnapshot | null;
 
       // VÍDEO
       isVideo: boolean;
@@ -891,7 +892,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     if (!imageUrl && expectedUrl) imageUrl = expectedUrl;
     if (!imageUrl) return;
 
-    const r = chosen.getBoundingClientRect();
+    const existingWrapper =
+      targetType === 'img' && chosen.parentElement?.classList.contains('img-crop-wrapper')
+        ? (chosen.parentElement as HTMLElement)
+        : null;
+    const layoutTarget = existingWrapper ?? chosen;
+
+    const r = layoutTarget.getBoundingClientRect();
     const bodyRect = doc.body.getBoundingClientRect();
     const targetLeftPx = r.left - bodyRect.left;
     const targetTopPx  = r.top  - bodyRect.top;
@@ -909,8 +916,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       let imgOffsetLeftPx = centerLeft;
 
       if (targetType === 'img') {
-        const top = parseFloat((chosen as HTMLImageElement).style.top || `${centerTop}`);
-        const left = parseFloat((chosen as HTMLImageElement).style.left || `${centerLeft}`);
+        const imgEl = chosen as HTMLImageElement;
+        const top = parseFloat(imgEl.style.top || `${centerTop}`);
+        const left = parseFloat(imgEl.style.left || `${centerLeft}`);
         imgOffsetTopPx = clamp(isNaN(top) ? centerTop : top, minTop, 0);
         imgOffsetLeftPx = clamp(isNaN(left) ? centerLeft : left, minLeft, 0);
       } else if (targetType === 'bg') {
@@ -923,6 +931,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         const offX = pxFromPerc(toPerc(bgPosX), displayW - contW);
         imgOffsetTopPx = clamp(isNaN(offY) ? centerTop : offY, minTop, 0);
         imgOffsetLeftPx = clamp(isNaN(offX) ? centerLeft : offX, minLeft, 0);
+      }
+
+      const snapshotTarget = targetType === 'img' ? (existingWrapper ?? chosen) : chosen;
+      const snapshotStyles = doc.defaultView?.getComputedStyle(snapshotTarget) || null;
+      const snapshot = captureWrapperSnapshot(snapshotTarget, snapshotStyles);
+      if (Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length) {
+        (snapshotTarget as HTMLElement).dataset.editWrapperSnapshot = JSON.stringify(snapshot);
       }
 
       setImageModal({
@@ -941,6 +956,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         targetWidthPx,
         targetLeftPx,
         targetTopPx,
+        wrapperSnapshot: Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length ? snapshot : null,
         isVideo: false,
         videoTargetW: 0,
         videoTargetH: 0,
@@ -985,6 +1001,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         cropY: 0,
         cropW: videoW,
         cropH: videoH,
+        wrapperSnapshot: null,
       });
       document.documentElement.style.overflow = 'hidden';
     } else {
@@ -992,8 +1009,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       tmp.crossOrigin = 'anonymous';
       tmp.src = imageUrl;
       const natDone = () => finalizeOpenImg(tmp.naturalWidth || targetWidthPx, tmp.naturalHeight || targetHeightPx);
+      const natFallback = () => finalizeOpenImg(
+        Math.max(1, targetWidthPx || containerHeightPx || slideWidth),
+        Math.max(1, containerHeightPx || targetHeightPx || slideHeight)
+      );
       if (tmp.complete && tmp.naturalWidth && tmp.naturalHeight) natDone();
-      else tmp.onload = natDone;
+      else {
+        tmp.onload = natDone;
+        tmp.onerror = natFallback;
+      }
     }
   };
 
@@ -1064,8 +1088,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         wrapper = w;
       }
 
-      (wrapper as HTMLElement).style.width = `${targetWidthPx}px`;
-      (wrapper as HTMLElement).style.height = `${containerHeightPx}px`;
+      const wrapperEl = wrapper as HTMLElement;
+      const snapshotFromState = imageModal.wrapperSnapshot;
+      const datasetSnapshot =
+        parseWrapperSnapshot(wrapperEl.dataset.editWrapperSnapshot) ||
+        parseWrapperSnapshot((el as HTMLElement).dataset.editWrapperSnapshot);
+      const snapshotToApply = snapshotFromState || datasetSnapshot;
+      applyWrapperSnapshot(wrapperEl, snapshotToApply);
+      wrapperEl.style.overflow = 'hidden';
+      wrapperEl.style.width = `${targetWidthPx}px`;
+      wrapperEl.style.height = `${containerHeightPx}px`;
 
       const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
       const displayW = Math.ceil(naturalW * scale) + 2;
@@ -1093,6 +1125,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       img.style.objectFit = 'cover';
       img.style.backfaceVisibility = 'hidden';
       img.style.transform = 'translateZ(0)';
+
+      const updatedSnapshot = captureWrapperSnapshot(
+        wrapperEl,
+        doc.defaultView?.getComputedStyle(wrapperEl) || null
+      );
+      if (Object.keys(updatedSnapshot.inline).length || Object.keys(updatedSnapshot.computed).length) {
+        wrapperEl.dataset.editWrapperSnapshot = JSON.stringify(updatedSnapshot);
+      } else {
+        delete wrapperEl.dataset.editWrapperSnapshot;
+      }
+      delete (el as HTMLElement).dataset.editWrapperSnapshot;
     } else if (targetType === 'bg') {
       const scale = Math.max(targetWidthPx / naturalW, containerHeightPx / naturalH);
       const displayW = Math.ceil(naturalW * scale);
@@ -1111,6 +1154,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       el.style.setProperty('background-size', 'cover', 'important');
       el.style.setProperty('background-position-x', `${xPerc}%`, 'important');
       el.style.setProperty('background-position-y', `${yPerc}%`, 'important');
+      el.style.setProperty('width', `${targetWidthPx}px`, 'important');
       el.style.setProperty('height', `${containerHeightPx}px`, 'important');
       if ((doc.defaultView?.getComputedStyle(el).position || 'static') === 'static') el.style.position = 'relative';
     }
