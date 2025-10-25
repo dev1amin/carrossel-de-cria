@@ -136,7 +136,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const slideHeight = 1350;
   const gap = 40;
 
-  /** ===== Estado global ===== */
+  /** ===== Estado global (canvas principal) ===== */
   const [zoom, setZoom] = useState(0.35);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -161,7 +161,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [isSearching, setIsSearching] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<Record<number, string>>({});
 
-  // modal
+  // modal (edição)
   const [imageModal, setImageModal] = useState<ImageEditModalState>({ open: false });
   const [isImageDragging, setIsImageDragging] = useState(false);
 
@@ -171,6 +171,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const selectedImageRefs = useRef<Record<number, HTMLImageElement | null>>({});
   const lastSearchId = useRef(0);
 
+  /** ======= ESTADO DO CANVAS DO POPUP (igual ao do editor, mas 1 slide) ======= */
+  const modalCanvasRef = useRef<HTMLDivElement>(null);
+  const [modalZoom, setModalZoom] = useState(1);
+  const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
+  const [modalIsDragging, setModalIsDragging] = useState(false);
+  const [modalDragStart, setModalDragStart] = useState({ x: 0, y: 0 });
+
   /** ====================== Efeitos ======================= */
   useEffect(() => {
     // Seleção inicial sempre no BG do slide 0
@@ -178,7 +185,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setExpandedLayers(s => new Set(s).add(0));
   }, []);
 
-  // prepara srcDoc (injeção de ids e marcações editáveis)
   const ensureStyleTag = (html: string): string => {
     if (/<style>/i.test(html)) return html;
     return html.replace(
@@ -230,7 +236,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setRenderedSlides(injected);
   }, [slides, carouselData.conteudos]);
 
-  // posiciona no slide 0 ao abrir
   useEffect(() => {
     const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
     const slidePosition = 0 * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
@@ -239,14 +244,13 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // configura interações dentro dos iframes
+  // marca e aplica conteúdos em iframes
   useEffect(() => {
     iframeRefs.current.forEach((iframe, index) => {
       if (!iframe || !iframe.contentWindow) return;
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
 
-      // marcar imagens/vídeos
       const imgs = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
       let imgIdx = 0;
       imgs.forEach((img) => {
@@ -270,7 +274,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         v.style.height = '100%';
       });
 
-      // aplica conteúdo/estilos
       const applyText = (id: string, key: string) => {
         const el = doc.getElementById(id);
         if (!el) return;
@@ -294,7 +297,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
         if (content && el.getAttribute('contenteditable') !== 'true') el.textContent = content;
 
-        // captura originais
         setTimeout(() => {
           if (!originalStyles[key]) {
             const cs = doc.defaultView?.getComputedStyle(el as HTMLElement);
@@ -393,7 +395,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     return () => clearTimeout(timer);
   }, [renderedSlides]);
 
-  // atalhos: ESC fecha; setas trocam slide
+  // atalhos
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -408,12 +410,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
         onClose();
       }
-      if (e.key === 'ArrowRight') {
-        handleSlideClick(Math.min(focusedSlide + 1, slides.length - 1));
-      }
-      if (e.key === 'ArrowLeft') {
-        handleSlideClick(Math.max(focusedSlide - 1, 0));
-      }
+      if (e.key === 'ArrowRight') handleSlideClick(Math.min(focusedSlide + 1, slides.length - 1));
+      if (e.key === 'ArrowLeft')  handleSlideClick(Math.max(focusedSlide - 1, 0));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -462,7 +460,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   const handleSlideClick = (index: number) => {
-    // limpa seleções visuais dentro dos iframes
     iframeRefs.current.forEach((iframe) => {
       const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
       if (!doc) return;
@@ -476,24 +473,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const totalWidth = slideWidth * slides.length + gap * (slides.length - 1);
     const slidePosition = index * (slideWidth + gap) - totalWidth / 2 + slideWidth / 2;
     setPan({ x: -slidePosition * zoom, y: 0 });
-  };
-
-  const handleElementClick = (slideIndex: number, element: ElementType) => {
-    setIsLoadingProperties(true);
-
-    const iframe = iframeRefs.current[slideIndex];
-    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-    if (doc && element) {
-      doc.querySelectorAll('[data-editable]').forEach((el) => el.classList.remove('selected'));
-      const target = doc.getElementById(`slide-${slideIndex}-${element}`);
-      if (target) target.classList.add('selected');
-      else if (element === 'background') doc.body.classList.add('selected');
-    }
-
-    setSelectedElement({ slideIndex, element });
-    setFocusedSlide(slideIndex);
-    if (!expandedLayers.has(slideIndex)) toggleLayer(slideIndex);
-    setTimeout(() => setIsLoadingProperties(false), 80);
   };
 
   /** ====================== Background / Upload / Busca ======================= */
@@ -634,6 +613,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   /** ====================== Modal: abrir/aplicar ======================= */
   const openImageEditModal = (slideIndex: number) => {
+    // reset canvas do modal
+    setModalZoom(1);
+    setModalPan({ x: 0, y: 0 });
+
     const iframe = iframeRefs.current[slideIndex];
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
     if (!doc) return;
@@ -785,7 +768,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     } = imageModal;
 
     if (isVideo && targetType === 'vid') {
-      // aplica crop real com wrapper
       const vid = el as HTMLVideoElement;
       let wrapper = vid.parentElement;
       if (!wrapper || !wrapper.classList.contains('vid-crop-wrapper')) {
@@ -877,7 +859,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     document.documentElement.style.overflow = '';
   };
 
-  /** ====================== TopBar ======================= */
+  /** ====================== TopBar (principal) ======================= */
   const topBar = (
     <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
       <div className="flex items-center space-x-4">
@@ -928,7 +910,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   /** ====================== Render ======================= */
   return (
     <div className="fixed top-14 left-16 right-0 bottom-0 z-[90] bg-neutral-900 flex">
-      {/* Modal */}
+      {/* Modal com CANVAS (um único slide) */}
       {imageModal.open && (
         <ModalPortal>
           <div className="fixed inset-0 z-[9999]">
@@ -940,14 +922,33 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                 aria-modal="true"
                 style={{ resize: 'vertical' }}
               >
+                {/* Header do modal + controles de zoom */}
                 <div className="h-12 px-4 flex items-center justify-between border-b border-neutral-800">
                   <div className="text-white font-medium text-sm">
                     {imageModal.isVideo ? 'Crop do vídeo' : 'Edição da imagem'} — Slide {imageModal.slideIndex + 1}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => setModalZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded"
+                      title="Zoom out (popup)"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <div className="text-xs text-neutral-300 min-w-[46px] text-center">
+                      {Math.round(modalZoom * 100)}%
+                    </div>
+                    <button
+                      onClick={() => setModalZoom(z => Math.min(4, +(z + 0.1).toFixed(2)))}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white p-2 rounded"
+                      title="Zoom in (popup)"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+
+                    <button
                       onClick={applyImageEditModal}
-                      className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
+                      className="ml-3 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded"
                     >
                       Aplicar
                     </button>
@@ -961,61 +962,93 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                   </div>
                 </div>
 
-                {/* conteúdo */}
-                <div className="w-full h-[calc(100%-3rem)] p-4 overflow-auto">
-                  {/* Instruções */}
-                  {imageModal.isVideo ? (
-                    <div className="text-neutral-400 text-xs mb-3 space-y-1">
-                      <div>• Arraste o <span className="text-neutral-200">retângulo</span> para mover o crop.</div>
-                      <div>• Use os <span className="text-neutral-200">handles</span> nas bordas/cantos para redimensionar.</div>
-                      <div>• Apenas a área dentro do retângulo será exibida no slide.</div>
-                    </div>
-                  ) : (
-                    <div className="text-neutral-400 text-xs mb-3 space-y-1">
-                      <div>• Arraste a imagem (quando houver margem) para ajustar o enquadramento.</div>
-                      <div>• Arraste a borda inferior do container para alterar sua altura.</div>
-                      <div>• Áreas fora do container ficam visíveis a 40% durante o arrasto.</div>
-                    </div>
-                  )}
+                {/* Canvas do modal */}
+                <div
+                  ref={modalCanvasRef}
+                  className="w-full h-[calc(100%-3rem)] bg-neutral-900 relative overflow-hidden"
+                  onWheel={(e) => {
+                    // Ctrl + scroll = zoom com foco no ponteiro; caso contrário, pan
+                    e.preventDefault();
+                    if (e.ctrlKey) {
+                      const container = modalCanvasRef.current!;
+                      const rect = container.getBoundingClientRect();
+                      const mouseX = (e.clientX - rect.left - modalPan.x) / modalZoom;
+                      const mouseY = (e.clientY - rect.top  - modalPan.y) / modalZoom;
 
-                  <div className="grid place-items-center">
+                      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                      const newZoom = clamp(+(modalZoom + delta).toFixed(2), 0.25, 4);
+
+                      setModalZoom(newZoom);
+                      setModalPan({
+                        x: e.clientX - rect.left - mouseX * newZoom,
+                        y: e.clientY - rect.top  - mouseY * newZoom,
+                      });
+                      return;
+                    }
+                    // pan
+                    setModalPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+                  }}
+                  onMouseDown={(e) => {
+                    // pan somente se clicar no "fundo" do canvas (fora das overlays)
+                    if ((e.target as HTMLElement).closest('[data-modal-overlay="true"]')) return;
+                    if (e.button === 0) {
+                      setModalIsDragging(true);
+                      setModalDragStart({ x: e.clientX - modalPan.x, y: e.clientY - modalPan.y });
+                    }
+                  }}
+                  onMouseMove={(e) => {
+                    if (modalIsDragging) {
+                      setModalPan({ x: e.clientX - modalDragStart.x, y: e.clientY - modalDragStart.y });
+                    }
+                  }}
+                  onMouseUp={() => setModalIsDragging(false)}
+                  onMouseLeave={() => setModalIsDragging(false)}
+                >
+                  {/* Layer central com o slide (igual ao canvas principal) */}
+                  <div
+                    className="absolute"
+                    style={{
+                      transform: `translate(${modalPan.x}px, ${modalPan.y}px) scale(${modalZoom})`,
+                      transformOrigin: 'center center',
+                      left: '50%',
+                      top: '50%',
+                      marginLeft: `-${imageModal.slideW / 2}px`,
+                      marginTop: `-${imageModal.slideH / 2}px`,
+                      transition: modalIsDragging ? 'none' : 'transform 0.18s ease-out',
+                    }}
+                  >
+                    {/* SLIDE como iframe */}
                     <div
                       className="relative bg-neutral-100 rounded-xl shadow-xl border border-neutral-800"
-                      style={{
-                        width: `${imageModal.slideW}px`,
-                        height: `${imageModal.slideH}px`,
-                        overflow: 'hidden',
-                      }}
+                      style={{ width: imageModal.slideW, height: imageModal.slideH, overflow: 'hidden' }}
+                      data-modal-overlay="true"
                     >
-                      {/* Preview do SLIDE COMPLETO */}
                       <iframe
                         srcDoc={renderedSlides[imageModal.slideIndex]}
                         className="absolute inset-0 w-full h-full pointer-events-none"
                         sandbox="allow-same-origin allow-scripts"
                         title={`Slide Preview ${imageModal.slideIndex + 1}`}
+                        style={{ zIndex: 1 }}
                       />
 
-                      {/* Overlay específico */}
+                      {/* Overlays alinhadas no mesmo layer transformado */}
                       {!imageModal.isVideo ? (
-                        // ======= IMAGEM (fit-width + sempre cobrindo o container) =======
+                        // ======= IMAGEM =======
                         (() => {
                           const containerLeft = imageModal.targetLeftPx;
                           const containerTop = imageModal.targetTopPx;
                           const containerWidth = imageModal.targetWidthPx;
                           const containerHeight = imageModal.containerHeightPx;
 
-                          // Fit-width: mostra a imagem com altura total proporcional à largura do container
                           const { displayW, displayH } = computeFitWidthBleed(
                             imageModal.naturalW, imageModal.naturalH, containerWidth, 0
                           );
 
-                          // Limites para **sempre cobrir** o container (sem “buracos”)
-                          const minLeft  = containerWidth - displayW;  // <= 0
+                          const minLeft  = containerWidth  - displayW;
+                          const minTop   = containerHeight - displayH;
                           const maxLeft  = 0;
-                          const minTop   = containerHeight - displayH; // <= 0
                           const maxTop   = 0;
 
-                          // Clamp na renderização (impede fugir e deixar fundo exposto)
                           const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, maxLeft);
                           const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop,  maxTop);
 
@@ -1042,23 +1075,23 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {/* Esmaecer fora do container (para contextualizar o recorte) */}
+                              {/* Esmaecer fora do container */}
                               <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop, zIndex: 2 }} />
                               <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight, zIndex: 2 }} />
                               <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight, zIndex: 2 }} />
                               <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
 
-                              {/* GHOST sem clip (altura total), visível só durante o arrasto */}
+                              {/* GHOST sem clip (total), visível só durante arrasto */}
                               <img
                                 src={imageModal.imageUrl}
                                 alt="ghost"
                                 draggable={false}
                                 className="absolute pointer-events-none"
                                 style={{
-                                  left: `${containerLeft + clampedLeft}px`,
-                                  top:  `${containerTop  + clampedTop }px`,
-                                  width:  `${displayW}px`,
-                                  height: `${displayH}px`,
+                                  left: containerLeft + clampedLeft,
+                                  top:  containerTop  + clampedTop,
+                                  width:  displayW,
+                                  height: displayH,
                                   opacity: isImageDragging ? 0.4 : 0,
                                   transition: 'opacity 120ms ease',
                                   objectFit: 'cover',
@@ -1068,7 +1101,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {/* Container com clip (sem “buracos”) */}
+                              {/* Container com clip */}
                               <div
                                 className="absolute bg-neutral-900 rounded-lg"
                                 style={{
@@ -1079,6 +1112,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   overflow: 'hidden',
                                   zIndex: 4,
                                 }}
+                                data-modal-overlay="true"
                               >
                                 <img
                                   src={imageModal.imageUrl}
@@ -1104,9 +1138,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   onDragStart={() => setIsImageDragging(true)}
                                   onDragEnd={() => setIsImageDragging(false)}
                                   onDrag={(dx, dy) => {
-                                    // mantém cobertura do container
-                                    const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
-                                    const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
+                                    // dx/dy em pixels de tela -> converter para espaço do slide
+                                    const sdx = dx / modalZoom;
+                                    const sdy = dy / modalZoom;
+
+                                    const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + sdx, minLeft, maxLeft) : clampedLeft;
+                                    const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + sdy, minTop,  maxTop) : clampedTop;
 
                                     if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
                                       setImageModal({ ...imageModal, imgOffsetLeftPx: nextLeft, imgOffsetTopPx: nextTop });
@@ -1114,19 +1151,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   }}
                                 />
 
-                                {/* Redimensiona só a altura do container; recalcula limites de cobertura */}
+                                {/* Redimensiona a altura do container com dy normalizado pelo zoom */}
                                 <div
-                                  onMouseDown={(e) => e.preventDefault()}
                                   className="absolute left-0 right-0 h-3 -bottom-1 cursor-s-resize"
                                   style={{ zIndex: 6, background: 'transparent' }}
-                                  onMouseUp={(e) => e.preventDefault()}
-                                  onMouseMove={(e) => e.preventDefault()}
-                                  onMouseDownCapture={(e) => {
+                                  data-modal-overlay="true"
+                                  onMouseDown={(e) => {
                                     e.preventDefault();
                                     const startY = e.clientY;
                                     const startH = containerHeight;
                                     const onMove = (ev: MouseEvent) => {
-                                      const dy = ev.clientY - startY;
+                                      const dyScreen = ev.clientY - startY;
+                                      const dy = dyScreen / modalZoom; // normaliza pelo zoom do modal
                                       const newH = Math.max(60, startH + dy);
 
                                       // displayW/H (fit-width) não mudam com a altura do container
@@ -1158,7 +1194,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           );
                         })()
                       ) : (
-                        // ======= VÍDEO (CROP RETANGULAR) =======
+                        // ======= VÍDEO =======
                         (() => {
                           const vLeft = imageModal.videoTargetLeft;
                           const vTop  = imageModal.videoTargetTop;
@@ -1170,7 +1206,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
                           return (
                             <>
-                              {/* destaque do vídeo */}
                               <div
                                 className="absolute rounded-lg pointer-events-none"
                                 style={{
@@ -1183,7 +1218,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {/* esmaecer fora do vídeo */}
                               <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: vTop, zIndex: 2 }} />
                               <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: vTop, width: vLeft, height: vH, zIndex: 2 }} />
                               <div className="absolute bg-black/30 pointer-events-none" style={{ top: vTop, right: 0, width: rightW, height: vH, zIndex: 2 }} />
@@ -1202,13 +1236,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   cursor: 'move',
                                   zIndex: 4
                                 }}
+                                data-modal-overlay="true"
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   const start = { x: e.clientX, y: e.clientY };
                                   const startRect = { x: imageModal.cropX, y: imageModal.cropY, w: imageModal.cropW, h: imageModal.cropH };
                                   const onMove = (ev: MouseEvent) => {
-                                    const dx = ev.clientX - start.x;
-                                    const dy = ev.clientY - start.y;
+                                    const dx = (ev.clientX - start.x) / modalZoom;
+                                    const dy = (ev.clientY - start.y) / modalZoom;
                                     const vW = imageModal.videoTargetW;
                                     const vH = imageModal.videoTargetH;
                                     const nx = clamp(startRect.x + dx, 0, vW - startRect.w);
@@ -1250,8 +1285,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                         const vW = imageModal.videoTargetW;
                                         const vH = imageModal.videoTargetH;
                                         const onMove = (ev: MouseEvent) => {
-                                          const dx = ev.clientX - start.x;
-                                          const dy = ev.clientY - start.y;
+                                          const dx = (ev.clientX - start.x) / modalZoom;
+                                          const dy = (ev.clientY - start.y) / modalZoom;
                                           let { x, y, w, h } = s;
 
                                           if (pos.includes('w')) { const nx = x + dx; const dw = x - nx; x = nx; w = w + dw; }
@@ -1282,6 +1317,11 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         })()
                       )}
                     </div>
+                  </div>
+
+                  {/* HUD de zoom do modal */}
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-neutral-950/85 text-neutral-300 text-xs px-3 py-1.5 rounded">
+                    Zoom: {Math.round(modalZoom * 100)}%
                   </div>
                 </div>
               </div>
@@ -1386,9 +1426,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           className="flex-1 overflow-hidden relative bg-neutral-800"
           style={{ cursor: imageModal.open ? 'default' : isDragging ? 'grabbing' : 'grab' }}
           onWheel={(e) => {
-            if (imageModal.open) return; // não pan/zoom durante modal
+            if (imageModal.open) return;
             e.preventDefault();
-            // pan com wheel
             setPan((prev) => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
           }}
           onMouseDown={(e) => {
