@@ -139,6 +139,52 @@ const handleStyles: Record<HandlePos, React.CSSProperties> = {
   sw: { bottom: -6, left: -6, width: 12, height: 12, cursor: 'nesw-resize' },
 };
 
+/** ========= Helpers de URL/Imagem para consertar o "Editar" na 1ª vez ========= */
+const pickFromSrcset = (srcset: string): string => {
+  // pega o maior candidato do srcset
+  const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
+  let bestUrl = '';
+  let bestSize = -1;
+  for (const part of parts) {
+    const m = part.match(/(.+)\s+(\d+)(w|x)$/i);
+    if (m) {
+      const url = m[1].trim();
+      const size = parseInt(m[2], 10);
+      if (size > bestSize) { bestSize = size; bestUrl = url; }
+    } else {
+      // sem descriptor — usa o primeiro válido
+      if (!bestUrl) {
+        const u = part.split(' ')[0];
+        bestUrl = u;
+      }
+    }
+  }
+  return bestUrl;
+};
+
+const resolveImgUrl = (img: HTMLImageElement): string => {
+  // tenta várias fontes confiáveis
+  const ds = (img as any).dataset || {};
+  const byPriority = [
+    ds.src,
+    (img as any).currentSrc,
+    img.currentSrc,
+    img.src,
+    img.getAttribute('data-bg-image-url'),
+  ].filter(Boolean) as string[];
+
+  for (const u of byPriority) {
+    if (typeof u === 'string' && u.trim()) return u.trim();
+  }
+  // tenta srcset
+  const srcset = img.srcset || img.getAttribute('srcset') || '';
+  if (srcset.trim()) {
+    const pick = pickFromSrcset(srcset);
+    if (pick) return pick;
+  }
+  return '';
+};
+
 /** ====================== Componente principal ======================= */
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
   /** ===== Layout ===== */
@@ -527,7 +573,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           }
         };
 
-        // DBLCLICK: entra em inline edit (verde)
+        // DBLCLICK: inline edit
         if (type === 'title' || type === 'subtitle') {
           htmlEl.ondblclick = (e) => {
             e.preventDefault();
@@ -698,6 +744,34 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     });
   };
 
+  /** ========= Fallbacks para BG quando DOM ainda não “resolveu” ========= */
+  const getFallbackBackground = (slideIndex: number): { url: string; type: TargetKind } | null => {
+    // 1) edição atual
+    const edited = editedContent[`${slideIndex}-background`];
+    if (typeof edited === 'string' && edited.trim()) {
+      return { url: edited, type: isVideoUrl(edited) ? 'vid' : 'bg' };
+    }
+    // 2) upload do usuário
+    const up = uploadedImages[slideIndex];
+    if (typeof up === 'string' && up.trim()) {
+      return { url: up, type: 'bg' };
+    }
+    // 3) dados do carousel
+    const c = carouselData.conteudos[slideIndex];
+    if (c) {
+      const candidates = [
+        c.imagem_fundo,
+        c.imagem_fundo2,
+        c.imagem_fundo3,
+        c.thumbnail_url, // útil quando o fundo é vídeo (usa thumb)
+      ].filter(Boolean) as string[];
+      for (const u of candidates) {
+        if (u && u.trim()) return { url: u, type: isVideoUrl(u) ? 'vid' : 'bg' };
+      }
+    }
+    return null;
+  };
+
   /** ====================== Abrir modal (IMG/BG/VÍDEO) ======================= */
   const openImageEditModal = (slideIndex: number) => {
     setModalZoom(0.5);
@@ -726,12 +800,31 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       targetType = 'vid';
       isVideo = true;
     } else if (chosen.tagName === 'IMG') {
-      imageUrl = (chosen as HTMLImageElement).src;
+      imageUrl = resolveImgUrl(chosen as HTMLImageElement);
       targetType = 'img';
     } else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
       const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
-      imageUrl = m?.[1] || '';
+      imageUrl = (m?.[1] || '').trim();
       targetType = 'bg';
+    }
+
+    // ==== Fallback robusto para 1ª abertura ====
+    if (!imageUrl) {
+      // tenta atributo auxiliar de imagens alteradas
+      if (chosen instanceof HTMLImageElement) {
+        const aux = chosen.getAttribute('data-bg-image-url');
+        if (aux && aux.trim()) imageUrl = aux.trim();
+      }
+    }
+    if (!imageUrl) {
+      const fb = getFallbackBackground(slideIndex);
+      if (fb) {
+        imageUrl = fb.url;
+        // se o chosen não indicou tipo, usa do fallback
+        if (!isVideo && targetType !== 'img') {
+          targetType = fb.type === 'vid' ? 'bg' : 'bg'; // vídeo de fundo vira 'bg' para edição de posição
+        }
+      }
     }
     if (!imageUrl) return;
 
@@ -801,6 +894,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const videoW = targetWidthPx;
       const videoH = targetHeightPx;
 
+      // Se não tem video.src ainda (1ª vez), tenta fallback direto
+      if (!imageUrl) {
+        const fb = getFallbackBackground(slideIndex);
+        if (fb) imageUrl = fb.url;
+      }
+
       setImageModal({
         open: true,
         slideIndex,
@@ -832,6 +931,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       document.documentElement.style.overflow = 'hidden';
     } else {
       const tmp = new Image();
+      tmp.crossOrigin = 'anonymous';
       tmp.src = imageUrl;
       const natDone = () => finalizeOpenImg(tmp.naturalWidth || targetWidthPx, tmp.naturalHeight || targetHeightPx);
       if (tmp.complete && tmp.naturalWidth && tmp.naturalHeight) natDone();
@@ -913,10 +1013,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const displayW = Math.ceil(naturalW * scale) + 2;
       const displayH = Math.ceil(naturalH * scale) + 2;
 
-      const minLeft = targetWidthPx - displayW; // <= 0
-      const minTop  = containerHeightPx - displayH; // <= 0
+      const minLeft = targetWidthPx - displayW;
+      const minTop  = containerHeightPx - displayH;
 
-      // clamp para nunca "escapar" do container (sempre ocupando)
       const safeLeft = clamp(imgOffsetLeftPx, minLeft, 0);
       const safeTop  = clamp(imgOffsetTopPx,  minTop,  0);
 
@@ -1182,7 +1281,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           const dragCursor: React.CSSProperties['cursor'] =
                             canDragX && canDragY ? 'move' : canDragX ? 'ew-resize' : canDragY ? 'ns-resize' : 'default';
 
-                          // opacidade nas áreas “fora” do container
+                          // opacidade nas áreas “fora” do container (feedback)
                           const outLeft = clampedLeft < 0 ? Math.abs(clampedLeft) : 0;
                           const outTop  = clampedTop  < 0 ? Math.abs(clampedTop)  : 0;
                           const outRight = Math.max(0, (displayW + clampedLeft) - containerWidth);
@@ -1236,62 +1335,32 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   }}
                                 />
 
-                                {/* dim de 40% nas áreas que estão para fora (dentro do container elas não aparecem, mas adicionamos overlays para feedback) */}
-                                {/* topo “para fora” */}
+                                {/* overlays 40% para feedback fora do container */}
                                 {outTop > 0 && (
-                                  <div
-                                    className="absolute"
-                                    style={{
-                                      left: 0,
-                                      top: 0,
-                                      width: containerWidth,
-                                      height: Math.min(outTop, containerHeight),
-                                      background: 'rgba(0,0,0,0.4)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
+                                  <div className="absolute" style={{
+                                    left: 0, top: 0, width: containerWidth,
+                                    height: Math.min(outTop, containerHeight),
+                                    background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
+                                  }} />
                                 )}
-                                {/* bottom “para fora” */}
                                 {outBottom > 0 && (
-                                  <div
-                                    className="absolute"
-                                    style={{
-                                      left: 0,
-                                      bottom: 0,
-                                      width: containerWidth,
-                                      height: Math.min(outBottom, containerHeight),
-                                      background: 'rgba(0,0,0,0.4)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
+                                  <div className="absolute" style={{
+                                    left: 0, bottom: 0, width: containerWidth,
+                                    height: Math.min(outBottom, containerHeight),
+                                    background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
+                                  }} />
                                 )}
-                                {/* left “para fora” */}
                                 {outLeft > 0 && (
-                                  <div
-                                    className="absolute"
-                                    style={{
-                                      left: 0,
-                                      top: 0,
-                                      width: Math.min(outLeft, containerWidth),
-                                      height: containerHeight,
-                                      background: 'rgba(0,0,0,0.4)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
+                                  <div className="absolute" style={{
+                                    left: 0, top: 0, width: Math.min(outLeft, containerWidth),
+                                    height: containerHeight, background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
+                                  }} />
                                 )}
-                                {/* right “para fora” */}
                                 {outRight > 0 && (
-                                  <div
-                                    className="absolute"
-                                    style={{
-                                      right: 0,
-                                      top: 0,
-                                      width: Math.min(outRight, containerWidth),
-                                      height: containerHeight,
-                                      background: 'rgba(0,0,0,0.4)',
-                                      pointerEvents: 'none',
-                                    }}
-                                  />
+                                  <div className="absolute" style={{
+                                    right: 0, top: 0, width: Math.min(outRight, containerWidth),
+                                    height: containerHeight, background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
+                                  }} />
                                 )}
 
                                 {/* surface de drag (click & hold) */}
@@ -1299,7 +1368,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   disabled={!canDragX && !canDragY}
                                   cursor={dragCursor}
                                   onDrag={(dx, dy) => {
-                                    // arraste com clamp (nunca deixa “buraco” no container)
                                     const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
                                     const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
                                     if (nextLeft !== imageModal.imgOffsetLeftPx || nextTop !== imageModal.imgOffsetTopPx) {
