@@ -68,7 +68,13 @@ const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 /** ====================== Drag helpers do popup ======================= */
-const DragSurface: React.FC<{ onDrag: (dx: number, dy: number) => void; disabled?: boolean; cursor?: React.CSSProperties['cursor'] }> = ({ onDrag, disabled, cursor }) => {
+const DragSurface: React.FC<{
+  onDrag: (dx: number, dy: number) => void;
+  disabled?: boolean;
+  cursor?: React.CSSProperties['cursor'];
+  onStart?: () => void;
+  onEnd?: () => void;
+}> = ({ onDrag, disabled, cursor, onStart, onEnd }) => {
   const dragging = useRef(false);
 
   useEffect(() => {
@@ -76,14 +82,17 @@ const DragSurface: React.FC<{ onDrag: (dx: number, dy: number) => void; disabled
       if (!dragging.current) return;
       onDrag(e.movementX, e.movementY);
     };
-    const onUp = () => { dragging.current = false; };
+    const onUp = () => {
+      if (dragging.current && onEnd) onEnd();
+      dragging.current = false;
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [onDrag]);
+  }, [onDrag, onEnd]);
 
   return (
     <div
@@ -91,6 +100,7 @@ const DragSurface: React.FC<{ onDrag: (dx: number, dy: number) => void; disabled
         if (disabled) return;
         e.preventDefault();
         dragging.current = true;
+        if (onStart) onStart();
       }}
       className="absolute inset-0"
       style={{ zIndex: 10, background: 'transparent', cursor: disabled ? 'default' : (cursor || 'move'), pointerEvents: disabled ? 'none' : 'auto' }}
@@ -139,7 +149,7 @@ const handleStyles: Record<HandlePos, React.CSSProperties> = {
   sw: { bottom: -6, left: -6, width: 12, height: 12, cursor: 'nesw-resize' },
 };
 
-/** ========= Helpers de URL/Imagem (corrigem “Editar” 1ª vez) ========= */
+/** ========= Helpers de URL/Imagem ========= */
 const pickFromSrcset = (srcset: string): string => {
   const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
   let bestUrl = '';
@@ -215,6 +225,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
   const [modalDragging, setModalDragging] = useState(false);
   const [modalDragStart, setModalDragStart] = useState({ x: 0, y: 0 });
+
+  // dragging da imagem dentro do container (mostrar imagem inteira enquanto pressiona)
+  const [modalImgDragging, setModalImgDragging] = useState(false);
 
   /** ===== Refs ===== */
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
@@ -766,7 +779,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
     if (!doc) return;
 
-    // 1) URL “esperada” do fundo (para casarmos o elemento certo)
+    // 1) URL “esperada” do fundo
     const fb = getFallbackBackground(slideIndex);
     const expectedUrl = fb?.url || '';
 
@@ -774,9 +787,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     const currentlySelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
 
     // 3) candidatos com background-image
+    const getBgElements = (doc2: Document) =>
+      Array.from(doc2.querySelectorAll<HTMLElement>('body,div,section,header,main,figure,article'))
+        .filter(el => {
+          const cs = doc2.defaultView?.getComputedStyle(el);
+          return !!cs && cs.backgroundImage && cs.backgroundImage.includes('url(');
+        });
+
     const bgEls = getBgElements(doc);
 
-    // 3.1) tenta achar o que contém a URL esperada (ignora BODY se houver outro)
+    // 3.1) tenta casar por URL
     const matchByUrl = (() => {
       if (!expectedUrl) return null;
       const norm = (u: string) => u.replace(/['"]/g, '');
@@ -791,10 +811,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       return (nonBody[0] || matches[0]) as HTMLElement;
     })();
 
-    // 3.2) se não casou por URL, pega o maior visual (img/bg/vid), mas preferindo bg não-body
+    // 3.2) maior visual
     const largest = findLargestVisual(doc);
 
-    // 4) define chosen
+    // 4) choose
     let chosen: HTMLElement | null =
       currentlySelected ||
       matchByUrl ||
@@ -802,11 +822,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       largest?.el ||
       null;
 
-    // fallback final: se ainda for BODY, tenta um filho grande com bg
     if (chosen && chosen.tagName === 'BODY') {
       const notBody = bgEls.filter(el => el.tagName !== 'BODY');
       if (notBody.length) {
-        // pega o maior
         let best = notBody[0]!;
         let bestArea = 0;
         notBody.forEach(el => {
@@ -842,7 +860,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       targetType = 'bg';
     }
 
-    // Fallback robusto
     if (!imageUrl) {
       if (chosen instanceof HTMLImageElement) {
         const aux = chosen.getAttribute('data-bg-image-url');
@@ -1270,9 +1287,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                         style={{ zIndex: 1 }}
                       />
 
-                      {/* Overlay específico (fica acima do iframe, mas só recorta a área da imagem) */}
+                      {/* ======= MODO IMAGEM - sem “feixe de luz”, com imagem inteira enquanto pressiona ======= */}
                       {!imageModal.isVideo ? (
-                        // ======= MODO IMAGEM =======
                         (() => {
                           const containerLeft = imageModal.targetLeftPx;
                           const containerTop = imageModal.targetTopPx;
@@ -1292,22 +1308,14 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           const clampedTop  = clamp(imageModal.imgOffsetTopPx,  minTop,  maxTop);
                           const clampedLeft = clamp(imageModal.imgOffsetLeftPx, minLeft, maxLeft);
 
-                          const rightW = slideWidth - (containerLeft + containerWidth);
-                          const bottomH = slideHeight - (containerTop + containerHeight);
-
                           const canDragX = minLeft < 0;
                           const canDragY = minTop  < 0;
                           const dragCursor: React.CSSProperties['cursor'] =
                             canDragX && canDragY ? 'move' : canDragX ? 'ew-resize' : canDragY ? 'ns-resize' : 'default';
 
-                          // feedback 40% fora do container
-                          const outLeft = clampedLeft < 0 ? Math.abs(clampedLeft) : 0;
-                          const outTop  = clampedTop  < 0 ? Math.abs(clampedTop)  : 0;
-                          const outRight = Math.max(0, (displayW + clampedLeft) - containerWidth);
-                          const outBottom = Math.max(0, (displayH + clampedTop) - containerHeight);
-
                           return (
                             <>
+                              {/* contorno do container */}
                               <div
                                 className="absolute rounded-lg pointer-events-none"
                                 style={{
@@ -1319,24 +1327,19 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   zIndex: 2
                                 }}
                               />
-                              {/* esmaecer fora do container */}
-                              <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: containerTop, zIndex: 2 }} />
-                              <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: containerTop, width: containerLeft, height: containerHeight, zIndex: 2 }} />
-                              <div className="absolute bg-black/30 pointer-events-none" style={{ top: containerTop, right: 0, width: rightW, height: containerHeight, zIndex: 2 }} />
-                              <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
-
-                              {/* container/máscara da imagem */}
+                              {/* máscara do container: overflow visível enquanto arrasta; escondido quando solta */}
                               <div
-                                className="absolute bg-neutral-900 rounded-lg overflow-hidden"
+                                className="absolute bg-transparent rounded-lg"
                                 style={{
                                   left: containerLeft,
                                   top: containerTop,
                                   width: containerWidth,
                                   height: containerHeight,
+                                  overflow: modalImgDragging ? 'visible' : 'hidden',
                                   zIndex: 3
                                 }}
                               >
-                                {/* imagem */}
+                                {/* imagem (fica acima do iframe sempre) */}
                                 <img
                                   src={imageModal.imageUrl}
                                   alt="to-edit"
@@ -1352,41 +1355,16 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                     objectFit: 'cover',
                                     backfaceVisibility: 'hidden',
                                     transform: 'translateZ(0)',
+                                    zIndex: 4,
                                   }}
                                 />
 
-                                {/* overlays 40% para feedback fora do container */}
-                                {outTop > 0 && (
-                                  <div className="absolute" style={{
-                                    left: 0, top: 0, width: containerWidth,
-                                    height: Math.min(outTop, containerHeight),
-                                    background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
-                                  }} />
-                                )}
-                                {outBottom > 0 && (
-                                  <div className="absolute" style={{
-                                    left: 0, bottom: 0, width: containerWidth,
-                                    height: Math.min(outBottom, containerHeight),
-                                    background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
-                                  }} />
-                                )}
-                                {outLeft > 0 && (
-                                  <div className="absolute" style={{
-                                    left: 0, top: 0, width: Math.min(outLeft, containerWidth),
-                                    height: containerHeight, background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
-                                  }} />
-                                )}
-                                {outRight > 0 && (
-                                  <div className="absolute" style={{
-                                    right: 0, top: 0, width: Math.min(outRight, containerWidth),
-                                    height: containerHeight, background: 'rgba(0,0,0,0.4)', pointerEvents: 'none'
-                                  }} />
-                                )}
-
-                                {/* surface de drag */}
+                                {/* superfície de drag: ativa “show full image” apenas enquanto mouse pressionado */}
                                 <DragSurface
                                   disabled={!canDragX && !canDragY}
                                   cursor={dragCursor}
+                                  onStart={() => setModalImgDragging(true)}
+                                  onEnd={() => setModalImgDragging(false)}
                                   onDrag={(dx, dy) => {
                                     const nextLeft = canDragX ? clamp(imageModal.imgOffsetLeftPx + dx, minLeft, maxLeft) : clampedLeft;
                                     const nextTop  = canDragY ? clamp(imageModal.imgOffsetTopPx  + dy, minTop,  maxTop) : clampedTop;
@@ -1395,6 +1373,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                     }
                                   }}
                                 />
+
                                 {/* resize vertical do container */}
                                 <ResizeBar
                                   position="bottom"
@@ -1426,9 +1405,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                           const vW    = imageModal.videoTargetW;
                           const vH    = imageModal.videoTargetH;
 
-                          const rightW = slideWidth - (vLeft + vW);
-                          const bottomH = slideHeight - (vTop + vH);
-
                           return (
                             <>
                               <div
@@ -1442,11 +1418,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                   zIndex: 2
                                 }}
                               />
-                              <div className="absolute top-0 left-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: vTop, zIndex: 2 }} />
-                              <div className="absolute left-0 bg-black/30 pointer-events-none" style={{ top: vTop, width: vLeft, height: vH, zIndex: 2 }} />
-                              <div className="absolute bg-black/30 pointer-events-none" style={{ top: vTop, right: 0, width: rightW, height: vH, zIndex: 2 }} />
-                              <div className="absolute left-0 bottom-0 bg-black/30 pointer-events-none" style={{ width: '100%', height: bottomH, zIndex: 2 }} />
-
                               <div
                                 className="absolute"
                                 style={{
