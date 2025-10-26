@@ -592,39 +592,232 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         });
       };
 
+      const startImageDrag = (img: HTMLImageElement, startEvent: MouseEvent) => {
+        const wrapper = ensureMediaWrapper(doc, img, 'img-crop-wrapper');
+        wrapper.style.cursor = 'grabbing';
+        img.style.cursor = 'grabbing';
+        img.style.position = 'absolute';
+        img.style.maxWidth = 'unset';
+        img.style.maxHeight = 'unset';
+        img.style.objectFit = 'cover';
+        img.style.backfaceVisibility = 'hidden';
+        img.style.transform = 'translateZ(0)';
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
+
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const wrapperW = wrapperRect.width || wrapper.clientWidth || 1;
+        const wrapperH = wrapperRect.height || wrapper.clientHeight || 1;
+
+        let displayW = img.getBoundingClientRect().width;
+        let displayH = img.getBoundingClientRect().height;
+        const natW = img.naturalWidth || displayW || wrapperW;
+        const natH = img.naturalHeight || displayH || wrapperH;
+
+        if (displayW < wrapperW || displayH < wrapperH) {
+          const scale = Math.max(wrapperW / Math.max(1, natW), wrapperH / Math.max(1, natH));
+          displayW = Math.ceil(Math.max(1, natW) * scale);
+          displayH = Math.ceil(Math.max(1, natH) * scale);
+        }
+
+        img.style.width = `${Math.ceil(displayW)}px`;
+        img.style.height = `${Math.ceil(displayH)}px`;
+
+        const minLeft = wrapperW - displayW;
+        const minTop = wrapperH - displayH;
+        const fallbackLeft = clamp((wrapperW - displayW) / 2, minLeft, 0);
+        const fallbackTop = clamp((wrapperH - displayH) / 2, minTop, 0);
+        const computed = doc.defaultView?.getComputedStyle(img);
+        const initialLeft = clamp(parsePx(img.style.left, parsePx(computed?.left, fallbackLeft)), minLeft, 0);
+        const initialTop = clamp(parsePx(img.style.top, parsePx(computed?.top, fallbackTop)), minTop, 0);
+        img.style.left = `${initialLeft}px`;
+        img.style.top = `${initialTop}px`;
+
+        const startLeft = initialLeft;
+        const startTop = initialTop;
+        const startX = startEvent.clientX;
+        const startY = startEvent.clientY;
+        const iframeDoc = doc;
+        const hostDoc = window.document;
+        const prevUserSelect = iframeDoc.body.style.userSelect;
+        const prevCursor = iframeDoc.body.style.cursor;
+        iframeDoc.body.style.userSelect = 'none';
+        iframeDoc.body.style.cursor = 'grabbing';
+
+        let active = true;
+        const onMove = (event: MouseEvent) => {
+          if (!active) return;
+          event.preventDefault();
+          const dx = event.clientX - startX;
+          const dy = event.clientY - startY;
+          const nextLeft = clamp(startLeft + dx, minLeft, 0);
+          const nextTop = clamp(startTop + dy, minTop, 0);
+          img.style.left = `${nextLeft}px`;
+          img.style.top = `${nextTop}px`;
+        };
+
+        const stop = () => {
+          if (!active) return;
+          active = false;
+          iframeDoc.body.style.userSelect = prevUserSelect;
+          iframeDoc.body.style.cursor = prevCursor;
+          wrapper.style.cursor = 'grab';
+          img.style.cursor = 'grab';
+          iframeDoc.removeEventListener('mousemove', onMove);
+          iframeDoc.removeEventListener('mouseup', stop);
+          hostDoc.removeEventListener('mousemove', onMove);
+          hostDoc.removeEventListener('mouseup', stop);
+        };
+
+        iframeDoc.addEventListener('mousemove', onMove);
+        iframeDoc.addEventListener('mouseup', stop);
+        hostDoc.addEventListener('mousemove', onMove);
+        hostDoc.addEventListener('mouseup', stop);
+      };
+
+      const toggleVideoResizeMode = (video: HTMLVideoElement) => {
+        const wrapper = ensureMediaWrapper(doc, video, 'vid-inline-wrapper');
+        wrapper.style.position = 'relative';
+        wrapper.style.display = 'inline-block';
+        wrapper.style.overflow = 'hidden';
+        video.style.position = 'absolute';
+        video.style.left = '0px';
+        video.style.top = '0px';
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'cover';
+
+        const deactivate = () => {
+          wrapper.dataset.resizeActive = '';
+          wrapper.style.outline = '';
+          wrapper.querySelectorAll('[data-role="video-resize-handle"]').forEach((node) => node.remove());
+        };
+
+        if (wrapper.dataset.resizeActive === 'true') {
+          deactivate();
+          return;
+        }
+
+        deactivate();
+        wrapper.dataset.resizeActive = 'true';
+        wrapper.style.outline = '2px solid rgba(59,130,246,0.9)';
+
+        const handle = doc.createElement('div');
+        handle.setAttribute('data-role', 'video-resize-handle');
+        handle.style.position = 'absolute';
+        handle.style.width = '16px';
+        handle.style.height = '16px';
+        handle.style.right = '-8px';
+        handle.style.bottom = '-8px';
+        handle.style.borderRadius = '6px';
+        handle.style.background = 'rgba(59,130,246,0.85)';
+        handle.style.cursor = 'nwse-resize';
+        handle.style.boxShadow = '0 0 0 2px rgba(15,23,42,0.6)';
+        wrapper.appendChild(handle);
+
+        handle.onmousedown = (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+
+          const rect = wrapper.getBoundingClientRect();
+          const startW = rect.width || wrapper.clientWidth || MIN_ELEMENT_DIMENSION;
+          const startH = rect.height || wrapper.clientHeight || MIN_ELEMENT_DIMENSION;
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const parentRect = wrapper.parentElement?.getBoundingClientRect();
+          const maxW = parentRect ? parentRect.width : slideWidth;
+          const maxH = parentRect ? parentRect.height : slideHeight;
+          const iframeDoc = doc;
+          const hostDoc = window.document;
+          const prevUserSelect = iframeDoc.body.style.userSelect;
+          const prevCursor = iframeDoc.body.style.cursor;
+          iframeDoc.body.style.userSelect = 'none';
+          iframeDoc.body.style.cursor = 'nwse-resize';
+
+          let active = true;
+          const onMove = (moveEv: MouseEvent) => {
+            if (!active) return;
+            moveEv.preventDefault();
+            const dx = moveEv.clientX - startX;
+            const dy = moveEv.clientY - startY;
+            const nextW = clamp(startW + dx, MIN_ELEMENT_DIMENSION, maxW);
+            const nextH = clamp(startH + dy, MIN_ELEMENT_DIMENSION, maxH);
+            wrapper.style.width = `${nextW}px`;
+            wrapper.style.height = `${nextH}px`;
+          };
+
+          const stopResize = () => {
+            if (!active) return;
+            active = false;
+            iframeDoc.body.style.userSelect = prevUserSelect;
+            iframeDoc.body.style.cursor = prevCursor;
+            iframeDoc.removeEventListener('mousemove', onMove);
+            iframeDoc.removeEventListener('mouseup', stopResize);
+            hostDoc.removeEventListener('mousemove', onMove);
+            hostDoc.removeEventListener('mouseup', stopResize);
+          };
+
+          iframeDoc.addEventListener('mousemove', onMove);
+          iframeDoc.addEventListener('mouseup', stopResize);
+          hostDoc.addEventListener('mousemove', onMove);
+          hostDoc.addEventListener('mouseup', stopResize);
+        };
+      };
+
       const editable = doc.querySelectorAll('[data-editable]');
       editable.forEach((el) => {
         const htmlEl = el as HTMLElement;
         const type = htmlEl.getAttribute('data-editable') as string;
 
         htmlEl.style.pointerEvents = 'auto';
-        htmlEl.style.cursor = 'pointer';
+        htmlEl.style.cursor = type === 'image' ? 'grab' : 'pointer';
 
-        // CLICK: seleciona e abre painel
-        htmlEl.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+        const markSelected = () => {
           clearAllSelected();
           htmlEl.classList.add('selected');
-
-          if (type === 'image') {
-            const isImg = htmlEl.tagName === 'IMG';
-            selectedImageRefs.current[slideIndex] = isImg ? (htmlEl as HTMLImageElement) : null;
-            setSelectedElement({ slideIndex, element: 'background' });
-          } else if (type === 'video' || type === 'background') {
-            selectedImageRefs.current[slideIndex] = null;
-            setSelectedElement({ slideIndex, element: 'background' });
-          } else if (type === 'title' || type === 'subtitle') {
-            selectedImageRefs.current[slideIndex] = null;
-            setSelectedElement({ slideIndex, element: type as ElementType });
-          }
           setFocusedSlide(slideIndex);
-          if (!expandedLayers.has(slideIndex)) {
-            setExpandedLayers(s => new Set(s).add(slideIndex));
-          }
+          setExpandedLayers(prev => {
+            if (prev.has(slideIndex)) return prev;
+            const next = new Set(prev);
+            next.add(slideIndex);
+            return next;
+          });
         };
 
-        // DBLCLICK: inline edit
+        if (type === 'image') {
+          const imgTarget = htmlEl.tagName === 'IMG'
+            ? (htmlEl as HTMLImageElement)
+            : (htmlEl.querySelector('img') as HTMLImageElement | null);
+
+          htmlEl.onclick = null;
+          htmlEl.onmousedown = (e) => {
+            if (!(imgTarget instanceof HTMLImageElement)) return;
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            markSelected();
+            selectedImageRefs.current[slideIndex] = imgTarget;
+            setSelectedElement({ slideIndex, element: 'background' });
+            startImageDrag(imgTarget, e);
+          };
+        } else {
+          htmlEl.onmousedown = null;
+          htmlEl.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            markSelected();
+
+            if (type === 'video' || type === 'background') {
+              selectedImageRefs.current[slideIndex] = null;
+              setSelectedElement({ slideIndex, element: 'background' });
+            } else if (type === 'title' || type === 'subtitle') {
+              selectedImageRefs.current[slideIndex] = null;
+              setSelectedElement({ slideIndex, element: type as ElementType });
+            }
+          };
+        }
+
         if (type === 'title' || type === 'subtitle') {
           htmlEl.ondblclick = (e) => {
             e.preventDefault();
@@ -653,6 +846,17 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); htmlEl.blur(); }
             if (e.key === 'Escape') { e.preventDefault(); htmlEl.blur(); }
           };
+        } else if (type === 'video') {
+          htmlEl.ondblclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            markSelected();
+            selectedImageRefs.current[slideIndex] = null;
+            setSelectedElement({ slideIndex, element: 'background' });
+            toggleVideoResizeMode(htmlEl as HTMLVideoElement);
+          };
+        } else {
+          htmlEl.ondblclick = null;
         }
       });
     };
@@ -2090,16 +2294,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center justify-between">
-                        <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Image/Video</label>
-                        <button
-                          onClick={() => openImageEditModal(selectedElement.slideIndex)}
-                          className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded"
-                          title="Abrir popup de edição"
-                        >
-                          Editar
-                        </button>
-                      </div>
+                      <label className="text-neutral-400 text-xs mb-2 block font-medium">Background Image/Video</label>
 
                       <div className="space-y-2">
                         {carouselData.conteudos[selectedElement.slideIndex]?.imagem_fundo && (() => {
