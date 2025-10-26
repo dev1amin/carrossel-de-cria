@@ -193,185 +193,6 @@ const computeImageBox = (
   return { width, height, offsetLeft, offsetTop };
 };
 
-const ensureMediaWrapper = (doc: Document, el: HTMLElement, className: string): HTMLElement => {
-  let wrapper = el.parentElement;
-  if (!wrapper || !wrapper.classList.contains(className)) {
-    const w = doc.createElement('div');
-    w.className = className;
-    w.style.position = 'relative';
-    w.style.display = 'inline-block';
-    const rect = el.getBoundingClientRect();
-    const fallbackWidth = rect.width || (el as HTMLElement).clientWidth || 1;
-    const fallbackHeight = rect.height || (el as HTMLElement).clientHeight || 1;
-    w.style.width = `${Math.max(1, fallbackWidth)}px`;
-    w.style.height = `${Math.max(1, fallbackHeight)}px`;
-    if (wrapper) {
-      wrapper.replaceChild(w, el);
-    }
-    w.appendChild(el);
-    wrapper = w;
-  }
-
-  const wrapperEl = wrapper as HTMLElement;
-  if (!wrapperEl.style.width || !wrapperEl.style.height) {
-    const rect = wrapperEl.getBoundingClientRect();
-    if (!wrapperEl.style.width) wrapperEl.style.width = `${Math.max(1, rect.width)}px`;
-    if (!wrapperEl.style.height) wrapperEl.style.height = `${Math.max(1, rect.height)}px`;
-  }
-  wrapperEl.style.overflow = 'hidden';
-  return wrapperEl;
-};
-
-const parsePx = (value: string | null | undefined, fallback = 0) => {
-  if (!value) return fallback;
-  const parsed = parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const WRAPPER_INLINE_PROPS = [
-  'position',
-  'top',
-  'right',
-  'bottom',
-  'left',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'display',
-  'align-self',
-  'justify-self',
-  'transform',
-  'z-index',
-  'flex',
-  'flex-grow',
-  'flex-shrink',
-  'flex-basis',
-  'grid-column',
-  'grid-row',
-  'grid-area',
-] as const;
-
-const WRAPPER_COMPUTED_PROPS = [
-  'display',
-  'position',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'transform',
-  'align-self',
-  'justify-self',
-  'z-index',
-] as const;
-
-type WrapperInlineProp = (typeof WRAPPER_INLINE_PROPS)[number];
-type WrapperComputedProp = (typeof WRAPPER_COMPUTED_PROPS)[number];
-
-type WrapperStyleSnapshot = {
-  inline: Partial<Record<WrapperInlineProp, string>>;
-  computed: Partial<Record<WrapperComputedProp, string>>;
-};
-
-const captureWrapperSnapshot = (
-  el: HTMLElement,
-  computed: CSSStyleDeclaration | null
-): WrapperStyleSnapshot => {
-  const inline: WrapperStyleSnapshot['inline'] = {};
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = el.style.getPropertyValue(prop);
-    if (value) inline[prop] = value;
-  });
-
-  const computedRecord: WrapperStyleSnapshot['computed'] = {};
-  if (computed) {
-    WRAPPER_COMPUTED_PROPS.forEach((prop) => {
-      const value = computed.getPropertyValue(prop);
-      if (value && value !== 'auto' && value !== 'normal' && value !== 'none') {
-        computedRecord[prop] = value;
-      }
-    });
-  }
-
-  return { inline, computed: computedRecord };
-};
-
-const parseWrapperSnapshot = (value: string | undefined): WrapperStyleSnapshot | null => {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as WrapperStyleSnapshot;
-  } catch (err) {
-    console.warn('Failed to parse wrapper snapshot', err);
-    return null;
-  }
-};
-
-const applyWrapperSnapshot = (
-  wrapper: HTMLElement,
-  snapshot: WrapperStyleSnapshot | null
-) => {
-  const ensureRelative = () => {
-    if (!wrapper.style.getPropertyValue('position')) {
-      wrapper.style.setProperty('position', 'relative');
-    }
-  };
-
-  if (!snapshot) {
-    ensureRelative();
-    if (!wrapper.style.getPropertyValue('display')) {
-      wrapper.style.setProperty('display', 'inline-block');
-    }
-    return;
-  }
-
-  const { inline, computed } = snapshot;
-
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = inline[prop];
-    if (value) {
-      const applied = prop === 'display' && value === 'inline' ? 'inline-block' : value;
-      wrapper.style.setProperty(prop, applied);
-    }
-  });
-
-  const positionValue = inline['position'] || computed['position'];
-  if (positionValue && positionValue !== 'static') {
-    wrapper.style.setProperty('position', positionValue);
-  } else {
-    ensureRelative();
-  }
-
-  const displayValue = inline['display'] || computed['display'];
-  if (displayValue) {
-    const applied = displayValue === 'inline' ? 'inline-block' : displayValue;
-    wrapper.style.setProperty('display', applied);
-  } else if (!wrapper.style.getPropertyValue('display')) {
-    wrapper.style.setProperty('display', 'inline-block');
-  }
-
-  (['margin-top', 'margin-right', 'margin-bottom', 'margin-left'] as const).forEach((prop) => {
-    if (inline[prop]) return;
-    const val = computed[prop];
-    if (val) wrapper.style.setProperty(prop, val);
-  });
-
-  if (!inline['transform'] && computed['transform']) {
-    wrapper.style.setProperty('transform', computed['transform']);
-  }
-
-  if (!inline['align-self'] && computed['align-self']) {
-    wrapper.style.setProperty('align-self', computed['align-self']);
-  }
-
-  if (!inline['justify-self'] && computed['justify-self']) {
-    wrapper.style.setProperty('justify-self', computed['justify-self']);
-  }
-
-  if (!inline['z-index'] && computed['z-index']) {
-    wrapper.style.setProperty('z-index', computed['z-index']);
-  }
-};
-
 /** ========= Helpers de URL/Imagem ========= */
 const pickFromSrcset = (srcset: string): string => {
   const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
@@ -792,295 +613,49 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         });
       };
 
-      const getMediaNaturalSize = (media: HTMLImageElement | HTMLVideoElement) => {
-        if (media instanceof HTMLImageElement) {
-          const width = media.naturalWidth || media.width || media.getBoundingClientRect().width || MIN_ELEMENT_DIMENSION;
-          const height = media.naturalHeight || media.height || media.getBoundingClientRect().height || MIN_ELEMENT_DIMENSION;
-          return { width: Math.max(1, width), height: Math.max(1, height) };
-        }
-        const video = media as HTMLVideoElement;
-        const width = video.videoWidth || video.getBoundingClientRect().width || video.clientWidth || MIN_ELEMENT_DIMENSION;
-        const height = video.videoHeight || video.getBoundingClientRect().height || video.clientHeight || MIN_ELEMENT_DIMENSION;
-        return { width: Math.max(1, width), height: Math.max(1, height) };
-      };
-
-      const initializeInlineMediaBox = (wrapper: HTMLElement, media: HTMLImageElement | HTMLVideoElement) => {
-        wrapper.style.position = 'relative';
-        wrapper.style.display = 'inline-block';
-        wrapper.style.overflow = 'hidden';
-
-        let width = parseFloat(wrapper.dataset.inlineWidth || '');
-        let height = parseFloat(wrapper.dataset.inlineHeight || '');
-        if (!Number.isFinite(width) || width <= 0) {
-          const rect = wrapper.getBoundingClientRect();
-          width = rect.width || wrapper.clientWidth || MIN_ELEMENT_DIMENSION;
-        }
-        if (!Number.isFinite(height) || height <= 0) {
-          const rect = wrapper.getBoundingClientRect();
-          height = rect.height || wrapper.clientHeight || MIN_ELEMENT_DIMENSION;
-        }
-        width = Math.max(MIN_ELEMENT_DIMENSION, width);
-        height = Math.max(MIN_ELEMENT_DIMENSION, height);
-        wrapper.style.width = `${Math.round(width)}px`;
-        wrapper.style.height = `${Math.round(height)}px`;
-
-        media.style.position = 'absolute';
-        media.style.maxWidth = 'unset';
-        media.style.maxHeight = 'unset';
-        media.style.objectFit = 'cover';
-        media.style.backfaceVisibility = 'hidden';
-        media.style.transform = 'translateZ(0)';
-        media.style.cursor = 'grab';
-        wrapper.style.cursor = 'grab';
-        if (media instanceof HTMLImageElement) {
-          media.removeAttribute('srcset');
-          media.removeAttribute('sizes');
-          media.loading = 'eager';
-        }
-
-        let natW = parseFloat(wrapper.dataset.inlineNatW || '');
-        let natH = parseFloat(wrapper.dataset.inlineNatH || '');
-        if (!Number.isFinite(natW) || natW <= 0 || !Number.isFinite(natH) || natH <= 0) {
-          const natural = getMediaNaturalSize(media);
-          natW = natural.width;
-          natH = natural.height;
-        }
-
-        const { displayW, displayH } = computeCoverBleed(natW, natH, width, height, 2);
-        const minLeft = width - displayW;
-        const minTop = height - displayH;
-        const fallbackLeft = clamp((width - displayW) / 2, minLeft, 0);
-        const fallbackTop = clamp((height - displayH) / 2, minTop, 0);
-        const left = clamp(parsePx(media.style.left, fallbackLeft), minLeft, 0);
-        const top = clamp(parsePx(media.style.top, fallbackTop), minTop, 0);
-
-        media.style.width = `${Math.round(displayW)}px`;
-        media.style.height = `${Math.round(displayH)}px`;
-        media.style.left = `${Math.round(left)}px`;
-        media.style.top = `${Math.round(top)}px`;
-
-        wrapper.dataset.inlineWidth = `${width}`;
-        wrapper.dataset.inlineHeight = `${height}`;
-        wrapper.dataset.inlineNatW = `${natW}`;
-        wrapper.dataset.inlineNatH = `${natH}`;
-        wrapper.dataset.inlineMinLeft = `${minLeft}`;
-        wrapper.dataset.inlineMinTop = `${minTop}`;
-
-        return { width, height, natW, natH, minLeft, minTop, left, top };
-      };
-
-      const applyInlineMediaSizing = (
-        wrapper: HTMLElement,
-        media: HTMLImageElement | HTMLVideoElement,
-        natW: number,
-        natH: number,
-        width: number,
-        height: number,
-        currentLeft: number,
-        currentTop: number,
-      ) => {
-        const { displayW, displayH } = computeCoverBleed(natW, natH, width, height, 2);
-        const minLeft = width - displayW;
-        const minTop = height - displayH;
-        const nextLeft = clamp(currentLeft, minLeft, 0);
-        const nextTop = clamp(currentTop, minTop, 0);
-
-        wrapper.style.width = `${Math.round(width)}px`;
-        wrapper.style.height = `${Math.round(height)}px`;
-        media.style.width = `${Math.round(displayW)}px`;
-        media.style.height = `${Math.round(displayH)}px`;
-        media.style.left = `${Math.round(nextLeft)}px`;
-        media.style.top = `${Math.round(nextTop)}px`;
-
-        wrapper.dataset.inlineWidth = `${width}`;
-        wrapper.dataset.inlineHeight = `${height}`;
-        wrapper.dataset.inlineMinLeft = `${minLeft}`;
-        wrapper.dataset.inlineMinTop = `${minTop}`;
-
-        return { left: nextLeft, top: nextTop };
-      };
-
-      const attachInlineHandles = (
-        wrapper: HTMLElement,
-        media: HTMLImageElement | HTMLVideoElement,
-        startDrag: (event: MouseEvent) => void,
-      ) => {
-        if (wrapper.dataset.inlineActive === 'true') return;
-
-        removeInlineMediaControls();
-        wrapper.dataset.inlineActive = 'true';
-        wrapper.style.outline = '2px solid rgba(59,130,246,0.9)';
-        wrapper.style.outlineOffset = '0px';
-
-        const dragSurface = doc.createElement('div');
-        dragSurface.dataset.role = 'inline-media-drag';
-        dragSurface.style.position = 'absolute';
-        dragSurface.style.left = '0';
-        dragSurface.style.top = '0';
-        dragSurface.style.right = '0';
-        dragSurface.style.bottom = '0';
-        dragSurface.style.cursor = 'grab';
-        dragSurface.style.background = 'transparent';
-        dragSurface.style.zIndex = '15';
-        dragSurface.onmousedown = (event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          event.stopPropagation();
-          startDrag(event);
-        };
-        wrapper.appendChild(dragSurface);
-
-        const makeResizeHandle = (
-          styles: Partial<CSSStyleDeclaration>,
-          cursor: string,
-          adjustWidth: boolean,
-          adjustHeight: boolean,
-        ) => {
-          const handle = doc.createElement('div');
-          handle.dataset.role = 'inline-media-handle';
-          handle.style.position = 'absolute';
-          handle.style.zIndex = '16';
-          Object.assign(handle.style, styles);
-          handle.style.cursor = cursor;
-          handle.onmousedown = (event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            event.stopPropagation();
-
-            const rect = wrapper.getBoundingClientRect();
-            let startWidth = parseFloat(wrapper.dataset.inlineWidth || '') || rect.width || wrapper.clientWidth || MIN_ELEMENT_DIMENSION;
-            let startHeight = parseFloat(wrapper.dataset.inlineHeight || '') || rect.height || wrapper.clientHeight || MIN_ELEMENT_DIMENSION;
-            startWidth = Math.max(MIN_ELEMENT_DIMENSION, startWidth);
-            startHeight = Math.max(MIN_ELEMENT_DIMENSION, startHeight);
-
-            const natSize = {
-              width: parseFloat(wrapper.dataset.inlineNatW || ''),
-              height: parseFloat(wrapper.dataset.inlineNatH || ''),
-            };
-            const natW = Number.isFinite(natSize.width) && natSize.width > 0 ? natSize.width : getMediaNaturalSize(media).width;
-            const natH = Number.isFinite(natSize.height) && natSize.height > 0 ? natSize.height : getMediaNaturalSize(media).height;
-            let currentLeft = parsePx(media.style.left, 0);
-            let currentTop = parsePx(media.style.top, 0);
-
-            const startX = event.clientX;
-            const startY = event.clientY;
-            const parentRect = wrapper.parentElement?.getBoundingClientRect();
-            const maxWidth = parentRect ? parentRect.width : slideWidth;
-            const maxHeight = parentRect ? parentRect.height : slideHeight;
-
-            const iframeDoc = doc;
-            const hostDoc = window.document;
-            const prevUserSelect = iframeDoc.body.style.userSelect;
-            const prevCursor = iframeDoc.body.style.cursor;
-            iframeDoc.body.style.userSelect = 'none';
-            iframeDoc.body.style.cursor = cursor;
-
-            let active = true;
-            const onMove = (moveEv: MouseEvent) => {
-              if (!active) return;
-              moveEv.preventDefault();
-
-              let nextWidth = startWidth;
-              let nextHeight = startHeight;
-              if (adjustWidth) {
-                const dx = moveEv.clientX - startX;
-                nextWidth = clamp(startWidth + dx, MIN_ELEMENT_DIMENSION, maxWidth);
-              }
-              if (adjustHeight) {
-                const dy = moveEv.clientY - startY;
-                nextHeight = clamp(startHeight + dy, MIN_ELEMENT_DIMENSION, maxHeight);
-              }
-
-              const applied = applyInlineMediaSizing(wrapper, media, natW, natH, nextWidth, nextHeight, currentLeft, currentTop);
-              currentLeft = applied.left;
-              currentTop = applied.top;
-            };
-
-            const stop = () => {
-              if (!active) return;
-              active = false;
-              iframeDoc.body.style.userSelect = prevUserSelect;
-              iframeDoc.body.style.cursor = prevCursor;
-              iframeDoc.removeEventListener('mousemove', onMove);
-              iframeDoc.removeEventListener('mouseup', stop);
-              hostDoc.removeEventListener('mousemove', onMove);
-              hostDoc.removeEventListener('mouseup', stop);
-            };
-
-            iframeDoc.addEventListener('mousemove', onMove);
-            iframeDoc.addEventListener('mouseup', stop);
-            hostDoc.addEventListener('mousemove', onMove);
-            hostDoc.addEventListener('mouseup', stop);
-          };
-          wrapper.appendChild(handle);
-          return handle;
-        };
-
-        const bottomHandle = makeResizeHandle(
-          {
-            left: '0',
-            right: '0',
-            bottom: '-12px',
-            height: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'transparent',
-          },
-          'ns-resize',
-          false,
-          true,
-        );
-        if (bottomHandle) {
-          const bar = doc.createElement('div');
-          bar.style.width = '48px';
-          bar.style.height = '4px';
-          bar.style.borderRadius = '999px';
-          bar.style.background = 'rgba(59,130,246,0.8)';
-          bottomHandle.appendChild(bar);
-        }
-
-        makeResizeHandle(
-          {
-            top: '0',
-            bottom: '0',
-            right: '-8px',
-            width: '16px',
-            borderRadius: '999px',
-            background: 'rgba(59,130,246,0.25)',
-          },
-          'ew-resize',
-          true,
-          false,
-        );
-
-        makeResizeHandle(
-          {
-            right: '-12px',
-            bottom: '-12px',
-            width: '20px',
-            height: '20px',
-            borderRadius: '6px',
-            background: 'rgba(59,130,246,0.85)',
-          },
-          'nwse-resize',
-          true,
-          true,
-        );
-      };
-
-      const startInlineMediaDrag = (media: HTMLImageElement | HTMLVideoElement, startEvent: MouseEvent) => {
-        const wrapperClass = media instanceof HTMLVideoElement ? 'vid-inline-wrapper' : 'img-crop-wrapper';
-        const wrapper = ensureMediaWrapper(doc, media, wrapperClass);
-        media.draggable = false;
-        const state = initializeInlineMediaBox(wrapper, media);
-        attachInlineHandles(wrapper, media, (evt) => startInlineMediaDrag(media, evt));
-
+      const startImageDrag = (img: HTMLImageElement, startEvent: MouseEvent) => {
+        const wrapper = ensureMediaWrapper(doc, img, 'img-crop-wrapper');
         wrapper.style.cursor = 'grabbing';
-        media.style.cursor = 'grabbing';
+        img.style.cursor = 'grabbing';
+        img.style.position = 'absolute';
+        img.style.maxWidth = 'unset';
+        img.style.maxHeight = 'unset';
+        img.style.objectFit = 'cover';
+        img.style.backfaceVisibility = 'hidden';
+        img.style.transform = 'translateZ(0)';
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
 
-        const startLeft = clamp(parsePx(media.style.left, state.left), state.minLeft, 0);
-        const startTop = clamp(parsePx(media.style.top, state.top), state.minTop, 0);
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const wrapperW = wrapperRect.width || wrapper.clientWidth || 1;
+        const wrapperH = wrapperRect.height || wrapper.clientHeight || 1;
+
+        let displayW = img.getBoundingClientRect().width;
+        let displayH = img.getBoundingClientRect().height;
+        const natW = img.naturalWidth || displayW || wrapperW;
+        const natH = img.naturalHeight || displayH || wrapperH;
+
+        if (displayW < wrapperW || displayH < wrapperH) {
+          const scale = Math.max(wrapperW / Math.max(1, natW), wrapperH / Math.max(1, natH));
+          displayW = Math.ceil(Math.max(1, natW) * scale);
+          displayH = Math.ceil(Math.max(1, natH) * scale);
+        }
+
+        img.style.width = `${Math.ceil(displayW)}px`;
+        img.style.height = `${Math.ceil(displayH)}px`;
+
+        const minLeft = wrapperW - displayW;
+        const minTop = wrapperH - displayH;
+        const fallbackLeft = clamp((wrapperW - displayW) / 2, minLeft, 0);
+        const fallbackTop = clamp((wrapperH - displayH) / 2, minTop, 0);
+        const computed = doc.defaultView?.getComputedStyle(img);
+        const initialLeft = clamp(parsePx(img.style.left, parsePx(computed?.left, fallbackLeft)), minLeft, 0);
+        const initialTop = clamp(parsePx(img.style.top, parsePx(computed?.top, fallbackTop)), minTop, 0);
+        img.style.left = `${initialLeft}px`;
+        img.style.top = `${initialTop}px`;
+
+        const startLeft = initialLeft;
+        const startTop = initialTop;
         const startX = startEvent.clientX;
         const startY = startEvent.clientY;
         const iframeDoc = doc;
@@ -1096,10 +671,10 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           event.preventDefault();
           const dx = event.clientX - startX;
           const dy = event.clientY - startY;
-          const nextLeft = clamp(startLeft + dx, state.minLeft, 0);
-          const nextTop = clamp(startTop + dy, state.minTop, 0);
-          media.style.left = `${Math.round(nextLeft)}px`;
-          media.style.top = `${Math.round(nextTop)}px`;
+          const nextLeft = clamp(startLeft + dx, minLeft, 0);
+          const nextTop = clamp(startTop + dy, minTop, 0);
+          img.style.left = `${nextLeft}px`;
+          img.style.top = `${nextTop}px`;
         };
 
         const stop = () => {
@@ -1108,7 +683,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           iframeDoc.body.style.userSelect = prevUserSelect;
           iframeDoc.body.style.cursor = prevCursor;
           wrapper.style.cursor = 'grab';
-          media.style.cursor = 'grab';
+          img.style.cursor = 'grab';
           iframeDoc.removeEventListener('mousemove', onMove);
           iframeDoc.removeEventListener('mouseup', stop);
           hostDoc.removeEventListener('mousemove', onMove);
@@ -1123,13 +698,92 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
       const toggleVideoResizeMode = (video: HTMLVideoElement) => {
         const wrapper = ensureMediaWrapper(doc, video, 'vid-inline-wrapper');
-        if (wrapper.dataset.inlineActive === 'true') {
-          removeInlineMediaControls();
+        wrapper.style.position = 'relative';
+        wrapper.style.display = 'inline-block';
+        wrapper.style.overflow = 'hidden';
+        video.style.position = 'absolute';
+        video.style.left = '0px';
+        video.style.top = '0px';
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'cover';
+
+        const deactivate = () => {
+          wrapper.dataset.resizeActive = '';
+          wrapper.style.outline = '';
+          wrapper.querySelectorAll('[data-role="video-resize-handle"]').forEach((node) => node.remove());
+        };
+
+        if (wrapper.dataset.resizeActive === 'true') {
+          deactivate();
           return;
         }
 
-        initializeInlineMediaBox(wrapper, video);
-        attachInlineHandles(wrapper, video, (event) => startInlineMediaDrag(video, event));
+        deactivate();
+        wrapper.dataset.resizeActive = 'true';
+        wrapper.style.outline = '2px solid rgba(59,130,246,0.9)';
+
+        const handle = doc.createElement('div');
+        handle.setAttribute('data-role', 'video-resize-handle');
+        handle.style.position = 'absolute';
+        handle.style.width = '16px';
+        handle.style.height = '16px';
+        handle.style.right = '-8px';
+        handle.style.bottom = '-8px';
+        handle.style.borderRadius = '6px';
+        handle.style.background = 'rgba(59,130,246,0.85)';
+        handle.style.cursor = 'nwse-resize';
+        handle.style.boxShadow = '0 0 0 2px rgba(15,23,42,0.6)';
+        wrapper.appendChild(handle);
+
+        handle.onmousedown = (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+
+          const rect = wrapper.getBoundingClientRect();
+          const startW = rect.width || wrapper.clientWidth || MIN_ELEMENT_DIMENSION;
+          const startH = rect.height || wrapper.clientHeight || MIN_ELEMENT_DIMENSION;
+          const startX = event.clientX;
+          const startY = event.clientY;
+          const parentRect = wrapper.parentElement?.getBoundingClientRect();
+          const maxW = parentRect ? parentRect.width : slideWidth;
+          const maxH = parentRect ? parentRect.height : slideHeight;
+          const iframeDoc = doc;
+          const hostDoc = window.document;
+          const prevUserSelect = iframeDoc.body.style.userSelect;
+          const prevCursor = iframeDoc.body.style.cursor;
+          iframeDoc.body.style.userSelect = 'none';
+          iframeDoc.body.style.cursor = 'nwse-resize';
+
+          let active = true;
+          const onMove = (moveEv: MouseEvent) => {
+            if (!active) return;
+            moveEv.preventDefault();
+            const dx = moveEv.clientX - startX;
+            const dy = moveEv.clientY - startY;
+            const nextW = clamp(startW + dx, MIN_ELEMENT_DIMENSION, maxW);
+            const nextH = clamp(startH + dy, MIN_ELEMENT_DIMENSION, maxH);
+            wrapper.style.width = `${nextW}px`;
+            wrapper.style.height = `${nextH}px`;
+          };
+
+          const stopResize = () => {
+            if (!active) return;
+            active = false;
+            iframeDoc.body.style.userSelect = prevUserSelect;
+            iframeDoc.body.style.cursor = prevCursor;
+            iframeDoc.removeEventListener('mousemove', onMove);
+            iframeDoc.removeEventListener('mouseup', stopResize);
+            hostDoc.removeEventListener('mousemove', onMove);
+            hostDoc.removeEventListener('mouseup', stopResize);
+          };
+
+          iframeDoc.addEventListener('mousemove', onMove);
+          iframeDoc.addEventListener('mouseup', stopResize);
+          hostDoc.addEventListener('mousemove', onMove);
+          hostDoc.addEventListener('mouseup', stopResize);
+        };
       };
 
       const editable = doc.querySelectorAll('[data-editable]');
@@ -1166,7 +820,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             markSelected();
             selectedImageRefs.current[slideIndex] = imgTarget;
             setSelectedElement({ slideIndex, element: 'background' });
-            startInlineMediaDrag(imgTarget, e);
+            startImageDrag(imgTarget, e);
           };
         } else {
           htmlEl.onmousedown = null;
@@ -1365,6 +1019,233 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   /** ========= Fallbacks BG ========= */
+  const getFallbackBackground = (slideIndex: number): { url: string; type: TargetKind } | null => {
+    const edited = editedContent[`${slideIndex}-background`];
+    if (typeof edited === 'string' && edited.trim()) return { url: edited, type: isVideoUrl(edited) ? 'vid' : 'bg' };
+    const up = uploadedImages[slideIndex];
+    if (typeof up === 'string' && up.trim()) return { url: up, type: 'bg' };
+    const c = carouselData.conteudos[slideIndex];
+    if (c) {
+      const candidates = [c.imagem_fundo, c.imagem_fundo2, c.imagem_fundo3, c.thumbnail_url].filter(Boolean) as string[];
+      for (const u of candidates) if (u && u.trim()) return { url: u, type: isVideoUrl(u) ? 'vid' : 'bg' };
+    }
+    return null;
+  };
+
+  /** ====================== Abrir modal (escolha do alvo melhorada) ======================= */
+  const openImageEditModal = (slideIndex: number) => {
+    setModalZoom(0.5);
+    setModalPan({ x: 0, y: 0 });
+
+    const iframe = iframeRefs.current[slideIndex];
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (!doc) return;
+
+    const fb = getFallbackBackground(slideIndex);
+    const expectedUrl = fb?.url || '';
+
+    const currentlySelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
+    const bgEls = getBgElements(doc);
+
+    const matchByUrl = (() => {
+      if (!expectedUrl) return null;
+      const norm = (u: string) => u.replace(/['"]/g, '');
+      const urlNorm = norm(expectedUrl);
+      const matches = bgEls.filter(el => {
+        const cs = doc.defaultView?.getComputedStyle(el);
+        const bi = cs?.backgroundImage || '';
+        return bi.includes(urlNorm);
+      });
+      if (matches.length === 0) return null;
+      const nonBody = matches.filter(el => el.tagName !== 'BODY');
+      return (nonBody[0] || matches[0]) as HTMLElement;
+    })();
+
+    const largest = findLargestVisual(doc);
+
+    let chosen: HTMLElement | null =
+      currentlySelected ||
+      matchByUrl ||
+      (largest?.type === 'bg' && largest.el.tagName !== 'BODY' ? largest.el : null) ||
+      largest?.el ||
+      null;
+
+    if (chosen && chosen.tagName === 'BODY') {
+      const notBody = bgEls.filter(el => el.tagName !== 'BODY');
+      if (notBody.length) {
+        let best = notBody[0]!;
+        let bestArea = 0;
+        notBody.forEach(el => {
+          const r = el.getBoundingClientRect();
+          const a = r.width * r.height;
+          if (a > bestArea) { bestArea = a; best = el; }
+        });
+        chosen = best;
+      }
+    }
+
+    if (!chosen) return;
+
+    if (!chosen.id) chosen.id = `edit-${Date.now()}`;
+    const targetSelector = `#${chosen.id}`;
+
+    const cs = doc.defaultView?.getComputedStyle(chosen);
+    let imageUrl = '';
+    let targetType: TargetKind = 'img';
+    let isVideo = false;
+
+    if (chosen.tagName === 'VIDEO') {
+      const video = chosen as HTMLVideoElement;
+      imageUrl = video.currentSrc || video.src || '';
+      targetType = 'vid';
+      isVideo = true;
+    } else if (chosen.tagName === 'IMG') {
+      imageUrl = resolveImgUrl(chosen as HTMLImageElement);
+      targetType = 'img';
+    } else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
+      const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
+      imageUrl = (m?.[1] || '').trim();
+      targetType = 'bg';
+    }
+
+    if (!imageUrl) {
+      if (chosen instanceof HTMLImageElement) {
+        const aux = chosen.getAttribute('data-bg-image-url');
+        if (aux && aux.trim()) imageUrl = aux.trim();
+      }
+    }
+    if (!imageUrl && expectedUrl) imageUrl = expectedUrl;
+    if (!imageUrl) return;
+
+    const existingWrapper =
+      targetType === 'img' && chosen.parentElement?.classList.contains('img-crop-wrapper')
+        ? (chosen.parentElement as HTMLElement)
+        : null;
+    const layoutTarget = existingWrapper ?? chosen;
+
+    const r = layoutTarget.getBoundingClientRect();
+    const bodyRect = doc.body.getBoundingClientRect();
+    const targetLeftPx = r.left - bodyRect.left;
+    const targetTopPx  = r.top  - bodyRect.top;
+    const targetWidthPx = r.width;
+    const targetHeightPx = r.height;
+    const containerHeightPx = targetHeightPx;
+
+    const finalizeOpenImg = (natW: number, natH: number) => {
+      const contW = targetWidthPx;
+      const contH = containerHeightPx;
+      const { displayW, displayH } = computeCover(natW, natH, contW, contH);
+      const { left: centerLeft, top: centerTop, minLeft, minTop } = centeredOffsets(displayW, displayH, contW, contH);
+
+      let imgOffsetTopPx = centerTop;
+      let imgOffsetLeftPx = centerLeft;
+
+      if (targetType === 'img') {
+        const imgEl = chosen as HTMLImageElement;
+        const top = parseFloat(imgEl.style.top || `${centerTop}`);
+        const left = parseFloat(imgEl.style.left || `${centerLeft}`);
+        imgOffsetTopPx = clamp(isNaN(top) ? centerTop : top, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(left) ? centerLeft : left, minLeft, 0);
+      } else if (targetType === 'bg') {
+        const cs2 = doc.defaultView?.getComputedStyle(chosen);
+        const bgPosY = cs2?.backgroundPositionY || '50%';
+        const bgPosX = cs2?.backgroundPositionX || '50%';
+        const toPerc = (v: string) => v.endsWith('%') ? parseFloat(v) / 100 : 0.5;
+        const pxFromPerc = (perc: number, maxOffset: number) => -Math.max(0, maxOffset) * clamp(perc, 0, 1);
+        const offY = pxFromPerc(toPerc(bgPosY), displayH - contH);
+        const offX = pxFromPerc(toPerc(bgPosX), displayW - contW);
+        imgOffsetTopPx = clamp(isNaN(offY) ? centerTop : offY, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(offX) ? centerLeft : offX, minLeft, 0);
+      }
+
+      const snapshotTarget = targetType === 'img' ? (existingWrapper ?? chosen) : chosen;
+      const snapshotStyles = doc.defaultView?.getComputedStyle(snapshotTarget) || null;
+      const snapshot = captureWrapperSnapshot(snapshotTarget, snapshotStyles);
+      if (Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length) {
+        (snapshotTarget as HTMLElement).dataset.editWrapperSnapshot = JSON.stringify(snapshot);
+      }
+
+      setImageModal({
+        open: true,
+        slideIndex,
+        targetType,
+        targetSelector,
+        imageUrl,
+        slideW: slideWidth,
+        slideH: slideHeight,
+        containerHeightPx,
+        naturalW: natW,
+        naturalH: natH,
+        imgOffsetTopPx,
+        imgOffsetLeftPx,
+        targetWidthPx,
+        targetLeftPx,
+        targetTopPx,
+        wrapperSnapshot: Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length ? snapshot : null,
+        isVideo: false,
+        videoTargetW: 0,
+        videoTargetH: 0,
+        videoTargetLeft: 0,
+        videoTargetTop: 0,
+        cropX: 0, cropY: 0, cropW: 0, cropH: 0,
+      });
+      document.documentElement.style.overflow = 'hidden';
+    };
+
+    if (isVideo) {
+      const video = chosen as HTMLVideoElement;
+      const videoW = targetWidthPx;
+      const videoH = targetHeightPx;
+
+      if (!imageUrl && expectedUrl) imageUrl = expectedUrl;
+
+      setImageModal({
+        open: true,
+        slideIndex,
+        targetType: 'vid',
+        targetSelector,
+        imageUrl,
+        slideW: slideWidth,
+        slideH: slideHeight,
+
+        containerHeightPx: targetHeightPx,
+        naturalW: video.videoWidth || videoW,
+        naturalH: video.videoHeight || videoH,
+        imgOffsetTopPx: 0,
+        imgOffsetLeftPx: 0,
+        targetWidthPx: targetWidthPx,
+        targetLeftPx,
+        targetTopPx,
+
+        isVideo: true,
+        videoTargetW: videoW,
+        videoTargetH: videoH,
+        videoTargetLeft: targetLeftPx,
+        videoTargetTop: targetTopPx,
+        cropX: 0,
+        cropY: 0,
+        cropW: videoW,
+        cropH: videoH,
+        wrapperSnapshot: null,
+      });
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      const tmp = new Image();
+      tmp.crossOrigin = 'anonymous';
+      tmp.src = imageUrl;
+      const natDone = () => finalizeOpenImg(tmp.naturalWidth || targetWidthPx, tmp.naturalHeight || targetHeightPx);
+      const natFallback = () => finalizeOpenImg(
+        Math.max(1, targetWidthPx || containerHeightPx || slideWidth),
+        Math.max(1, containerHeightPx || targetHeightPx || slideHeight)
+      );
+      if (tmp.complete && tmp.naturalWidth && tmp.naturalHeight) natDone();
+      else {
+        tmp.onload = natDone;
+        tmp.onerror = natFallback;
+      }
+    }
+  };
+
   /** ====================== Aplicar alterações do modal ======================= */
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
@@ -1641,7 +1522,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         target.style.setProperty('background-size', 'cover', 'important');
         target.style.setProperty('background-position-x', `${xPerc}%`, 'important');
         target.style.setProperty('background-position-y', `${yPerc}%`, 'important');
-        target.style.setProperty('width', `${imageState.targetWidthPx}px`, 'important');
         target.style.setProperty('height', `${imageState.containerHeightPx}px`, 'important');
         if ((doc.defaultView?.getComputedStyle(target).position || 'static') === 'static') {
           target.style.position = 'relative';
@@ -1665,8 +1545,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
 
       const wrapperEl = imgWrapper as HTMLElement;
-      applyWrapperSnapshot(wrapperEl, imageState.wrapperSnapshot);
-      wrapperEl.style.overflow = 'hidden';
       wrapperEl.style.width = `${imageState.targetWidthPx}px`;
       wrapperEl.style.height = `${imageState.containerHeightPx}px`;
 
@@ -1995,7 +1873,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {(imageModal.targetType === 'img' || imageModal.targetType === 'bg') && (
+                              {imageModal.targetType === 'img' && (
                                 <>
                                   {/* resize horizontal */}
                                   <DragSurface
