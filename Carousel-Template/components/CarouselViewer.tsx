@@ -584,11 +584,32 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
 
+      const removeInlineMediaControls = () => {
+        doc
+          .querySelectorAll<HTMLElement>('[data-role="inline-media-outline"], [data-role="inline-media-handle"], [data-role="inline-media-drag"]')
+          .forEach((node) => node.remove());
+        doc
+          .querySelectorAll<HTMLElement>('.img-crop-wrapper[data-inline-active], .vid-inline-wrapper[data-inline-active]')
+          .forEach((wrapperEl) => {
+            wrapperEl.removeAttribute('data-inline-active');
+            wrapperEl.style.outline = '';
+          });
+      };
+
       const clearAllSelected = () => {
         iframeRefs.current.forEach((f) => {
           const d = f?.contentDocument || f?.contentWindow?.document;
           if (!d) return;
           d.querySelectorAll('[data-editable]').forEach(x => x.classList.remove('selected'));
+          d
+            .querySelectorAll<HTMLElement>('[data-role="inline-media-outline"], [data-role="inline-media-handle"], [data-role="inline-media-drag"]')
+            .forEach((node) => node.remove());
+          d
+            .querySelectorAll<HTMLElement>('.img-crop-wrapper[data-inline-active], .vid-inline-wrapper[data-inline-active]')
+            .forEach((wrapperEl) => {
+              wrapperEl.removeAttribute('data-inline-active');
+              wrapperEl.style.outline = '';
+            });
         });
       };
 
