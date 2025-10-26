@@ -193,185 +193,6 @@ const computeImageBox = (
   return { width, height, offsetLeft, offsetTop };
 };
 
-const ensureMediaWrapper = (doc: Document, el: HTMLElement, className: string): HTMLElement => {
-  let wrapper = el.parentElement;
-  if (!wrapper || !wrapper.classList.contains(className)) {
-    const w = doc.createElement('div');
-    w.className = className;
-    w.style.position = 'relative';
-    w.style.display = 'inline-block';
-    const rect = el.getBoundingClientRect();
-    const fallbackWidth = rect.width || (el as HTMLElement).clientWidth || 1;
-    const fallbackHeight = rect.height || (el as HTMLElement).clientHeight || 1;
-    w.style.width = `${Math.max(1, fallbackWidth)}px`;
-    w.style.height = `${Math.max(1, fallbackHeight)}px`;
-    if (wrapper) {
-      wrapper.replaceChild(w, el);
-    }
-    w.appendChild(el);
-    wrapper = w;
-  }
-
-  const wrapperEl = wrapper as HTMLElement;
-  if (!wrapperEl.style.width || !wrapperEl.style.height) {
-    const rect = wrapperEl.getBoundingClientRect();
-    if (!wrapperEl.style.width) wrapperEl.style.width = `${Math.max(1, rect.width)}px`;
-    if (!wrapperEl.style.height) wrapperEl.style.height = `${Math.max(1, rect.height)}px`;
-  }
-  wrapperEl.style.overflow = 'hidden';
-  return wrapperEl;
-};
-
-const parsePx = (value: string | null | undefined, fallback = 0) => {
-  if (!value) return fallback;
-  const parsed = parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const WRAPPER_INLINE_PROPS = [
-  'position',
-  'top',
-  'right',
-  'bottom',
-  'left',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'display',
-  'align-self',
-  'justify-self',
-  'transform',
-  'z-index',
-  'flex',
-  'flex-grow',
-  'flex-shrink',
-  'flex-basis',
-  'grid-column',
-  'grid-row',
-  'grid-area',
-] as const;
-
-const WRAPPER_COMPUTED_PROPS = [
-  'display',
-  'position',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'transform',
-  'align-self',
-  'justify-self',
-  'z-index',
-] as const;
-
-type WrapperInlineProp = (typeof WRAPPER_INLINE_PROPS)[number];
-type WrapperComputedProp = (typeof WRAPPER_COMPUTED_PROPS)[number];
-
-type WrapperStyleSnapshot = {
-  inline: Partial<Record<WrapperInlineProp, string>>;
-  computed: Partial<Record<WrapperComputedProp, string>>;
-};
-
-const captureWrapperSnapshot = (
-  el: HTMLElement,
-  computed: CSSStyleDeclaration | null
-): WrapperStyleSnapshot => {
-  const inline: WrapperStyleSnapshot['inline'] = {};
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = el.style.getPropertyValue(prop);
-    if (value) inline[prop] = value;
-  });
-
-  const computedRecord: WrapperStyleSnapshot['computed'] = {};
-  if (computed) {
-    WRAPPER_COMPUTED_PROPS.forEach((prop) => {
-      const value = computed.getPropertyValue(prop);
-      if (value && value !== 'auto' && value !== 'normal' && value !== 'none') {
-        computedRecord[prop] = value;
-      }
-    });
-  }
-
-  return { inline, computed: computedRecord };
-};
-
-const parseWrapperSnapshot = (value: string | undefined): WrapperStyleSnapshot | null => {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as WrapperStyleSnapshot;
-  } catch (err) {
-    console.warn('Failed to parse wrapper snapshot', err);
-    return null;
-  }
-};
-
-const applyWrapperSnapshot = (
-  wrapper: HTMLElement,
-  snapshot: WrapperStyleSnapshot | null
-) => {
-  const ensureRelative = () => {
-    if (!wrapper.style.getPropertyValue('position')) {
-      wrapper.style.setProperty('position', 'relative');
-    }
-  };
-
-  if (!snapshot) {
-    ensureRelative();
-    if (!wrapper.style.getPropertyValue('display')) {
-      wrapper.style.setProperty('display', 'inline-block');
-    }
-    return;
-  }
-
-  const { inline, computed } = snapshot;
-
-  WRAPPER_INLINE_PROPS.forEach((prop) => {
-    const value = inline[prop];
-    if (value) {
-      const applied = prop === 'display' && value === 'inline' ? 'inline-block' : value;
-      wrapper.style.setProperty(prop, applied);
-    }
-  });
-
-  const positionValue = inline['position'] || computed['position'];
-  if (positionValue && positionValue !== 'static') {
-    wrapper.style.setProperty('position', positionValue);
-  } else {
-    ensureRelative();
-  }
-
-  const displayValue = inline['display'] || computed['display'];
-  if (displayValue) {
-    const applied = displayValue === 'inline' ? 'inline-block' : displayValue;
-    wrapper.style.setProperty('display', applied);
-  } else if (!wrapper.style.getPropertyValue('display')) {
-    wrapper.style.setProperty('display', 'inline-block');
-  }
-
-  (['margin-top', 'margin-right', 'margin-bottom', 'margin-left'] as const).forEach((prop) => {
-    if (inline[prop]) return;
-    const val = computed[prop];
-    if (val) wrapper.style.setProperty(prop, val);
-  });
-
-  if (!inline['transform'] && computed['transform']) {
-    wrapper.style.setProperty('transform', computed['transform']);
-  }
-
-  if (!inline['align-self'] && computed['align-self']) {
-    wrapper.style.setProperty('align-self', computed['align-self']);
-  }
-
-  if (!inline['justify-self'] && computed['justify-self']) {
-    wrapper.style.setProperty('justify-self', computed['justify-self']);
-  }
-
-  if (!inline['z-index'] && computed['z-index']) {
-    wrapper.style.setProperty('z-index', computed['z-index']);
-  }
-};
-
 /** ========= Helpers de URL/Imagem ========= */
 const pickFromSrcset = (srcset: string): string => {
   const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
@@ -1177,6 +998,233 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   };
 
   /** ========= Fallbacks BG ========= */
+  const getFallbackBackground = (slideIndex: number): { url: string; type: TargetKind } | null => {
+    const edited = editedContent[`${slideIndex}-background`];
+    if (typeof edited === 'string' && edited.trim()) return { url: edited, type: isVideoUrl(edited) ? 'vid' : 'bg' };
+    const up = uploadedImages[slideIndex];
+    if (typeof up === 'string' && up.trim()) return { url: up, type: 'bg' };
+    const c = carouselData.conteudos[slideIndex];
+    if (c) {
+      const candidates = [c.imagem_fundo, c.imagem_fundo2, c.imagem_fundo3, c.thumbnail_url].filter(Boolean) as string[];
+      for (const u of candidates) if (u && u.trim()) return { url: u, type: isVideoUrl(u) ? 'vid' : 'bg' };
+    }
+    return null;
+  };
+
+  /** ====================== Abrir modal (escolha do alvo melhorada) ======================= */
+  const openImageEditModal = (slideIndex: number) => {
+    setModalZoom(0.5);
+    setModalPan({ x: 0, y: 0 });
+
+    const iframe = iframeRefs.current[slideIndex];
+    const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+    if (!doc) return;
+
+    const fb = getFallbackBackground(slideIndex);
+    const expectedUrl = fb?.url || '';
+
+    const currentlySelected = doc.querySelector('[data-editable].selected') as HTMLElement | null;
+    const bgEls = getBgElements(doc);
+
+    const matchByUrl = (() => {
+      if (!expectedUrl) return null;
+      const norm = (u: string) => u.replace(/['"]/g, '');
+      const urlNorm = norm(expectedUrl);
+      const matches = bgEls.filter(el => {
+        const cs = doc.defaultView?.getComputedStyle(el);
+        const bi = cs?.backgroundImage || '';
+        return bi.includes(urlNorm);
+      });
+      if (matches.length === 0) return null;
+      const nonBody = matches.filter(el => el.tagName !== 'BODY');
+      return (nonBody[0] || matches[0]) as HTMLElement;
+    })();
+
+    const largest = findLargestVisual(doc);
+
+    let chosen: HTMLElement | null =
+      currentlySelected ||
+      matchByUrl ||
+      (largest?.type === 'bg' && largest.el.tagName !== 'BODY' ? largest.el : null) ||
+      largest?.el ||
+      null;
+
+    if (chosen && chosen.tagName === 'BODY') {
+      const notBody = bgEls.filter(el => el.tagName !== 'BODY');
+      if (notBody.length) {
+        let best = notBody[0]!;
+        let bestArea = 0;
+        notBody.forEach(el => {
+          const r = el.getBoundingClientRect();
+          const a = r.width * r.height;
+          if (a > bestArea) { bestArea = a; best = el; }
+        });
+        chosen = best;
+      }
+    }
+
+    if (!chosen) return;
+
+    if (!chosen.id) chosen.id = `edit-${Date.now()}`;
+    const targetSelector = `#${chosen.id}`;
+
+    const cs = doc.defaultView?.getComputedStyle(chosen);
+    let imageUrl = '';
+    let targetType: TargetKind = 'img';
+    let isVideo = false;
+
+    if (chosen.tagName === 'VIDEO') {
+      const video = chosen as HTMLVideoElement;
+      imageUrl = video.currentSrc || video.src || '';
+      targetType = 'vid';
+      isVideo = true;
+    } else if (chosen.tagName === 'IMG') {
+      imageUrl = resolveImgUrl(chosen as HTMLImageElement);
+      targetType = 'img';
+    } else if (cs?.backgroundImage && cs.backgroundImage.includes('url(')) {
+      const m = cs.backgroundImage.match(/url\(["']?(.+?)["']?\)/i);
+      imageUrl = (m?.[1] || '').trim();
+      targetType = 'bg';
+    }
+
+    if (!imageUrl) {
+      if (chosen instanceof HTMLImageElement) {
+        const aux = chosen.getAttribute('data-bg-image-url');
+        if (aux && aux.trim()) imageUrl = aux.trim();
+      }
+    }
+    if (!imageUrl && expectedUrl) imageUrl = expectedUrl;
+    if (!imageUrl) return;
+
+    const existingWrapper =
+      targetType === 'img' && chosen.parentElement?.classList.contains('img-crop-wrapper')
+        ? (chosen.parentElement as HTMLElement)
+        : null;
+    const layoutTarget = existingWrapper ?? chosen;
+
+    const r = layoutTarget.getBoundingClientRect();
+    const bodyRect = doc.body.getBoundingClientRect();
+    const targetLeftPx = r.left - bodyRect.left;
+    const targetTopPx  = r.top  - bodyRect.top;
+    const targetWidthPx = r.width;
+    const targetHeightPx = r.height;
+    const containerHeightPx = targetHeightPx;
+
+    const finalizeOpenImg = (natW: number, natH: number) => {
+      const contW = targetWidthPx;
+      const contH = containerHeightPx;
+      const { displayW, displayH } = computeCover(natW, natH, contW, contH);
+      const { left: centerLeft, top: centerTop, minLeft, minTop } = centeredOffsets(displayW, displayH, contW, contH);
+
+      let imgOffsetTopPx = centerTop;
+      let imgOffsetLeftPx = centerLeft;
+
+      if (targetType === 'img') {
+        const imgEl = chosen as HTMLImageElement;
+        const top = parseFloat(imgEl.style.top || `${centerTop}`);
+        const left = parseFloat(imgEl.style.left || `${centerLeft}`);
+        imgOffsetTopPx = clamp(isNaN(top) ? centerTop : top, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(left) ? centerLeft : left, minLeft, 0);
+      } else if (targetType === 'bg') {
+        const cs2 = doc.defaultView?.getComputedStyle(chosen);
+        const bgPosY = cs2?.backgroundPositionY || '50%';
+        const bgPosX = cs2?.backgroundPositionX || '50%';
+        const toPerc = (v: string) => v.endsWith('%') ? parseFloat(v) / 100 : 0.5;
+        const pxFromPerc = (perc: number, maxOffset: number) => -Math.max(0, maxOffset) * clamp(perc, 0, 1);
+        const offY = pxFromPerc(toPerc(bgPosY), displayH - contH);
+        const offX = pxFromPerc(toPerc(bgPosX), displayW - contW);
+        imgOffsetTopPx = clamp(isNaN(offY) ? centerTop : offY, minTop, 0);
+        imgOffsetLeftPx = clamp(isNaN(offX) ? centerLeft : offX, minLeft, 0);
+      }
+
+      const snapshotTarget = targetType === 'img' ? (existingWrapper ?? chosen) : chosen;
+      const snapshotStyles = doc.defaultView?.getComputedStyle(snapshotTarget) || null;
+      const snapshot = captureWrapperSnapshot(snapshotTarget, snapshotStyles);
+      if (Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length) {
+        (snapshotTarget as HTMLElement).dataset.editWrapperSnapshot = JSON.stringify(snapshot);
+      }
+
+      setImageModal({
+        open: true,
+        slideIndex,
+        targetType,
+        targetSelector,
+        imageUrl,
+        slideW: slideWidth,
+        slideH: slideHeight,
+        containerHeightPx,
+        naturalW: natW,
+        naturalH: natH,
+        imgOffsetTopPx,
+        imgOffsetLeftPx,
+        targetWidthPx,
+        targetLeftPx,
+        targetTopPx,
+        wrapperSnapshot: Object.keys(snapshot.inline).length || Object.keys(snapshot.computed).length ? snapshot : null,
+        isVideo: false,
+        videoTargetW: 0,
+        videoTargetH: 0,
+        videoTargetLeft: 0,
+        videoTargetTop: 0,
+        cropX: 0, cropY: 0, cropW: 0, cropH: 0,
+      });
+      document.documentElement.style.overflow = 'hidden';
+    };
+
+    if (isVideo) {
+      const video = chosen as HTMLVideoElement;
+      const videoW = targetWidthPx;
+      const videoH = targetHeightPx;
+
+      if (!imageUrl && expectedUrl) imageUrl = expectedUrl;
+
+      setImageModal({
+        open: true,
+        slideIndex,
+        targetType: 'vid',
+        targetSelector,
+        imageUrl,
+        slideW: slideWidth,
+        slideH: slideHeight,
+
+        containerHeightPx: targetHeightPx,
+        naturalW: video.videoWidth || videoW,
+        naturalH: video.videoHeight || videoH,
+        imgOffsetTopPx: 0,
+        imgOffsetLeftPx: 0,
+        targetWidthPx: targetWidthPx,
+        targetLeftPx,
+        targetTopPx,
+
+        isVideo: true,
+        videoTargetW: videoW,
+        videoTargetH: videoH,
+        videoTargetLeft: targetLeftPx,
+        videoTargetTop: targetTopPx,
+        cropX: 0,
+        cropY: 0,
+        cropW: videoW,
+        cropH: videoH,
+        wrapperSnapshot: null,
+      });
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      const tmp = new Image();
+      tmp.crossOrigin = 'anonymous';
+      tmp.src = imageUrl;
+      const natDone = () => finalizeOpenImg(tmp.naturalWidth || targetWidthPx, tmp.naturalHeight || targetHeightPx);
+      const natFallback = () => finalizeOpenImg(
+        Math.max(1, targetWidthPx || containerHeightPx || slideWidth),
+        Math.max(1, containerHeightPx || targetHeightPx || slideHeight)
+      );
+      if (tmp.complete && tmp.naturalWidth && tmp.naturalHeight) natDone();
+      else {
+        tmp.onload = natDone;
+        tmp.onerror = natFallback;
+      }
+    }
+  };
+
   /** ====================== Aplicar alterações do modal ======================= */
   const applyImageEditModal = () => {
     if (!imageModal.open) return;
@@ -1453,7 +1501,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         target.style.setProperty('background-size', 'cover', 'important');
         target.style.setProperty('background-position-x', `${xPerc}%`, 'important');
         target.style.setProperty('background-position-y', `${yPerc}%`, 'important');
-        target.style.setProperty('width', `${imageState.targetWidthPx}px`, 'important');
         target.style.setProperty('height', `${imageState.containerHeightPx}px`, 'important');
         if ((doc.defaultView?.getComputedStyle(target).position || 'static') === 'static') {
           target.style.position = 'relative';
@@ -1477,8 +1524,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
 
       const wrapperEl = imgWrapper as HTMLElement;
-      applyWrapperSnapshot(wrapperEl, imageState.wrapperSnapshot);
-      wrapperEl.style.overflow = 'hidden';
       wrapperEl.style.width = `${imageState.targetWidthPx}px`;
       wrapperEl.style.height = `${imageState.containerHeightPx}px`;
 
@@ -1807,7 +1852,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
                                 }}
                               />
 
-                              {(imageModal.targetType === 'img' || imageModal.targetType === 'bg') && (
+                              {imageModal.targetType === 'img' && (
                                 <>
                                   {/* resize horizontal */}
                                   <DragSurface
