@@ -1,5 +1,5 @@
 // CarouselViewer.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import {
   X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers as LayersIcon,
@@ -278,6 +278,47 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const modalPreviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastSearchId = useRef(0);
 
+  const tagEditableMediaWhenReady = useCallback((doc: Document, slideIndex: number) => {
+    const applyTags = () => {
+      const imgs = Array.from(doc.querySelectorAll('img'));
+      let imgIdx = 0;
+      imgs.forEach((img) => {
+        const im = img as HTMLImageElement;
+        if (isImgurUrl(im.src) && !im.getAttribute('data-protected')) {
+          im.setAttribute('data-protected', 'true');
+        }
+        if (im.getAttribute('data-protected') !== 'true') {
+          im.setAttribute('data-editable', 'image');
+          if (!im.id) im.id = `slide-${slideIndex}-img-${imgIdx++}`;
+        }
+      });
+
+      const vids = Array.from(doc.querySelectorAll('video'));
+      let vidIdx = 0;
+      vids.forEach((video) => {
+        const v = video as HTMLVideoElement;
+        v.setAttribute('data-editable', 'video');
+        if (!v.id) v.id = `slide-${slideIndex}-vid-${vidIdx++}`;
+        v.style.objectFit = 'cover';
+        v.style.width = '100%';
+        v.style.height = '100%';
+      });
+    };
+
+    if (doc.readyState === 'complete') {
+      applyTags();
+      return;
+    }
+
+    const handleReadyStateChange = () => {
+      if (doc.readyState !== 'complete') return;
+      doc.removeEventListener('readystatechange', handleReadyStateChange);
+      applyTags();
+    };
+
+    doc.addEventListener('readystatechange', handleReadyStateChange, { once: true });
+  }, []);
+
   // popup moving flags
   const cropResizeRef = useRef<{ active: boolean; pos: HandlePos | null }>({ active: false, pos: null });
   const cropDragRef = useRef<boolean>(false);
@@ -489,26 +530,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
 
-      // marcar imagens/vídeos editáveis e id
-      const imgs = Array.from(doc.querySelectorAll('img'));
-      let imgIdx = 0;
-      imgs.forEach((img) => {
-        const im = img as HTMLImageElement;
-        if (isImgurUrl(im.src) && !im.getAttribute('data-protected')) im.setAttribute('data-protected', 'true');
-        if (im.getAttribute('data-protected') !== 'true') {
-          im.setAttribute('data-editable', 'image');
-          if (!im.id) im.id = `slide-${index}-img-${imgIdx++}`;
-        }
-      });
-      const vids = Array.from(doc.querySelectorAll('video'));
-      let vidIdx = 0;
-      vids.forEach((v) => {
-        (v as HTMLVideoElement).setAttribute('data-editable', 'video');
-        if (!v.id) v.id = `slide-${index}-vid-${vidIdx++}`;
-        (v as HTMLVideoElement).style.objectFit = 'cover';
-        (v as HTMLVideoElement).style.width = '100%';
-        (v as HTMLVideoElement).style.height = '100%';
-      });
+      tagEditableMediaWhenReady(doc, index);
 
       // aplica estilos e conteúdo title/subtitle
       const titleEl = doc.getElementById(`slide-${index}-title`);
@@ -575,7 +597,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       }
     });
-  }, [elementStyles, editedContent, originalStyles, renderedSlides]);
+  }, [elementStyles, editedContent, originalStyles, renderedSlides, tagEditableMediaWhenReady]);
 
   /** ====================== Interações dos iframes (CLICK / DBLCLICK) ======================= */
   useEffect(() => {
@@ -583,6 +605,8 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       if (!iframe.contentWindow) return;
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       if (!doc) return;
+
+      tagEditableMediaWhenReady(doc, slideIndex);
 
       const removeInlineMediaControls = () => {
         doc
@@ -891,7 +915,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [renderedSlides, expandedLayers]);
+  }, [renderedSlides, expandedLayers, tagEditableMediaWhenReady]);
 
   /** ====================== Slides / Layers ======================= */
   const toggleLayer = (index: number) => {
