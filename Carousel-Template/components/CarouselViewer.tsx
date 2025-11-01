@@ -1,6 +1,5 @@
 // CarouselViewer.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import ReactDOM from 'react-dom';
 import {
   X, ZoomIn, ZoomOut, Download, ChevronDown, ChevronRight, Layers as LayersIcon,
   Image as ImageIcon, Type, Upload, Search, Play
@@ -19,128 +18,11 @@ const logb = (...a: any[]) => { if (LOG) console.log('[CV-BIND]', ...a); };
 const isVideoUrl = (url: string): boolean => /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
 const isImgurUrl = (url: string): boolean => url.includes('i.imgur.com');
 
-type TargetKind = 'img' | 'bg' | 'vid';
-type HandlePos = 'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw';
-
 interface CarouselViewerProps {
   slides: string[];
   carouselData: CarouselData;
   onClose: () => void;
 }
-
-type ImageEditModalState = { open: false };
-
-/** ========= Portal ========= */
-const ModalPortal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const elRef = useRef<HTMLDivElement | null>(null);
-  if (!elRef.current) elRef.current = document.createElement('div');
-  useEffect(() => {
-    const el = elRef.current!;
-    el.style.zIndex = '9999';
-    document.body.appendChild(el);
-    return () => { document.body.removeChild(el); };
-  }, []);
-  return ReactDOM.createPortal(children, elRef.current);
-};
-
-/** ========= Drag UI ========= */
-const DragSurface: React.FC<{
-  onDrag: (dx: number, dy: number) => void;
-  disabled?: boolean;
-  cursor?: React.CSSProperties['cursor'];
-  onStart?: () => void;
-  onEnd?: () => void;
-  style?: React.CSSProperties;
-}> = ({ onDrag, disabled, cursor, onStart, onEnd, style }) => {
-  const dragging = useRef(false);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      onDrag(e.movementX, e.movementY);
-    };
-    const onUp = () => {
-      if (dragging.current && onEnd) onEnd();
-      dragging.current = false;
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [onDrag, onEnd]);
-
-  return (
-    <div
-      onMouseDown={(e) => {
-        if (disabled) return;
-        e.preventDefault();
-        dragging.current = true;
-        if (onStart) onStart();
-      }}
-      className="absolute"
-      style={{
-        zIndex: 10,
-        background: 'transparent',
-        cursor: disabled ? 'default' : (cursor || 'move'),
-        pointerEvents: disabled ? 'none' : 'auto',
-        ...style,
-      }}
-    />
-  );
-};
-
-/** ========= Handle dots (reservado) ========= */
-const handleStyles: Record<HandlePos, React.CSSProperties> = {
-  n:  { top: -6, left: '50%', marginLeft: -6, width: 12, height: 12, cursor: 'ns-resize' },
-  s:  { bottom: -6, left: '50%', marginLeft: -6, width: 12, height: 12, cursor: 'ns-resize' },
-  e:  { right: -6, top: '50%', marginTop: -6, width: 12, height: 12, cursor: 'ew-resize' },
-  w:  { left: -6, top: '50%', marginTop: -6, width: 12, height: 12, cursor: 'ew-resize' },
-  ne: { top: -6, right: -6, width: 12, height: 12, cursor: 'nesw-resize' },
-  nw: { top: -6, left: -6, width: 12, height: 12, cursor: 'nwse-resize' },
-  se: { bottom: -6, right: -6, width: 12, height: 12, cursor: 'nwse-resize' },
-  sw: { bottom: -6, left: -6, width: 12, height: 12, cursor: 'nesw-resize' },
-};
-
-/** ========= Helpers URL/Imagem ========= */
-const pickFromSrcset = (srcset: string): string => {
-  const parts = srcset.split(',').map(p => p.trim()).filter(Boolean);
-  let bestUrl = '';
-  let bestSize = -1;
-  for (const part of parts) {
-    const m = part.match(/(.+)\s+(\d+)(w|x)$/i);
-    if (m) {
-      const url = m[1].trim();
-      const size = parseInt(m[2], 10);
-      if (size > bestSize) { bestSize = size; bestUrl = url; }
-    } else {
-      if (!bestUrl) {
-        const u = part.split(' ')[0];
-        bestUrl = u;
-      }
-    }
-  }
-  return bestUrl;
-};
-
-const resolveImgUrl = (img: HTMLImageElement): string => {
-  const ds = (img as any).dataset || {};
-  const byPriority = [
-    ds.src,
-    (img as any).currentSrc,
-    img.currentSrc,
-    img.src,
-    img.getAttribute('data-bg-image-url'),
-  ].filter(Boolean) as string[];
-  for (const u of byPriority) if (typeof u === 'string' && u.trim()) return u.trim();
-  const srcset = img.srcset || img.getAttribute('srcset') || '';
-  if (srcset.trim()) {
-    const pick = pickFromSrcset(srcset);
-    if (pick) return pick;
-  }
-  return '';
-};
 
 /** ========= Math ========= */
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -214,8 +96,7 @@ const readAndStoreComputedTextStyles = (
   doc: Document,
   slideIndex: number,
   key: 'title' | 'subtitle',
-  setOriginalStylesFn: React.Dispatch<React.SetStateAction<Record<string, ElementStyles>>>,
-  elementStylesState: Record<string, ElementStyles>
+  setOriginalStylesFn: React.Dispatch<React.SetStateAction<Record<string, ElementStyles>>>
 ) => {
   const id = `slide-${slideIndex}-${key}`;
   const el = doc.getElementById(id) as HTMLElement | null;
@@ -252,9 +133,9 @@ const installAltCleanupObserver = (doc: Document) => {
   };
   try { scrub(doc.body); } catch {}
   const mo = new MutationObserver((muts) => {
-    for (const m of muts) {
-      if (m.type === 'childList') m.addedNodes.forEach(scrub);
-      else if (m.type === 'characterData') scrub(m.target as Node);
+    for (const mut of muts) {
+      if (mut.type === 'childList') mut.addedNodes.forEach(scrub);
+      else if (mut.type === 'characterData') scrub(mut.target as Node);
     }
   });
   mo.observe(doc.body, { subtree: true, childList: true, characterData: true });
@@ -270,12 +151,22 @@ const getBgElements = (doc: Document) =>
     });
 
 const findLargestVisual = (doc: Document): { type: 'img' | 'bg' | 'vid', el: HTMLElement } | null => {
-  let best: { type: 'img' | 'bg' | 'vid', el: HTMLElement, area: number } | null = null;
+  let best: { type: 'img' | 'bg' | 'vid', el: HTMLElement, area: number } | undefined;
+
+  const consider = (type: 'img'|'bg'|'vid', el: HTMLElement, area: number, candIsBody = false) => {
+    const isBetterThanCurrent = () => {
+      if (!best) return true;
+      if (area > best.area) return true;
+      if (best.el.tagName === 'BODY' && !candIsBody) return true;
+      return false;
+    };
+    if (isBetterThanCurrent()) best = { type, el, area };
+  };
 
   Array.from(doc.querySelectorAll('video')).forEach(v => {
     const r = (v as HTMLVideoElement).getBoundingClientRect();
     const area = r.width * r.height;
-    if (area > 9000) if (!best || area > best.area) best = { type: 'vid', el: v as HTMLElement, area };
+    if (area > 9000) consider('vid', v as HTMLElement, area);
   });
 
   Array.from(doc.querySelectorAll('img')).forEach(img => {
@@ -284,7 +175,7 @@ const findLargestVisual = (doc: Document): { type: 'img' | 'bg' | 'vid', el: HTM
     if (im.getAttribute('data-protected') !== 'true') {
       const r = im.getBoundingClientRect();
       const area = r.width * r.height;
-      if (area > 9000) if (!best || area > best.area) best = { type: 'img', el: im, area };
+      if (area > 9000) consider('img', im, area);
     }
   });
 
@@ -294,8 +185,7 @@ const findLargestVisual = (doc: Document): { type: 'img' | 'bg' | 'vid', el: HTM
     const area = r.width * r.height;
     if (area > 9000) {
       const isBody = el.tagName === 'BODY';
-      const better = !best || area > best.area || (best.el.tagName === 'BODY' && !isBody);
-      if (better) best = { type: 'bg', el, area };
+      consider('bg', el, area, isBody);
     }
   });
 
@@ -488,7 +378,7 @@ const ensureImgCropWrapper = (doc: Document, img: HTMLImageElement): { wrapper: 
 const ensureHostResizeObserver = (host: HTMLElement) => {
   if ((host as any).__cvRO) return;
   const ro = new ResizeObserver(() => {
-    host.querySelectorAll('img,video').forEach((el) => {
+    host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
       const isVid = el.tagName === 'VIDEO';
       (el as HTMLElement).style.setProperty('width', '100%', 'important');
       (el as HTMLElement).style.setProperty('height', '100%', 'important');
@@ -523,13 +413,10 @@ const disposePinchersInDoc = (doc: Document) => {
 
 /** ========= Pinças (overlay fixo) ========= */
 const attachResizePinchers = (doc: Document, host: HTMLElement) => {
-  // já anexadas neste host? nada a fazer
   if ((doc as any).__cvActivePinchersHost === host && (host as any).__cvPinchers) return;
 
-  // exclusividade por documento
   disposePinchersInDoc(doc);
 
-  // Garante altura persistida e fill interno
   const persisted = parseFloat(host.getAttribute('data-cv-height') || 'NaN');
   const ensurePxHeight = () => {
     const r = host.getBoundingClientRect();
@@ -538,7 +425,7 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     host.style.setProperty('overflow', 'hidden', 'important');
     host.style.setProperty('height', `${h}px`, 'important');
     host.setAttribute('data-cv-height', String(h));
-    host.querySelectorAll('img,video').forEach((el) => {
+    host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
       const isVid = el.tagName === 'VIDEO';
       (el as HTMLElement).style.setProperty('width', '100%', 'important');
       (el as HTMLElement).style.setProperty('height', '100%', 'important');
@@ -554,7 +441,6 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
   ensureHostResizeObserver(host);
 
   const overlay = ensureOverlayRoot(doc);
-  // Cria elementos das pinças no overlay (fora do host)
   const north = doc.createElement('div');
   const south = doc.createElement('div');
   [north, south].forEach((h) => {
@@ -571,7 +457,6 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     h.style.zIndex = '2147483647';
   });
 
-  // barras visuais
   const mkBar = () => {
     const bar = doc.createElement('div');
     bar.style.position = 'absolute';
@@ -591,14 +476,13 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
   overlay.appendChild(north);
   overlay.appendChild(south);
 
-  // Estado de drag
   let startY = 0;
   let startH = 0;
   const applyHeight = (next: number) => {
     next = Math.max(120, Math.min(4096, Math.round(next)));
     host.style.setProperty('height', `${next}px`, 'important');
     host.setAttribute('data-cv-height', String(next));
-    host.querySelectorAll('img,video').forEach((el) => {
+    host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
       const isVid = el.tagName === 'VIDEO';
       (el as HTMLElement).style.setProperty('width', '100%', 'important');
       (el as HTMLElement).style.setProperty('height', '100%', 'important');
@@ -609,7 +493,7 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
         (el as any).style.inset = '0';
       }
     });
-    update(); // reposiciona pinças após resize
+    update();
   };
 
   const onMoveNorth = (e: MouseEvent) => { const dy = e.clientY - startY; applyHeight(startH - dy); };
@@ -635,7 +519,6 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     doc.addEventListener('mouseup', onUp);
   });
 
-  // Atualiza posição das pinças conforme o host se mexe
   const HANDLE_H = 20;
   const update = () => {
     const r = rectInViewport(host);
@@ -644,9 +527,8 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
       return;
     }
     north.style.display = 'block'; south.style.display = 'block';
-    // FORA do host, simétrico
     north.style.top = `${Math.max(0, r.top - HANDLE_H)}px`;
-    south.style.top = `${Math.min(window.innerHeight - HANDLE_H, r.bottom)}px`;
+    south.style.top = `${r.bottom}px`;
     north.style.left = `${r.left}px`;
     south.style.left = `${r.left}px`;
     (north.style as any).width = `${r.width}px`;
@@ -659,7 +541,6 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
   doc.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', update);
 
-  // Guard para cleanup
   (host as any).__cvPinchers = {
     dispose: () => {
       try { ro.disconnect(); } catch {}
@@ -671,16 +552,13 @@ const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     }
   } as PinchersHandle;
 
-  // Primeira posição
   update();
-
-  // marca host ativo no doc
   (doc as any).__cvActivePinchersHost = host;
 };
 
 /** ========= helper de normalização pós-troca ========= */
 const normFill = (host: HTMLElement) => {
-  host.querySelectorAll('img,video').forEach((el) => {
+  host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
     const isVid = el.tagName === 'VIDEO';
     (el as HTMLElement).style.setProperty('width', '100%', 'important');
     (el as HTMLElement).style.setProperty('height', '100%', 'important');
@@ -731,7 +609,7 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
   const best = findLargestVisual(doc);
   const wantVideo = isVideoUrl(mediaUrl);
 
-  if (best) {
+  if (best !== null) {
     if (best.type === 'img') {
       const img = best.el as HTMLImageElement;
       if (wantVideo) {
@@ -749,7 +627,6 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
         queueMicrotask(() => { try { cleanupAltArtifacts(wrapper); } catch {} });
         return video;
       }
-      // IMAGEM
       img.removeAttribute('srcset'); img.removeAttribute('sizes'); img.loading = 'eager';
       img.src = mediaUrl; img.setAttribute('data-bg-image-url', mediaUrl);
       const w = img.closest('.img-crop-wrapper') as HTMLElement | null;
@@ -775,7 +652,6 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
         queueMicrotask(() => { try { cleanupAltArtifacts((video.parentElement as HTMLElement) || doc.body); } catch {} });
         return video;
       }
-      // vira IMAGEM
       const img = makeImage(mediaUrl);
       const parent = video.parentElement!;
       killPlayOverlays(parent);
@@ -836,30 +712,43 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
     }
   }
 
-  // fallback body
   if (wantVideo) {
+    let holder = doc.getElementById('__cvBodyBg') as HTMLElement | null;
+    if (!holder) {
+      holder = doc.createElement('div');
+      holder.id = '__cvBodyBg';
+      holder.setAttribute('data-editable', 'video');
+      Object.assign(holder.style, {
+        position: 'absolute',
+        left: '0', top: '0', right: '0', bottom: '0',
+        overflow: 'hidden',
+        zIndex: '0'
+      } as CSSStyleDeclaration);
+
+      doc.documentElement.style.setProperty('height', '100%', 'important');
+      doc.documentElement.style.setProperty('width', '100%', 'important');
+      doc.documentElement.style.setProperty('background-color', 'black', 'important');
+      doc.body.style.setProperty('height', '100%', 'important');
+      doc.body.style.setProperty('width', '100%', 'important');
+      doc.body.style.position = doc.body.style.position || 'relative';
+      doc.body.style.setProperty('overflow', 'hidden', 'important');
+      doc.body.style.setProperty('background-color', 'black', 'important');
+      doc.body.appendChild(holder);
+    }
+
+    killPlayOverlays(holder);
+    holder.innerHTML = '';
+
     const video = makeVideo(mediaUrl);
-    video.style.position = 'absolute';
-    (video.style as any).inset = '0';
-
-    doc.documentElement.style.setProperty('height', '100%', 'important');
-    doc.documentElement.style.setProperty('width', '100%', 'important');
-    doc.documentElement.style.setProperty('background-color', 'black', 'important');
-    doc.body.style.setProperty('height', '100%', 'important');
-    doc.body.style.setProperty('width', '100%', 'important');
-    doc.body.style.position = doc.body.style.position || 'relative';
-    doc.body.style.setProperty('overflow', 'hidden', 'important');
-    doc.body.style.setProperty('background-color', 'black', 'important');
-
-    killPlayOverlays(doc.body);
-    doc.body.appendChild(video);
+    video.setAttribute('data-editable', 'video');
+    holder.appendChild(video);
     forceVideoStyle(video);
     try { video.load(); } catch {}
-    attachPlayOverlay(doc, doc.body, video);
-    ensureHostResizeObserver(doc.body);
-    normFill(doc.body);
-    cleanupAltArtifacts(doc.body);
-    queueMicrotask(() => { try { cleanupAltArtifacts(doc.body); } catch {} });
+    attachPlayOverlay(doc, holder, video);
+    ensureHostResizeObserver(holder);
+    normFill(holder);
+    cleanupAltArtifacts(holder);
+    queueMicrotask(() => { try { cleanupAltArtifacts(holder!); } catch {} });
     return video;
   } else {
     doc.documentElement.style.setProperty('background-color', 'black', 'important');
@@ -873,8 +762,6 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
     removeAllPlayOverlays(doc);
     cleanupAltArtifacts(doc.body);
     queueMicrotask(() => { try { cleanupAltArtifacts(doc.body); } catch {} });
-    ensureHostResizeObserver(doc.body);
-    normFill(doc.body);
     return doc.body;
   }
 };
@@ -905,21 +792,18 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
   const [renderedSlides, setRenderedSlides] = useState<string[]>(slides);
 
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
-  const [isEditingInline, setIsEditingInline] = useState<{ slideIndex: number; element: ElementType } | null>(null);
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<Record<number, string>>({});
 
-  const [imageModal] = useState<ImageEditModalState>({ open: false });
-
   const iframeRefs = useRef<(HTMLIFrameElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedImageRefs = useRef<Record<number, HTMLImageElement | null>>({});
   const lastSearchId = useRef(0);
 
-  /** [NOVO] helper global: limpa seleções entre todos os slides */
+  /** helper global: limpa seleções entre todos os slides */
   const clearAllSelections = () => {
     iframeRefs.current.forEach((ifr) => {
       const d = ifr?.contentDocument || ifr?.contentWindow?.document;
@@ -931,14 +815,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       d.querySelectorAll('.img-crop-wrapper[data-cv-selected="1"]').forEach((el) => {
         (el as HTMLElement).removeAttribute('data-cv-selected');
       });
-      // NOVO: remove pinças do doc atual
       try { disposePinchersInDoc(d); } catch {}
     });
   };
 
   /** === REFLEXO DE EDIÇÕES NO IFRAME (texto + estilos) === */
   useEffect(() => {
-    // texto
     Object.entries(editedContent).forEach(([k, val]) => {
       const [slideStr, field] = k.split('-');
       const slideIndex = Number(slideStr);
@@ -948,12 +830,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const ifr = iframeRefs.current[slideIndex];
       const doc = ifr?.contentDocument || ifr?.contentWindow?.document;
       const el = doc?.getElementById(`slide-${slideIndex}-${field}`);
-      if (el && typeof val === 'string') {
-        el.textContent = val;
-      }
+      if (el && typeof val === 'string') el.textContent = val;
     });
 
-    // estilos
     Object.entries(elementStyles).forEach(([k, sty]) => {
       const [slideStr, field] = k.split('-');
       const slideIndex = Number(slideStr);
@@ -994,7 +873,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       lines.forEach(line => {
         const escaped = line.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const re = new RegExp(`(>[^<]*)(${escaped})([^<]*<)`, 'gi');
-        result = result.replace(re, (m, b, t, a) => `${b}<span id="${id}" data-editable="${attr}" contenteditable="false">${t}</span>${a}`);
+        result = result.replace(re, (_match, b, t, a) => `${b}<span id="${id}" data-editable="${attr}" contenteditable="false">${t}</span>${a}`);
       });
     };
 
@@ -1017,7 +896,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         position:relative !important;
         display:block !important;
         width:100% !important;
-        height:450px; /* sem !important */
+        height:450px;
         border-radius:24px !important;
         overflow:hidden !important;
         margin-top:0 !important;
@@ -1034,7 +913,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       }
       .text-box > video{
         width:100% !important;
-        height:450px; /* sem !important */
+        height:450px;
         object-fit:cover !important;
         display:block !important;
         border-radius:24px !important;
@@ -1074,7 +953,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
     setSelectedElement({ slideIndex: 0, element: null });
   }, []); // mount only
 
-  /** Pós-processamento vídeos do template */
   const postProcessTemplateVideos = (doc: Document) => {
     Array.from(doc.querySelectorAll<HTMLElement>('.text-box .video-container')).forEach((host) => {
       host.style.position = host.style.position || 'relative';
@@ -1091,7 +969,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         (v as HTMLVideoElement).style.objectFit = 'cover';
         try { (v as HTMLVideoElement).pause(); } catch {}
         try { (v as HTMLVideoElement).load(); } catch {}
-        // REMOVIDO: attachResizePinchers - só no clique
         attachPlayOverlay(doc, host, v as HTMLVideoElement);
         ensureHostResizeObserver(host);
         normFill(host);
@@ -1107,7 +984,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       try { v.pause(); } catch {}
       try { v.load(); } catch {}
       const parent = v.parentElement!;
-      // REMOVIDO: attachResizePinchers - só no clique
       attachPlayOverlay(doc, parent, v);
       ensureHostResizeObserver(parent);
       normFill(parent);
@@ -1237,7 +1113,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       const doc = ifr.contentDocument || ifr.contentWindow?.document;
       if (!doc) return;
 
-      // PRÉ-WRAP IMAGENS
       const imgsLocal = Array.from(doc.querySelectorAll('img'));
       let imgIdxLocal = 0;
       imgsLocal.forEach((img) => {
@@ -1255,7 +1130,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         });
       });
 
-      // marcar vídeos e pós-processar
       const vids = Array.from(doc.querySelectorAll('video'));
       let vidIdx = 0;
       vids.forEach((v) => {
@@ -1275,15 +1149,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       try { cleanupAltArtifacts(doc.body); } catch {}
       doc.body.style.visibility = 'visible';
 
-      // Delegação: CLICK
       const onClickCapture = (ev: MouseEvent) => {
         const target = ev.target as HTMLElement | null;
         if (!target) return;
 
-        // sempre limpar seleções antes de qualquer nova
         clearAllSelections();
 
-        // clique em vídeo
         const clickedVideo = target.closest('video') as HTMLVideoElement | null;
         if (clickedVideo) {
           clickedVideo.setAttribute('data-editable', 'video');
@@ -1292,18 +1163,15 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           setSelectedElement({ slideIndex, element: 'background' });
           setFocusedSlide(slideIndex);
           if (!expandedLayers.has(slideIndex)) setExpandedLayers(s => new Set(s).add(slideIndex));
-          // NOVO: pinças só no clique do vídeo
           const host = (clickedVideo.parentElement as HTMLElement | null);
           if (host) attachResizePinchers(doc, host);
           logc('select video', { slideIndex, id: clickedVideo.id });
           return;
         }
 
-        // demais: bloqueia para manter UX
         ev.preventDefault();
         ev.stopPropagation();
 
-        // clique em imagem
         const wrapper = target.closest('.img-crop-wrapper') as HTMLElement | null;
         const clickedImg = (wrapper?.querySelector('img[data-editable="image"]') ??
                             target.closest('img')) as HTMLImageElement | null;
@@ -1311,7 +1179,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         if (clickedImg) {
           const { wrapper: w } = ensureImgCropWrapper(doc, clickedImg);
           w.setAttribute('data-cv-selected', '1');
-          // já existia: pinças no clique da imagem
           attachResizePinchers(doc, w);
           ensureHostResizeObserver(w);
           normFill(w);
@@ -1339,8 +1206,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
               doc,
               slideIndex,
               type as 'title' | 'subtitle',
-              setOriginalStyles,
-              elementStyles
+              setOriginalStyles
             );
           } catch {}
           logc('select text', { slideIndex, type, id: el.id });
@@ -1354,7 +1220,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         }
       };
 
-      // dblclick -> inline text edit
       const onDblClick = (ev: MouseEvent) => {
         const t = ev.target as HTMLElement | null;
         const el = t?.closest<HTMLElement>('[data-editable="title"],[data-editable="subtitle"]');
@@ -1364,7 +1229,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         (el as HTMLElement).focus();
         const range = doc.createRange(); range.selectNodeContents(el);
         const sel = ifr.contentWindow?.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-        setIsEditingInline({ slideIndex, element: el.getAttribute('data-editable') as any });
       };
       const onBlur = (ev: FocusEvent) => {
         const el = ev.target as HTMLElement;
@@ -1373,26 +1237,24 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           updateEditedValue(slideIndex, el.getAttribute('data-editable')!, (el.textContent || ''));
           el.classList.remove('selected');
           el.style.zIndex = '';
-          setIsEditingInline(null);
         }
       };
 
-      // mousedown -> drag
       const onMouseDownCapture = (ev: MouseEvent) => {
         if (videoCropState.current?.active) return;
         const t = ev.target as HTMLElement | null;
         if (!t) return;
 
         const vid = t.closest('video[data-editable="video"]') as HTMLVideoElement | null;
-        if (vid) { startVideoDrag(doc, slideIndex, vid, ev); return; }
+        if (vid) { void startVideoDrag(doc, slideIndex, vid, ev); return; }
 
         const img = t.closest('img[data-editable="image"]') as HTMLImageElement | null;
-        if (img) { startImgDrag(doc, slideIndex, img, ev); return; }
+        if (img) { void startImgDrag(doc, slideIndex, img, ev); return; }
 
         const bgEl = t.closest<HTMLElement>('[data-editable="background"], body, div, section, header, main, figure, article');
         if (bgEl) {
           const cs = doc.defaultView?.getComputedStyle(bgEl);
-          if (cs?.backgroundImage?.includes('url(')) { startBgDrag(doc, slideIndex, bgEl, ev); }
+          if (cs?.backgroundImage?.includes('url(')) { void startBgDrag(doc, slideIndex, bgEl, ev); }
         }
       };
 
@@ -1526,8 +1388,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
             doc,
             slideIndex,
             element as 'title' | 'subtitle',
-            setOriginalStyles,
-            elementStyles
+            setOriginalStyles
           );
         } catch {}
       }
@@ -1605,7 +1466,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
           wrapper.removeAttribute('data-cv-selected');
           video.classList.add('selected');
         } else {
-          // IMAGEM
           selectedImg.removeAttribute('srcset');
           selectedImg.removeAttribute('sizes');
           selectedImg.loading = 'eager';
@@ -1704,20 +1564,6 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     });
-  };
-
-  /** ===== Fallback BG ===== */
-  const getFallbackBackground = (slideIndex: number): { url: string; type: TargetKind } | null => {
-    const edited = editedContent[`${slideIndex}-background`];
-    if (typeof edited === 'string' && edited.trim()) return { url: edited, type: isVideoUrl(edited) ? 'vid' : 'bg' };
-    const up = uploadedImages[slideIndex];
-    if (typeof up === 'string' && up.trim()) return { url: up, type: 'bg' };
-    const c = carouselData.conteudos[slideIndex];
-    if (c) {
-      const candidates = [c.imagem_fundo, c.imagem_fundo2, c.imagem_fundo3, c.thumbnail_url].filter(Boolean) as string[];
-      for (const u of candidates) if (u && u.trim()) return { url: u, type: isVideoUrl(u) ? 'vid' : 'bg' };
-    }
-    return null;
   };
 
   /** ===== Render ===== */

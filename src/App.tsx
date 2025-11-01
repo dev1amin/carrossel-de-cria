@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { configureCarousel } from '../Carousel-Template';
 import LoginPage from './pages/LoginPage';
-import MainContent from './components/MainContent';
+import FeedPage from './pages/FeedPage';
+import GalleryPage from './pages/GalleryPage';
+import SettingsPageContainer from './pages/SettingsPageContainer';
+import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
-import { SortOption } from './types';
 
 function App() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeSort, setActiveSort] = useState<SortOption>('popular');
-  const [currentPage, setCurrentPage] = useState<'feed' | 'settings' | 'gallery'>('feed');
-  const [isLoading, setIsLoading] = useState(false);
-
   useEffect(() => {
     configureCarousel({
       webhook: {
@@ -28,31 +25,23 @@ function App() {
     });
   }, []);
 
-  const handleSearch = (term: string) => {
-    setSearchTerm(term);
-  };
-
   return (
     <Routes>
+      {/* Rota de Login */}
       <Route path="/login" element={<LoginPage />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <MainContent
-              searchTerm={searchTerm}
-              activeSort={activeSort}
-              currentPage={currentPage}
-              isLoading={isLoading}
-              onSearch={handleSearch}
-              onSortChange={setActiveSort}
-              onPageChange={setCurrentPage}
-              setIsLoading={setIsLoading}
-            />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/\" replace />} />
+
+      {/* Rota Raiz */}
+      <Route path="/" element={<Navigate to="/feed" replace />} />
+
+      {/* Rotas Protegidas */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/feed" element={<FeedPage />} />
+        <Route path="/gallery" element={<GalleryPage />} />
+        <Route path="/settings" element={<SettingsPageContainer />} />
+      </Route>
+
+      {/* Página 404 para rotas não encontradas */}
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

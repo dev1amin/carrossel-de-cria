@@ -1,6 +1,8 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { Image as ImageIcon, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Download, Edit, Image } from 'lucide-react';
+import Header from './Header';
+import { SortOption } from '../types';
 
 interface GalleryCarousel {
   id: string;
@@ -9,6 +11,7 @@ interface GalleryCarousel {
   createdAt: number;
   slides: string[];
   carouselData: any;
+  viewed?: boolean;
 }
 
 interface GalleryProps {
@@ -16,76 +19,177 @@ interface GalleryProps {
   onViewCarousel: (carousel: GalleryCarousel) => void;
 }
 
+interface GalleryItemProps {
+  carousel: GalleryCarousel;
+  onViewCarousel: (carousel: GalleryCarousel) => void;
+  onDownload: (carousel: GalleryCarousel) => void;
+}
+
+const EmptyState = () => {
+  return (
+    <div className="flex flex-col items-center justify-center h-[50vh] text-zinc-400">
+      <Image className="w-16 h-16 mb-4 opacity-50" />
+      <p className="text-lg">Nenhum carrossel foi gerado ainda, pipipip</p>
+    </div>
+  );
+};
+
 const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel }) => {
-  if (carousels.length === 0) {
-    return (
-      <div className="min-h-screen bg-black pt-14">
-        <div className="container mx-auto px-4 py-8">
-          <h1 className="text-3xl font-bold text-white mb-8">Galeria</h1>
-          <div className="flex flex-col items-center justify-center py-20">
-            <ImageIcon className="w-20 h-20 text-gray-600 mb-4" />
-            <p className="text-gray-400 text-lg">Nenhum carrossel gerado ainda</p>
-            <p className="text-gray-500 text-sm mt-2">
-              Gere um carrossel a partir do Feed para vê-lo aqui
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const [activeSort, setActiveSort] = useState<SortOption>('latest');
+  const [unviewedCarousels, setUnviewedCarousels] = useState<Set<string>>(new Set());
+  
+  // Atualizar unviewedCarousels quando novos carrosséis forem adicionados
+  useEffect(() => {
+    const newUnviewed = new Set<string>();
+    carousels.forEach(carousel => {
+      if (!unviewedCarousels.has(carousel.id) && !carousel.viewed) {
+        newUnviewed.add(carousel.id);
+      }
+    });
+    if (newUnviewed.size > 0) {
+      setUnviewedCarousels(prev => new Set([...prev, ...newUnviewed]));
+    }
+  }, [carousels]);
+
+  const handleSearch = (term: string) => {
+    // Implementar busca se necessário
+    console.log('Search:', term);
+  };
+
+  const handleSortChange = (sort: SortOption) => {
+    setActiveSort(sort);
+    // Implementar ordenação se necessário
+  };
+
+  const handleDownload = async (carousel: GalleryCarousel) => {
+    // Implemente a lógica de download aqui
+    console.log('Download carousel:', carousel.id);
+  };
 
   return (
-    <div className="min-h-screen bg-black pt-14">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Galeria</h1>
-          <p className="text-gray-400">
-            {carousels.length} {carousels.length === 1 ? 'carrossel' : 'carrosséis'} gerado{carousels.length === 1 ? '' : 's'}
+    <div className="min-h-screen bg-black">
+      <div className="relative">
+        <Header 
+          onSearch={handleSearch}
+          activeSort={activeSort}
+          onSortChange={handleSortChange}
+        />
+      </div>
+      
+      <main className="container mx-auto px-4 pt-20">
+        {carousels.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {carousels.map((carousel) => (
+              <GalleryItem
+                key={carousel.id}
+                carousel={carousel}
+                onViewCarousel={onViewCarousel}
+                onDownload={handleDownload}
+              />
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+const GalleryItem = ({ carousel, onViewCarousel, onDownload }: GalleryItemProps) => {
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const nextSlide = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentSlide((prev) => (prev + 1) % carousel.slides.length);
+  };
+
+  const prevSlide = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentSlide((prev) => (prev - 1 + carousel.slides.length) % carousel.slides.length);
+  };
+
+  const handleItemClick = () => {
+    onViewCarousel(carousel);
+  };
+
+  return (
+    <motion.div
+      className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {/* Carrossel */}
+      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '1080/1350' }}>
+        {/* Container para o slide com pointer-events desativados */}
+        <div className="w-full h-full pointer-events-none flex items-center justify-center">
+          <div 
+            dangerouslySetInnerHTML={{ __html: carousel.slides[currentSlide] }}
+            className="w-full h-full transform-gpu"
+            style={{
+              transform: 'scale(0.25)',
+              transformOrigin: 'center center',
+              position: 'absolute',
+              width: '400%',
+              height: '400%',
+            }}
+          />
+        </div>
+        
+        {/* Botões de navegação com z-index maior */}
+        <button
+          onClick={prevSlide}
+          className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/70 z-40"
+        >
+          <ChevronLeft className="w-6 h-6 text-white" />
+        </button>
+        
+        <button
+          onClick={nextSlide}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/70 z-40"
+        >
+          <ChevronRight className="w-6 h-6 text-white" />
+        </button>
+
+        {/* Indicador de slides */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 px-2 py-1 rounded-full text-white text-sm z-40">
+          {currentSlide + 1}/{carousel.slides.length}
+        </div>
+
+        {/* Overlay para clique no carrossel */}
+        <div 
+          className="absolute inset-0 cursor-pointer z-30"
+          onClick={handleItemClick}
+        />
+      </div>
+
+      {/* Informações e botões */}
+      <div className="p-4 space-y-4">
+        <div>
+          <h3 className="text-white font-medium">{carousel.templateName}</h3>
+          <p className="text-zinc-400 text-sm">
+            {new Date(carousel.createdAt).toLocaleDateString()}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {carousels.map((carousel, index) => (
-            <motion.div
-              key={carousel.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 hover:border-gray-700 transition-all cursor-pointer"
-              onClick={() => onViewCarousel(carousel)}
-            >
-              <div className="aspect-[9/16] bg-gray-800 relative overflow-hidden">
-                {carousel.slides[0] && (
-                  <img
-                    src={carousel.slides[0]}
-                    alt={`${carousel.templateName} - Slide 1`}
-                    className="w-full h-full object-cover"
-                  />
-                )}
-                <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                  {carousel.slides.length} slides
-                </div>
-              </div>
-
-              <div className="p-4">
-                <h3 className="text-white font-semibold mb-1">{carousel.templateName}</h3>
-                <p className="text-gray-400 text-sm mb-3">Post: {carousel.postCode}</p>
-                <div className="flex items-center text-gray-500 text-xs">
-                  <Calendar className="w-3 h-3 mr-1" />
-                  {new Date(carousel.createdAt).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </div>
-              </div>
-            </motion.div>
-          ))}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onDownload(carousel)}
+            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2 rounded-md text-sm"
+          >
+            <Download className="w-4 h-4" />
+            Baixar
+          </button>
+          <button
+            onClick={() => onViewCarousel(carousel)}
+            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2 rounded-md text-sm"
+          >
+            <Edit className="w-4 h-4" />
+            Editar
+          </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

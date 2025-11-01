@@ -7,9 +7,16 @@ import SettingsPage from './SettingsPage';
 import LoadingBar from './LoadingBar';
 import Gallery from './Gallery';
 import Toast, { ToastMessage } from './Toast';
-import { CarouselViewer, GenerationQueue, useCarousel } from '../../Carousel-Template';
-import { templateService, templateRenderer, generateCarousel } from '../../Carousel-Template';
-import { AVAILABLE_TEMPLATES, GenerationQueueItem, CarouselData as CarouselDataType } from '../../Carousel-Template';
+import { 
+  CarouselViewer, 
+  GenerationQueue,
+  templateService,
+  templateRenderer,
+  generateCarousel,
+  AVAILABLE_TEMPLATES,
+  type GenerationQueueItem,
+  type CarouselData as CarouselDataType
+} from '../../Carousel-Template';
 import { getFeed } from '../services/feed';
 import { testCarouselData } from '../data/testCarouselData';
 
@@ -31,6 +38,7 @@ interface GalleryCarousel {
   createdAt: number;
   slides: string[];
   carouselData: any;
+  viewed?: boolean;
 }
 
 type CarouselData = CarouselDataType;
@@ -53,6 +61,7 @@ const MainContent: React.FC<MainContentProps> = ({
   const [isQueueExpanded, setIsQueueExpanded] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [galleryCarousels, setGalleryCarousels] = useState<GalleryCarousel[]>([]);
+  const [unviewedCarousels, setUnviewedCarousels] = useState<Set<string>>(new Set());
 
   const addToast = (message: string, type: 'success' | 'error') => {
     const toast: ToastMessage = {
@@ -107,10 +116,7 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
     const templateSlides = await templateService.fetchTemplate(responseTemplateId);
     const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 
-    // Atualiza estado do editor e galeria
-    setTestSlides(rendered);
-    setCurrentCarouselData(carouselData);
-
+    // Adiciona à galeria sem abrir o editor
     const galleryItem: GalleryCarousel = {
       id: queueItem.id,
       postCode: code,
@@ -118,12 +124,16 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
       createdAt: Date.now(),
       slides: rendered,
       carouselData,
+      viewed: false,
     };
 
     setGalleryCarousels(prev => [galleryItem, ...prev]);
+    
+    // Marca o carrossel como não visualizado
+    setUnviewedCarousels(prev => new Set([...prev, galleryItem.id]));
 
-    // 🔹 Mostra toast e remove da fila
-    addToast('✅ Carrossel criado com sucesso! Veja-o na galeria.', 'success');
+    // Mostra toast em preto e branco e remove da fila
+    addToast('Carrossel criado e adicionado à galeria', 'success');
     setGenerationQueue(prev => prev.filter(item => item.id !== queueItem.id));
   } catch (error) {
     console.error('Failed to generate carousel:', error);
@@ -169,8 +179,15 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
       
       setIsLoading(true);
       try {
+        // Tentar carregar do cache primeiro
         const feedData = await getFeed();
         setPosts(feedData);
+
+        // Atualizar em background após carregar do cache
+        getFeed(true).then(latestData => {
+          setPosts(latestData);
+        }).catch(console.error); // Erros silenciosos na atualização em background
+        
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load feed');
       } finally {
@@ -255,7 +272,13 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
 
       <Navigation
         currentPage={currentPage}
-        onPageChange={onPageChange}
+        onPageChange={(page: 'feed' | 'settings' | 'gallery') => {
+          if (page === 'gallery') {
+            setUnviewedCarousels(new Set());
+          }
+          onPageChange(page);
+        }}
+        unviewedCount={unviewedCarousels.size}
       />
     </div>
     </>

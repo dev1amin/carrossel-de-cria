@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, Outlet } from 'react-router-dom';
 import { validateToken, isAuthenticated } from '../services/auth';
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
-
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
+const ProtectedRoute = () => {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -37,7 +33,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     );
   }
 
-  return isAuthenticated() ? <>{children}</> : <Navigate to="/login" />;
+  return isAuthenticated() ? <Outlet /> : <Navigate to="/login" />;
 };
 
 export default ProtectedRoute;

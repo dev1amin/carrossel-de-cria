@@ -1,7 +1,14 @@
 import { API_ENDPOINTS } from '../config/api';
 import { UserSettings } from '../types/settings';
+import { CacheService, CACHE_KEYS } from './cache';
 
 export const getUserSettings = async (): Promise<UserSettings> => {
+  // Tentar obter do cache primeiro
+  const cachedSettings = CacheService.getItem<UserSettings>(CACHE_KEYS.SETTINGS);
+  if (cachedSettings) {
+    return cachedSettings;
+  }
+
   const token = localStorage.getItem('jwt_token');
   
   if (!token) {
@@ -23,7 +30,12 @@ export const getUserSettings = async (): Promise<UserSettings> => {
   }
 
   const data = await response.json();
-  return Array.isArray(data) ? data[0] : data;
+  const settings = Array.isArray(data) ? data[0] : data;
+  
+  // Salvar no cache
+  CacheService.setItem(CACHE_KEYS.SETTINGS, settings);
+  
+  return settings;
 };
 
 export const updateUserSetting = async (field: string, value: string): Promise<{ saved: boolean }> => {
@@ -52,5 +64,16 @@ export const updateUserSetting = async (field: string, value: string): Promise<{
   }
 
   const data = await response.json();
+  
+  // Atualizar o cache com o novo valor
+  const cachedSettings = CacheService.getItem<UserSettings>(CACHE_KEYS.SETTINGS);
+  if (cachedSettings) {
+    const updatedSettings = {
+      ...cachedSettings,
+      [field]: value
+    };
+    CacheService.setItem(CACHE_KEYS.SETTINGS, updatedSettings);
+  }
+
   return data;
 };

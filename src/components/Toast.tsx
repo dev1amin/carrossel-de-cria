@@ -17,17 +17,17 @@ interface ToastProps {
 
 const Toast: React.FC<ToastProps> = ({ toasts, onRemove }) => {
   useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
+    const timers: number[] = [];
 
     toasts.forEach((toast) => {
-      const timer = setTimeout(() => {
+      const timer = window.setTimeout(() => {
         onRemove(toast.id);
       }, 5000);
       timers.push(timer);
     });
 
     return () => {
-      timers.forEach(timer => clearTimeout(timer));
+      timers.forEach(timer => window.clearTimeout(timer));
     };
   }, [toasts, onRemove]);
 
@@ -43,8 +43,8 @@ const Toast: React.FC<ToastProps> = ({ toasts, onRemove }) => {
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={`flex items-center space-x-3 px-4 py-3 rounded-lg shadow-lg min-w-[300px] ${
               toast.type === 'success'
-                ? 'bg-green-500/90 text-white'
-                : 'bg-red-500/90 text-white'
+                ? 'bg-zinc-900/95 text-white border border-zinc-800'
+                : 'bg-zinc-900/95 text-white border border-zinc-800'
             }`}
           >
             {toast.type === 'success' ? (

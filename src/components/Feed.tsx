@@ -2,9 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
 import { Post, SortOption } from '../types';
 import PostCard from './PostCard';
-import { CarouselViewer, CarouselData as CarouselDataType } from '../../Carousel-Template';
-import { generateCarousel, templateService, templateRenderer } from '../../Carousel-Template';
-import { Scale } from 'lucide-react';
+import {
+  CarouselViewer,
+  type CarouselData as CarouselDataType,
+  generateCarousel,
+  templateService,
+  templateRenderer
+} from '../../Carousel-Template';
 
 interface FeedProps {
   posts: Post[];
@@ -125,7 +129,7 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCa
     }
   }, [isMobile, currentIndex, filteredPosts.length]);
 
-  const handleDragEnd = async (event: any, info: any) => {
+  const handleDragEnd = async (_: unknown, info: { velocity: { y: number }, offset: { y: number } }) => {
     const velocity = info.velocity.y;
     const offset = info.offset.y;
     const itemHeight = window.innerHeight - 112;
@@ -185,9 +189,6 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCa
                   <PostCard
                     post={post}
                     index={index}
-                    onHover={() => {}}
-                    onLeave={() => {}}
-                    onAIClick={() => {}}
                     onGenerateCarousel={handleGenerateCarousel}
                   />
                 </motion.div>
@@ -209,9 +210,6 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCa
                     <PostCard
                       post={post}
                       index={index}
-                      onHover={() => {}}
-                      onLeave={() => {}}
-                      onAIClick={() => {}}
                       onGenerateCarousel={handleGenerateCarousel}
                     />
                   </motion.div>

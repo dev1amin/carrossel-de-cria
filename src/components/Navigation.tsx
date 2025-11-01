@@ -1,96 +1,122 @@
-import React from 'react';
-import { Play, Settings, Image } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 interface NavigationProps {
-  currentPage: 'feed' | 'settings' | 'gallery';
-  onPageChange: (page: 'feed' | 'settings' | 'gallery') => void;
+  currentPage?: 'feed' | 'settings' | 'gallery';
+  onPageChange?: (page: 'feed' | 'settings' | 'gallery') => void;
+  unviewedCount?: number;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange }) => {
-  return (
-    <>
-      {/* Mobile Bottom Navigation */}
-      <motion.nav
-        className="fixed bottom-0 left-0 right-0 bg-black/90 backdrop-blur-lg border-t border-white/10 z-50 md:hidden"
-        initial={{ y: 100 }}
-        animate={{ y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-around py-4">
-            <button
-              className={`flex flex-col items-center transition-colors ${
-                currentPage === 'feed' ? 'text-white' : 'text-white/60 hover:text-white/90'
-              }`}
-              onClick={() => onPageChange('feed')}
-            >
-              <Play className="w-6 h-6" />
-              <span className="text-xs mt-1">Feed</span>
-            </button>
-            <button
-              className={`flex flex-col items-center transition-colors ${
-                currentPage === 'gallery' ? 'text-white' : 'text-white/60 hover:text-white/90'
-              }`}
-              onClick={() => onPageChange('gallery')}
-            >
-              <Image className="w-6 h-6" />
-              <span className="text-xs mt-1">Galeria</span>
-            </button>
-            <button
-              className={`flex flex-col items-center transition-colors ${
-                currentPage === 'settings' ? 'text-white' : 'text-white/60 hover:text-white/90'
-              }`}
-              onClick={() => onPageChange('settings')}
-            >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs mt-1">Settings</span>
-            </button>
-          </div>
-        </div>
-      </motion.nav>
+const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange, unviewedCount = 0 }) => {
+  const navigate = useNavigate();
 
-      {/* Desktop Sidebar */}
-      <motion.nav
-        className="hidden md:flex fixed left-0 top-0 bottom-0 w-16 bg-black/90 backdrop-blur-lg border-r border-white/10 z-50 flex-col items-center py-8"
-        initial={{ x: -100 }}
-        animate={{ x: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="flex flex-col items-center space-y-8 py-10">
-          <button
-            className={`p-3 rounded-lg transition-colors ${
-              currentPage === 'feed'
-                ? 'bg-white/10 text-white'
-                : 'text-white/60 hover:text-white/90 hover:bg-white/5'
-            }`}
-            onClick={() => onPageChange('feed')}
+  const handlePageChange = (page: 'feed' | 'settings' | 'gallery') => {
+    if (onPageChange) {
+      onPageChange(page);
+    }
+
+    // Atualiza a URL baseado na página
+    switch (page) {
+      case 'feed':
+        navigate('/');
+        break;
+      case 'gallery':
+        navigate('/gallery');
+        break;
+      case 'settings':
+        navigate('/settings');
+        break;
+    }
+  };
+  return (
+    <nav className="hidden md:flex fixed left-0 top-0 bottom-0 w-16 bg-black/90 backdrop-blur-lg border-r border-white/10 z-50 flex-col items-center py-8">
+      <div className="flex flex-col items-center space-y-8 py-10">
+        {/* Feed */}
+        <button
+          onClick={() => handlePageChange('feed')}
+          className={`p-3 rounded-lg transition-colors ${
+            currentPage === 'feed'
+              ? 'bg-white/10 text-white'
+              : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+          }`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-grid w-6 h-6"
           >
-            <Play className="w-6 h-6" />
-          </button>
-          <button
-            className={`p-3 rounded-lg transition-colors ${
-              currentPage === 'gallery'
-                ? 'bg-white/10 text-white'
-                : 'text-white/60 hover:text-white/90 hover:bg-white/5'
-            }`}
-            onClick={() => onPageChange('gallery')}
+            <rect width="7" height="7" x="3" y="3" rx="1" />
+            <rect width="7" height="7" x="14" y="3" rx="1" />
+            <rect width="7" height="7" x="14" y="14" rx="1" />
+            <rect width="7" height="7" x="3" y="14" rx="1" />
+          </svg>
+        </button>
+
+        {/* Gallery */}
+        <button
+          onClick={() => handlePageChange('gallery')}
+          className={`relative p-3 rounded-lg transition-colors ${
+            currentPage === 'gallery'
+              ? 'bg-white/10 text-white'
+              : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+          }`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-image w-6 h-6"
           >
-            <Image className="w-6 h-6" />
-          </button>
-          <button
-            className={`p-3 rounded-lg transition-colors ${
-              currentPage === 'settings'
-                ? 'bg-white/10 text-white'
-                : 'text-white/60 hover:text-white/90 hover:bg-white/5'
-            }`}
-            onClick={() => onPageChange('settings')}
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+            <circle cx="9" cy="9" r="2" />
+            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+          </svg>
+          {unviewedCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {unviewedCount}
+            </span>
+          )}
+        </button>
+
+        {/* Settings */}
+        <button
+          onClick={() => handlePageChange('settings')}
+          className={`p-3 rounded-lg transition-colors ${
+            currentPage === 'settings'
+              ? 'bg-white/10 text-white'
+              : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+          }`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-settings w-6 h-6"
           >
-            <Settings className="w-6 h-6" />
-          </button>
-        </div>
-      </motion.nav>
-    </>
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      </div>
+    </nav>
   );
 };
 

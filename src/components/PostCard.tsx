@@ -7,9 +7,6 @@ import { formatNumber } from '../utils/formatters';
 interface PostCardProps {
   post: Post;
   index: number;
-  onHover: () => void;
-  onLeave: () => void;
-  onAIClick: () => void;
   onGenerateCarousel?: (code: string, templateId: string) => void;
 }
 

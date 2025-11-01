@@ -1,7 +1,16 @@
 import { API_ENDPOINTS } from '../config/api';
 import { Post } from '../types';
+import { CacheService, CACHE_KEYS } from './cache';
 
-export const getFeed = async (): Promise<Post[]> => {
+export const getFeed = async (forceUpdate: boolean = false): Promise<Post[]> => {
+  // Tentar obter do cache primeiro, a menos que forceUpdate seja true
+  if (!forceUpdate) {
+    const cachedFeed = CacheService.getItem<Post[]>(CACHE_KEYS.FEED);
+    if (cachedFeed) {
+      return cachedFeed;
+    }
+  }
+
   const token = localStorage.getItem('jwt_token');
   
   if (!token) {
@@ -23,5 +32,9 @@ export const getFeed = async (): Promise<Post[]> => {
   }
 
   const data = await response.json();
+  
+  // Salvar no cache
+  CacheService.setItem(CACHE_KEYS.FEED, data);
+  
   return data;
 };
