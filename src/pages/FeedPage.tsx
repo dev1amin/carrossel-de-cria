@@ -4,6 +4,7 @@ import Feed from '../components/Feed';
 import Navigation from '../components/Navigation';
 import LoadingBar from '../components/LoadingBar';
 import { GenerationQueue } from '../../Carousel-Template';
+import Toast, { ToastMessage } from '../components/Toast';
 import { SortOption, Post } from '../types';
 import type { GenerationQueueItem } from '../../Carousel-Template';
 import { getFeed } from '../services/feed';
@@ -25,6 +26,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSort, setActiveSort] = useState<SortOption>('popular');
   const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isQueueExpanded, setIsQueueExpanded] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -74,7 +76,18 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
     }
   };
 
+  const addToast = (message: string, type: 'success' | 'error') => {
+    const toast: ToastMessage = { id: `toast-${Date.now()}`, message, type };
+    setToasts(prev => [...prev, toast]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
   const handleGenerateCarousel = async (code: string, templateId: string) => {
+    console.log('🚀 FeedPage: handleGenerateCarousel iniciado', { code, templateId });
+    
     const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
     const queueItem: GenerationQueueItem = {
       id: `${code}-${templateId}-${Date.now()}`,
@@ -86,28 +99,102 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
     };
 
     setGenerationQueue(prev => [...prev, queueItem]);
+    console.log('✅ Item adicionado à fila:', queueItem.id);
 
     try {
-      console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
+      console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}`);
       const result = await generateCarousel(code, templateId);
-      console.log('Carousel generated successfully:', result);
+      console.log('✅ Carousel generated successfully:', result);
+      console.log('✅ Tipo do result:', typeof result, 'É array?', Array.isArray(result));
+      console.log('✅ Length do result:', Array.isArray(result) ? result.length : 'N/A');
 
-      if (result && result.length > 0) {
-        const carouselData = result[0];
-        const responseTemplateId = carouselData.dados_gerais.template;
-
-        console.log(`Fetching template ${responseTemplateId}...`);
-        const templateSlides = await templateService.fetchTemplate(responseTemplateId);
-
-        console.log('Rendering slides with data...');
-        const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
-
-        setTestSlides(rendered);
-        setCurrentCarouselData(carouselData);
+      // Verifica se result é um array
+      if (!result) {
+        console.error('❌ Result é null ou undefined');
+        addToast('Erro: resposta vazia do servidor', 'error');
+        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        return;
       }
+
+      // Se result não for array, tenta tratá-lo como objeto único
+      const resultArray = Array.isArray(result) ? result : [result];
+      console.log('✅ resultArray:', resultArray);
+
+      if (resultArray.length === 0) {
+        console.error('❌ Array de resultado vazio');
+        addToast('Erro: nenhum dado retornado', 'error');
+        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        return;
+      }
+
+      const carouselData = resultArray[0];
+      console.log('✅ carouselData extraído:', carouselData);
+      console.log('✅ dados_gerais:', carouselData?.dados_gerais);
+
+      if (!carouselData || !carouselData.dados_gerais) {
+        console.error('❌ Dados inválidos:', { carouselData });
+        addToast('Erro: formato de dados inválido', 'error');
+        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        return;
+      }
+
+      // render slides
+      const responseTemplateId = carouselData.dados_gerais.template;
+      console.log(`⏳ Buscando template ${responseTemplateId}...`);
+      
+      const templateSlides = await templateService.fetchTemplate(responseTemplateId);
+      console.log('✅ Template obtido, total de slides:', templateSlides?.length || 0);
+      
+      const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+      console.log('✅ Slides renderizados:', rendered.length);
+
+      // cria item de galeria
+      const galleryItem = {
+        id: queueItem.id,
+        postCode: code,
+        templateName: queueItem.templateName,
+        createdAt: Date.now(),
+        slides: rendered,
+        carouselData,
+        viewed: false,
+      };
+      console.log('✅ Item de galeria criado:', galleryItem.id);
+
+      // atualiza estado local da galeria (se houver) e salva no cache + dispara evento
+      try {
+        console.log('⏳ Importando CacheService...');
+        const { CacheService, CACHE_KEYS } = await import('../services/cache');
+        console.log('✅ CacheService importado');
+        
+        const existing = CacheService.getItem<any[]>(CACHE_KEYS.GALLERY) || [];
+        console.log('✅ Galeria existente no cache:', existing.length, 'itens');
+        
+        const updated = [galleryItem, ...existing];
+        console.log('✅ Nova galeria terá:', updated.length, 'itens');
+        
+        CacheService.setItem(CACHE_KEYS.GALLERY, updated);
+        console.log('✅ Galeria salva no cache');
+        
+        window.dispatchEvent(new CustomEvent('gallery:updated', { detail: updated }));
+        console.log('✅ Evento gallery:updated disparado com', updated.length, 'itens');
+      } catch (err) {
+        console.error('❌ Erro ao atualizar cache/dispatch da galeria:', err);
+      }
+
+      // toast e remoção da fila
+      console.log('⏳ Adicionando toast...');
+      addToast('Carrossel criado e adicionado à galeria', 'success');
+      console.log('✅ Toast adicionado');
+      
+      console.log('⏳ Removendo item da fila...');
+      setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+      console.log('✅ Item removido da fila');
+      console.log('🎉 Processo completo!');
     } catch (error) {
-      console.error('Failed to generate carousel:', error);
-      alert('Erro ao gerar carrossel. Verifique o console para mais detalhes.');
+      console.error('❌ ERRO em handleGenerateCarousel:', error);
+      console.error('❌ Stack:', error instanceof Error ? error.stack : 'N/A');
+      addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
+      setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
     }
   };
 
@@ -141,7 +228,8 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
             }}
           />
         )}
-        <LoadingBar isLoading={isLoading} />
+  <Toast toasts={toasts} onRemove={removeToast} />
+  <LoadingBar isLoading={isLoading} />
         <Header
           onSearch={handleSearch}
           activeSort={activeSort}

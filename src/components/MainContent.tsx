@@ -19,6 +19,7 @@ import {
 } from '../../Carousel-Template';
 import { getFeed } from '../services/feed';
 import { testCarouselData } from '../data/testCarouselData';
+import { CacheService, CACHE_KEYS } from '../services/cache';
 
 interface MainContentProps {
   searchTerm: string;
@@ -76,7 +77,25 @@ const MainContent: React.FC<MainContentProps> = ({
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
+  // Carrega galeria do cache ao montar o componente
+  useEffect(() => {
+    try {
+      const cachedGallery = CacheService.getItem<GalleryCarousel[]>(CACHE_KEYS.GALLERY);
+      if (cachedGallery && Array.isArray(cachedGallery)) {
+        setGalleryCarousels(cachedGallery);
+        // Marca todos como não visualizados inicialmente
+        const unviewedIds = cachedGallery.filter(c => !c.viewed).map(c => c.id);
+        setUnviewedCarousels(new Set(unviewedIds));
+      }
+    } catch (err) {
+      console.warn('Falha ao carregar galeria do cache:', err);
+    }
+  }, []);
+
 const handleGenerateCarousel = async (code: string, templateId: string) => {
+  console.log('🚀 handleGenerateCarousel chamado:', { code, templateId });
+  console.log('🚀 Estado atual da galeria:', galleryCarousels.length, 'itens');
+  
   const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
   const queueItem: GenerationQueueItem = {
     id: `${code}-${templateId}-${Date.now()}`,
@@ -88,17 +107,22 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
   };
 
   setGenerationQueue(prev => [...prev, queueItem]);
+  console.log('✅ Item adicionado à fila:', queueItem);
 
   try {
-    console.log(`Generating carousel for post: ${code} with template: ${templateId}`);
-    const result = await generateCarousel(code, templateId); // precisa retornar res.json()!
-    console.log('Webhook result:', result);
+    console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}`);
+    const result = await generateCarousel(code, templateId);
+    console.log('✅ Webhook retornou:', result);
+    console.log('✅ Tipo do resultado:', typeof result, Array.isArray(result) ? 'é array' : 'não é array');
 
     // 🔹 Corrige tipo de resposta (array com 1 objeto)
     const carouselData = Array.isArray(result) ? result[0] : result;
+    console.log('✅ carouselData extraído:', carouselData);
 
     if (!carouselData || !carouselData.dados_gerais) {
-      console.warn('Resposta inesperada do webhook:', result);
+      console.error('⚠️ Resposta inesperada do webhook:', result);
+      console.error('⚠️ carouselData:', carouselData);
+      console.error('⚠️ dados_gerais:', carouselData?.dados_gerais);
       addToast('Erro: formato inesperado do retorno do webhook.', 'error');
       setGenerationQueue(prev =>
         prev.map(item =>
@@ -111,12 +135,16 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
     }
 
     const responseTemplateId = carouselData.dados_gerais.template;
-    console.log(`Fetching template ${responseTemplateId}...`);
+    console.log(`✅ Template ID da resposta: ${responseTemplateId}`);
+    console.log(`⏳ Buscando template ${responseTemplateId}...`);
 
     const templateSlides = await templateService.fetchTemplate(responseTemplateId);
+    console.log('✅ Template obtido, renderizando slides...');
+    
     const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
+    console.log('✅ Slides renderizados:', rendered.length, 'slides');
 
-    // Adiciona à galeria sem abrir o editor
+    // Adiciona à galeria
     const galleryItem: GalleryCarousel = {
       id: queueItem.id,
       postCode: code,
@@ -126,17 +154,38 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
       carouselData,
       viewed: false,
     };
+    console.log('✅ Item da galeria criado:', galleryItem.id);
 
-    setGalleryCarousels(prev => [galleryItem, ...prev]);
+    // Atualiza a galeria local
+    const updatedGallery = [galleryItem, ...galleryCarousels];
+    console.log('✅ Atualizando galeria local. Novos itens:', updatedGallery.length);
+    setGalleryCarousels(updatedGallery);
+    
+    // Salva no cache
+    console.log('⏳ Salvando no cache...');
+    CacheService.setItem(CACHE_KEYS.GALLERY, updatedGallery);
+    console.log('✅ Galeria salva no cache');
+    
+    // Dispara evento para outras partes do app
+    console.log('⏳ Disparando evento gallery:updated...');
+    window.dispatchEvent(new CustomEvent('gallery:updated', { detail: updatedGallery }));
+    console.log('✅ Evento gallery:updated disparado');
     
     // Marca o carrossel como não visualizado
     setUnviewedCarousels(prev => new Set([...prev, galleryItem.id]));
+    console.log('✅ Carrossel marcado como não visualizado');
 
-    // Mostra toast em preto e branco e remove da fila
+    // Mostra toast e remove da fila
+    console.log('⏳ Adicionando toast de sucesso...');
     addToast('Carrossel criado e adicionado à galeria', 'success');
+    console.log('✅ Toast adicionado');
+    
     setGenerationQueue(prev => prev.filter(item => item.id !== queueItem.id));
+    console.log('✅ Item removido da fila');
+    console.log('🎉 Processo completo!');
   } catch (error) {
-    console.error('Failed to generate carousel:', error);
+    console.error('❌ ERRO CAPTURADO em handleGenerateCarousel:', error);
+    console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'N/A');
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
 
     setGenerationQueue(prev =>

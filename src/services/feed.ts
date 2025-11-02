@@ -1,6 +1,65 @@
 import { API_ENDPOINTS } from '../config/api';
 import { Post } from '../types';
 import { CacheService, CACHE_KEYS } from './cache';
+import { getAuthHeaders } from './auth';
+
+interface FeedResponse {
+  message: string;
+  feed_id: string | null;
+  feed: FeedItem[];
+}
+
+interface FeedItem {
+  rank: number;
+  score: number;
+  is_saved: boolean;
+  influencer_id: string;
+  recommend: boolean;
+  influencer_content: {
+    id: number;
+    platform: string;
+    code: string;
+    text: string;
+    content_url: string;
+    media_type: number;
+    product_type: string;
+    published_at: string;
+    like_count: number;
+    comment_count: number;
+    play_count: number;
+    reshare_count: number;
+    like_score: number;
+    comment_score: number;
+    play_score: number;
+    reshare_score: number;
+    recency_score: number;
+    overall_score: number;
+  };
+}
+
+// Converter FeedItem da nova API para Post do formato antigo
+const convertFeedItemToPost = (item: FeedItem): Post => {
+  const content = item.influencer_content;
+  return {
+    code: content.code,
+    text: content.text,
+    taken_at: new Date(content.published_at).getTime() / 1000, // Converter para timestamp Unix
+    username: item.influencer_id, // Usar ID do influenciador como username temporariamente
+    image_url: content.content_url,
+    video_url: content.media_type === 8 ? content.content_url : null,
+    media_type: content.media_type,
+    like_count: content.like_count,
+    comment_count: content.comment_count,
+    play_count: content.play_count,
+    reshare_count: content.reshare_count,
+    likeScore: content.like_score,
+    commentScore: content.comment_score,
+    playScore: content.play_score,
+    reshareScore: content.reshare_score,
+    recencyScore: content.recency_score,
+    overallScore: content.overall_score,
+  };
+};
 
 export const getFeed = async (forceUpdate: boolean = false): Promise<Post[]> => {
   // Tentar obter do cache primeiro, a menos que forceUpdate seja true
@@ -11,30 +70,78 @@ export const getFeed = async (forceUpdate: boolean = false): Promise<Post[]> => 
     }
   }
 
-  const token = localStorage.getItem('jwt_token');
-  
-  if (!token) {
-    throw new Error('No authentication token found');
-  }
-
-  const response = await fetch(`${API_ENDPOINTS.base}/trends/getFeed`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ jwt_token: token }),
+  const response = await fetch(API_ENDPOINTS.feed, {
+    method: 'GET',
+    headers: getAuthHeaders(),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.message || 'Failed to fetch feed');
+    throw new Error(error.error || 'Failed to fetch feed');
   }
 
-  const data = await response.json();
+  const data: FeedResponse = await response.json();
+  
+  // Converter itens do feed para o formato Post
+  const posts = data.feed.map(convertFeedItemToPost);
   
   // Salvar no cache
-  CacheService.setItem(CACHE_KEYS.FEED, data);
+  CacheService.setItem(CACHE_KEYS.FEED, posts);
   
-  return data;
+  return posts;
+};
+
+export const createFeed = async (): Promise<Post[]> => {
+  const response = await fetch(API_ENDPOINTS.feed, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({}),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create feed');
+  }
+
+  const data: FeedResponse = await response.json();
+  
+  // Converter itens do feed para o formato Post
+  const posts = data.feed.map(convertFeedItemToPost);
+  
+  // Salvar no cache
+  CacheService.setItem(CACHE_KEYS.FEED, posts);
+  
+  return posts;
+};
+
+export const saveContent = async (contentId: number): Promise<void> => {
+  const response = await fetch(API_ENDPOINTS.feedSave, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ content_id: contentId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to save content');
+  }
+
+  // Invalidar cache do feed
+  CacheService.clearItem(CACHE_KEYS.FEED);
+};
+
+export const unsaveContent = async (contentId: number): Promise<void> => {
+  const response = await fetch(API_ENDPOINTS.feedSave, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ content_id: contentId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to unsave content');
+  }
+
+  // Invalidar cache do feed
+  CacheService.clearItem(CACHE_KEYS.FEED);
 };

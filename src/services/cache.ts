@@ -6,12 +6,14 @@ interface CachedData<T> {
 
 const CACHE_KEYS = {
   FEED: 'feed_data_cache',
-  SETTINGS: 'settings_data_cache'
+  SETTINGS: 'settings_data_cache',
+  GALLERY: 'gallery_data_cache'
 } as const;
 
 const CACHE_EXPIRY = {
   FEED: 2 * 60 * 1000,     // 2 minutos para o feed
-  SETTINGS: 5 * 60 * 1000  // 5 minutos para as configurações
+  SETTINGS: 5 * 60 * 1000, // 5 minutos para as configurações
+  GALLERY: 60 * 60 * 1000  // 1 hora para a galeria
 } as const;
 
 const DEFAULT_EXPIRY = 5 * 60 * 1000; // 5 minutos em milissegundos (fallback)

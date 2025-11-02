@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { configureCarousel } from '../Carousel-Template';
 import LoginPage from './pages/LoginPage';
 import FeedPage from './pages/FeedPage';
+
 import GalleryPage from './pages/GalleryPage';
 import SettingsPageContainer from './pages/SettingsPageContainer';
 import NotFoundPage from './pages/NotFoundPage';

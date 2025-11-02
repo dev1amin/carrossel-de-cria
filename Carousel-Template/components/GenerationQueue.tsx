@@ -10,6 +10,8 @@ interface GenerationQueueProps {
 }
 
 const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, onToggleExpand }) => {
+  console.log('🔔 GenerationQueue renderizado:', { itemsCount: items.length, isExpanded });
+  
   if (items.length === 0) return null;
 
   const activeItems = items.filter(item => item.status === 'generating');
@@ -59,10 +61,11 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, on
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: -100, opacity: 0 }}
-      className="fixed top-14 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 shadow-lg md:left-16"
+      className="fixed top-14 left-0 right-0 bg-black backdrop-blur-md border-b border-zinc-800 shadow-2xl md:left-16"
+      style={{ zIndex: 60 }}
     >
       <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <h3 className="text-white font-semibold text-lg">Fila de Geração</h3>
             <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-full">
@@ -76,12 +79,13 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, on
           </div>
           <button
             onClick={onToggleExpand}
-            className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800 rounded-lg"
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            aria-label={isExpanded ? "Minimizar fila" : "Expandir fila"}
           >
             {isExpanded ? (
-              <ChevronUp className="w-5 h-5" />
+              <ChevronUp className="w-6 h-6 text-white" />
             ) : (
-              <ChevronDown className="w-5 h-5" />
+              <ChevronDown className="w-6 h-6 text-white" />
             )}
           </button>
         </div>
@@ -92,7 +96,7 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, on
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+              className="overflow-hidden mt-2"
             >
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {items.map((item) => (

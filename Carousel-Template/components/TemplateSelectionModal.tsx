@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { createPortal } from "react-dom";
-import { X, Loader2, ZoomIn, ZoomOut, CircleSlash } from "lucide-react";
+import { X, Loader2, ZoomIn, ZoomOut, CircleSlash, PanelsTopLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TemplateConfig, AVAILABLE_TEMPLATES } from "../types";
 import { templateService } from "../services";
@@ -21,141 +26,324 @@ interface TemplateSelectionModalProps {
   };
 }
 
-const defaultBrand = {
-  bg: "bg-black",
-  card: "bg-zinc-900",
-  border: "border-zinc-800",
-  text: "text-white",
-  muted: "text-zinc-400",
-  hover: "hover:bg-zinc-800/70",
-  accent: "ring-purple-500/40",
-};
+/** Preto & branco - paleta não mais usada diretamente */
 
 const SLIDE_W = 1085;
 const SLIDE_H = 1354;
-const GAP_X = 80;
+const GAP_X = 60; // Aumentado para melhor espaçamento
+
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 2;
+const ZOOM_STEP = 0.05;
+
+const MODAL_MAX_W_PX = 1200;
+const MODAL_MAX_H_PX = 860;
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+const round2 = (v: number) => Number(v.toFixed(2));
+
+function ZoomControls({
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  onReset,
+  onFit,
+  compact = false,
+}: {
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onReset: () => void;
+  onFit: () => void;
+  compact?: boolean;
+}) {
+  const btnCls =
+    "p-2 rounded-lg border border-zinc-800/50 hover:bg-zinc-800/30 focus:outline-none focus:ring-2 ring-white/10 transition-colors pointer-events-auto";
+  return (
+    <div className={`flex items-center gap-2 mr-2 ${compact ? "" : "mr-2"}`}>
+      <button onClick={onZoomOut} className={btnCls} aria-label="Diminuir zoom">
+        <ZoomOut className="w-4 h-4" />
+      </button>
+      <span className="text-xs font-medium tabular-nums w-12 text-center select-none text-zinc-400">
+        {Math.round(zoom * 100)}%
+      </span>
+      <button onClick={onZoomIn} className={btnCls} aria-label="Aumentar zoom">
+        <ZoomIn className="w-4 h-4 mr-[20px]" />
+      </button>
+    </div>
+  );
+}
 
 const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
   isOpen,
   onClose,
   onSelectTemplate,
   postCode,
-  brand,
 }) => {
-  const theme = useMemo(() => ({ ...defaultBrand, ...(brand || {}) }), [brand]);
-
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateConfig>(
     AVAILABLE_TEMPLATES[0]
   );
   const [slidesHtml, setSlidesHtml] = useState<string[]>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
-  const [zoom, setZoom] = useState(0.35);
+  const [zoom, setZoom] = useState(0.30); // 30% de zoom inicial
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const dragState = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number }>({ startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [isInitialMount, setIsInitialMount] = useState(true); // Para centralizar na primeira vez
 
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const modalRootRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
 
+  const dragState = useRef<{ startX: number; startY: number; startPanX: number; startPanY: number }>({
+    startX: 0,
+    startY: 0,
+    startPanX: 0,
+    startPanY: 0,
+  });
+
+  // Portal root
   useEffect(() => {
-    const existing = document.getElementById("modal-root");
-    if (existing) { modalRootRef.current = existing as HTMLElement; return; }
-    const el = document.createElement("div");
-    el.id = "modal-root";
-    document.body.appendChild(el);
-    modalRootRef.current = el;
+    let existing = document.getElementById("modal-root");
+    if (!existing) {
+      const el = document.createElement("div");
+      el.id = "modal-root";
+      document.body.appendChild(el);
+      existing = el;
+    }
+    modalRootRef.current = existing as HTMLElement;
   }, []);
 
+  // Fetch slides
   useEffect(() => {
-    const loadPreview = async () => {
-      if (!selectedTemplate || !isOpen) return;
+    if (!isOpen || !selectedTemplate) return;
+    let cancelled = false;
+    (async () => {
       setIsLoadingPreview(true);
       try {
         const slides = await templateService.fetchTemplate(selectedTemplate.id);
-        setSlidesHtml(Array.isArray(slides) ? slides : []);
-      } catch (err) {
-        console.error("Failed to load template preview:", err);
-        setSlidesHtml([]);
+        if (!cancelled) setSlidesHtml(Array.isArray(slides) ? slides : []);
+      } catch {
+        if (!cancelled) setSlidesHtml([]);
       } finally {
-        setIsLoadingPreview(false);
+        if (!cancelled) setIsLoadingPreview(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    loadPreview();
-  }, [selectedTemplate, isOpen]);
+  }, [isOpen, selectedTemplate]);
 
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    if (isOpen) {
-      document.addEventListener("keydown", onEsc);
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => { document.removeEventListener("keydown", onEsc); document.body.style.overflow = prev || ""; };
-    }
-  }, [isOpen, onClose]);
-
+  // ESC + scroll lock
   useEffect(() => {
     if (!isOpen) return;
-    const t = setTimeout(() => { (firstFocusableRef.current || closeBtnRef.current)?.focus(); }, 40);
+    const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const prev = document.body.style.overflow;
+    document.addEventListener("keydown", onEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = prev || "";
+    };
+  }, [isOpen, onClose]);
+
+  // Focus + trap
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      (firstFocusableRef.current || closeBtnRef.current)?.focus();
+    }, 40);
+
     const handleTab = (e: KeyboardEvent) => {
       if (e.key !== "Tab") return;
-      const c = document.getElementById("template-modal");
+      const c = containerRef.current;
       if (!c) return;
-      const focusables = c.querySelectorAll<HTMLElement>('a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])');
+      const focusables = c.querySelectorAll<HTMLElement>(
+        'a,button,input,select,textarea,[tabindex]:not([tabindex="-1"])'
+      );
       if (!focusables.length) return;
-      const first = focusables[0], last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
-      else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        last.focus(); e.preventDefault();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        first.focus(); e.preventDefault();
+      }
     };
     document.addEventListener("keydown", handleTab);
-    return () => { clearTimeout(t); document.removeEventListener("keydown", handleTab); };
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("keydown", handleTab);
+    };
   }, [isOpen]);
 
-  const handleBackdropClick = (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); };
-  const handleGenerate = () => { onSelectTemplate(selectedTemplate.id); onClose(); };
+  // Bounds pan
+  const getContentDims = useCallback(() => {
+    const count = Math.max(1, slidesHtml.length);
+    const contentW = count * SLIDE_W + Math.max(0, count - 1) * GAP_X;
+    const contentH = SLIDE_H;
+    const scaledW = contentW * zoom;
+    const scaledH = contentH * zoom;
+    const vp = viewportRef.current;
+    const vpW = vp ? vp.clientWidth : 0;
+    const vpH = vp ? vp.clientHeight : 0;
+    const minX = Math.min(0, vpW - scaledW);
+    const minY = Math.min(0, vpH - scaledH);
+    return { minX, minY };
+  }, [slidesHtml.length, zoom]);
 
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!viewportRef.current) return;
+  const clampPan = useCallback((nx: number, ny: number) => {
+    const { minX, minY } = getContentDims();
+    return { x: clamp(nx, minX, 0), y: clamp(ny, minY, 0) };
+  }, [getContentDims]);
+
+    // Fit-to-height + pan(0,0)
+  const fitToHeight = useCallback(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const usable = vp.clientHeight;
+    const newZoom = clamp(usable / SLIDE_H, ZOOM_MIN, ZOOM_MAX);
+    setZoom(round2(newZoom));
+    setPan(clampPan(0, 0));
+  }, [clampPan]);
+
+  // Centraliza os slides no viewport
+  const centerSlides = useCallback(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    
+    const count = Math.max(1, slidesHtml.length);
+    const contentW = count * SLIDE_W + Math.max(0, count - 1) * GAP_X;
+    const contentH = SLIDE_H;
+    
+    const scaledW = contentW * zoom;
+    const scaledH = contentH * zoom;
+    
+    const vpW = vp.clientWidth;
+    const vpH = vp.clientHeight;
+    
+    // Centraliza horizontalmente e verticalmente
+    const centerX = Math.max(0, (vpW - scaledW) / 2);
+    const centerY = Math.max(0, (vpH - scaledH) / 2);
+    
+    // Force set para garantir centralização imediata
+    const clamped = clampPan(centerX, centerY);
+    setPan(clamped);
+  }, [zoom, slidesHtml.length, clampPan]);
+
+  // ResizeObserver para responsividade - não chama fitToHeight automaticamente
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const ro = new ResizeObserver(() => {
+      // Apenas reclamp o pan atual sem mudar o zoom
+      setPan((p) => clampPan(p.x, p.y));
+    });
+    ro.observe(vp);
+    roRef.current = ro;
+    return () => {
+      ro.disconnect();
+      roRef.current = null;
+    };
+  }, [clampPan]);
+
+  // Revalida pan quando zoom / n° slides mudam
+  useEffect(() => {
+    setPan((p) => clampPan(p.x, p.y));
+  }, [zoom, slidesHtml.length, clampPan]);
+
+  // Centraliza os slides quando forem carregados pela primeira vez
+  useEffect(() => {
+    if (slidesHtml.length > 0 && isInitialMount) {
+      // Aguarda um pouco mais para o DOM estar pronto
+      const timer = setTimeout(() => {
+        centerSlides();
+        setIsInitialMount(false);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [slidesHtml.length, isInitialMount, centerSlides]);
+
+  // Zoom helpers (com re-clamp imediato pra refletir visual)
+  const zoomIn = useCallback(() => {
+    setZoom((z) => {
+      const nz = round2(clamp(z + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
+      // re-clamp pan após mudar zoom
+      setPan((p) => clampPan(p.x, p.y));
+      return nz;
+    });
+  }, [clampPan]);
+  const zoomOut = useCallback(() => {
+    setZoom((z) => {
+      const nz = round2(clamp(z - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
+      setPan((p) => clampPan(p.x, p.y));
+      return nz;
+    });
+  }, [clampPan]);
+  const resetZoom = useCallback(() => fitToHeight(), [fitToHeight]);
+
+  // Pan (canvas)
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     setIsDragging(true);
-    viewportRef.current.setPointerCapture(e.pointerId);
-    dragState.current = { startX: e.clientX, startY: e.clientY, scrollLeft: viewportRef.current.scrollLeft, scrollTop: viewportRef.current.scrollTop };
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDragging || !viewportRef.current) return;
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPanX: pan.x,
+      startPanY: pan.y,
+    };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  }, [pan.x, pan.y]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
     const dx = e.clientX - dragState.current.startX;
     const dy = e.clientY - dragState.current.startY;
-    viewportRef.current.scrollLeft = dragState.current.scrollLeft - dx;
-    viewportRef.current.scrollTop = dragState.current.scrollTop - dy;
-  };
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!viewportRef.current) return;
-    setIsDragging(false);
-    try { viewportRef.current.releasePointerCapture(e.pointerId); } catch {}
-  };
+    setPan(clampPan(dragState.current.startPanX + dx, dragState.current.startPanY + dy));
+  }, [isDragging, clampPan]);
 
-  const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+  const endPointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    setIsDragging(false);
+    try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch {}
+  }, []);
+
+  // Wheel: Ctrl/Cmd => zoom; Shift => pan X; sem nada => pan Y e X (dois dedos)
+  const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       const dir = Math.sign(e.deltaY);
       setZoom((z) => {
-        const next = Math.min(2, Math.max(0.05, Number((z - dir * 0.05).toFixed(2))));
-        return next;
+        const nz = round2(clamp(z - dir * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX));
+        setPan((p) => clampPan(p.x, p.y));
+        return nz;
       });
+    } else if (e.shiftKey) {
+      // Pan horizontal com Shift
+      e.preventDefault();
+      setPan((p) => clampPan(p.x - e.deltaY, p.y));
+    } else {
+      // Pan vertical e horizontal (dois dedos no trackpad)
+      e.preventDefault();
+      setPan((p) => clampPan(p.x - e.deltaX, p.y - e.deltaY));
     }
-  };
+  }, [clampPan]);
 
-  const fitToHeight = () => {
-    const vp = document.getElementById("slides-viewport");
-    if (!vp) return;
-    const h = vp.clientHeight - 32;
-    const newZoom = Math.max(0.05, Math.min(2, h / SLIDE_H));
-    setZoom(Number(newZoom.toFixed(2)));
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+  const handleGenerate = () => {
+    onSelectTemplate(selectedTemplate.id);
+    onClose();
   };
 
   if (!isOpen || !modalRootRef.current) return null;
 
-  const totalCanvasWidth = slidesHtml.length * SLIDE_W + Math.max(0, slidesHtml.length - 1) * GAP_X;
+  const count = Math.max(1, slidesHtml.length);
+  const contentW = count * SLIDE_W + Math.max(0, count - 1) * GAP_X;
+
   const modal = (
     <AnimatePresence>
       <motion.div
@@ -166,41 +354,70 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
         aria-hidden={false}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="template-modal-title"
         onClick={handleBackdropClick}
-        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        className="fixed inset-0 flex items-center justify-center p-4 md:pl-20 md:pt-16"
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.90)', zIndex: 9999999 }}
       >
-        <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
 
         <motion.div
           key="template-modal"
           id="template-modal"
+          ref={containerRef}
           initial={{ y: 12, opacity: 0, scale: 0.98 }}
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 8, opacity: 0, scale: 0.98 }}
           transition={{ type: "spring", stiffness: 260, damping: 22 }}
           onClick={(e) => e.stopPropagation()}
-          className={`relative w-[min(100%,1000px)] md:w-[min(92vw,1400px)] ${theme.bg} ${theme.text} shadow-2xl rounded-2xl border ${theme.border} overflow-hidden`}
-          style={{ maxHeight: "86vh" }}
+          className="bg-black text-white shadow-2xl rounded-2xl border border-zinc-700/50 overflow-hidden relative w-full"
+          style={{
+            maxWidth: `${MODAL_MAX_W_PX}px`,
+            height: `min(85vh, ${MODAL_MAX_H_PX}px)`,
+            display: "grid",
+            gridTemplateRows: "auto 1fr auto",
+            zIndex: 10000000,
+          }}
         >
-          <div className="flex items-center justify-between px-5 md:px-6 py-4 border-b sticky top-0 bg-black/90 backdrop-blur-md border-zinc-800 z-10">
-            <h2 className="text-xl md:text-2xl font-bold">Selecionar Template</h2>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-zinc-800/50 bg-black/40 backdrop-blur-sm relative z-20 pointer-events-auto">
             <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-2 mr-2">
-                <button onClick={() => setZoom((z) => Math.max(0.05, Number((z - 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800 hover:bg-zinc-900" aria-label="Diminuir zoom"><ZoomOut className="w-4 h-4"/></button>
-                <span className="text-sm tabular-nums w-12 text-center">{Math.round(zoom*100)}%</span>
-                <button onClick={() => setZoom((z) => Math.min(2, Number((z + 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800 hover:bg-zinc-900" aria-label="Aumentar zoom"><ZoomIn className="w-4 h-4"/></button>
-                <button onClick={() => setZoom(0.35)} className="p-2 rounded-md border border-zinc-800 hover:bg-zinc-900" aria-label="Reset zoom" title="Reset zoom"><CircleSlash className="w-4 h-4"/></button>
-                <button onClick={fitToHeight} className="p-2 rounded-md border border-zinc-800 hover:bg-zinc-900" aria-label="Ajustar à altura">Fit</button>
-              </div>
-              <button ref={closeBtnRef} onClick={onClose} aria-label="Fechar" className="p-2 rounded-xl border border-zinc-800 hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-white/20">
-                <X className="w-5 h-5" />
+              <button
+                className="md:hidden p-2 rounded-lg border border-zinc-800/50 hover:bg-zinc-800/30 focus:outline-none focus:ring-2 ring-white/10 transition-colors"
+                onClick={() => setShowSidebar((s) => !s)}
+                aria-label="Alternar lista de templates"
+              >
+                <PanelsTopLeft className="w-5 h-5" />
               </button>
+              <h2 id="template-modal-title" className="text-lg md:text-xl font-semibold tracking-tight">
+                Selecionar Template
+              </h2>
             </div>
+            <button
+              ref={closeBtnRef}
+              onClick={onClose}
+              aria-label="Fechar"
+              className="p-2 rounded-lg border border-zinc-800/50 hover:bg-zinc-800/30 focus:outline-none focus:ring-2 ring-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-0">
-            <div className={`md:col-span-4 border-r ${theme.border} overflow-y-auto`} style={{ maxHeight: "calc(86vh - 64px - 72px)" }}>
-              <div className="p-3 md:p-4 space-y-3">
+          {/* Body: grid 2 colunas */}
+          <div
+            className="relative h-full"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "18rem 1fr",
+            }}
+          >
+            {/* Sidebar */}
+            <aside
+              className={`${
+                showSidebar ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+              } transition-transform duration-200 ease-out bg-zinc-950 border-r border-zinc-800/50 overflow-y-auto pointer-events-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-800`}
+              style={{ gridColumn: "1 / 2" }}
+            >
+              <div className="p-3 md:p-4 space-y-2">
                 {AVAILABLE_TEMPLATES.map((template, idx) => {
                   const isActive = selectedTemplate.id === template.id;
                   return (
@@ -208,78 +425,130 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                       key={template.id}
                       ref={idx === 0 ? firstFocusableRef : undefined}
                       onClick={() => setSelectedTemplate(template)}
-                      className={`group w-full text-left rounded-xl border ${theme.border} ${theme.card} ${theme.hover} transition-all focus:outline-none focus:ring-2 ${theme.accent} ${isActive ? 'ring-2 ring-offset-0 border-purple-700/50' : ''}`}
+                      className={`group w-full text-left rounded-lg border transition-all focus:outline-none focus:ring-2 ring-white/10 ${
+                        isActive 
+                          ? "bg-white/5 border-white/30 shadow-lg shadow-white/5" 
+                          : "bg-zinc-900/30 border-zinc-800/50 hover:bg-zinc-800/30 hover:border-zinc-700/50"
+                      }`}
                     >
                       <div className="flex items-center gap-3 p-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-semibold truncate">{template.name}</h3>
-                            {isActive && (<span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold bg-purple-600 text-white">selecionado</span>)}
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="font-medium text-sm truncate">{template.name}</h3>
+                            {isActive && (
+                              <span className="ml-2 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium bg-white text-black">
+                                ATIVO
+                              </span>
+                            )}
                           </div>
-                          <p className={`mt-1 text-sm line-clamp-2 ${theme.muted}`}>{template.description}</p>
+                          <p className="text-xs text-zinc-400 line-clamp-2">
+                            {template.description}
+                          </p>
                         </div>
                       </div>
                     </button>
                   );
                 })}
               </div>
-            </div>
+            </aside>
 
-            <div id="slides-viewport" className="md:col-span-8 relative bg-zinc-950" style={{ maxHeight: "calc(86vh - 64px - 72px)" }}>
-              <div className="absolute inset-0">
-                <div className="w-full h-full bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:16px_16px]" />
+            {/* Canvas */}
+            <section className="relative bg-zinc-950" style={{ gridColumn: "2 / -1" }}>
+              {/* BG grid pattern mais sutil */}
+              <div className="absolute inset-0 z-0 pointer-events-none">
+                <div className="w-full h-full bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.02)_1px,transparent_1px)] [background-size:20px_20px]" />
               </div>
 
-              <div className="relative h-full w-full flex flex-col">
-                <div className="md:hidden flex items-center gap-2 p-3 border-b border-zinc-900">
-                  <button onClick={() => setZoom((z) => Math.max(0.05, Number((z - 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800"><ZoomOut className="w-4 h-4"/></button>
-                  <span className="text-sm tabular-nums w-12 text-center">{Math.round(zoom*100)}%</span>
-                  <button onClick={() => setZoom((z) => Math.min(2, Number((z + 0.05).toFixed(2))))} className="p-2 rounded-md border border-zinc-800"><ZoomIn className="w-4 h-4"/></button>
-                  <button onClick={() => setZoom(0.35)} className="p-2 rounded-md border border-zinc-800"><CircleSlash className="w-4 h-4"/></button>
-                  <button onClick={fitToHeight} className="p-2 rounded-md border border-zinc-800">Fit</button>
-                </div>
+              {/* Viewport absoluto */}
+              <div
+                ref={viewportRef}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={endPointer}
+                onPointerCancel={endPointer}
+                onWheel={onWheel}
+                className={`${isDragging ? "cursor-grabbing" : "cursor-grab"} absolute inset-0 z-10`}
+                style={{ touchAction: "none", overflow: "hidden", pointerEvents: "auto" }}
+              >
+                {/* Loader: não bloqueia botões */}
+                {isLoadingPreview && (
+                  <div className="absolute inset-0 flex items-center justify-center text-zinc-300 z-20 pointer-events-none">
+                    <div className="flex flex-col items-center gap-4">
+                      <Loader2 className="w-10 h-10 animate-spin" />
+                      <p className="text-sm font-medium">Carregando slides…</p>
+                    </div>
+                  </div>
+                )}
 
+                {/* Pan + Escala */}
                 <div
-                  ref={viewportRef}
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                  onPointerCancel={onPointerUp}
-                  onWheel={onWheel}
-                  className={`relative flex-1 overflow-auto select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                  className="absolute top-0 left-0"
+                  style={{
+                    transform: `translate(${pan.x}px, ${pan.y}px)`,
+                    transformOrigin: "top left",
+                    willChange: "transform",
+                  }}
                 >
-                  {isLoadingPreview ? (
-                    <div className="h-full w-full flex items-center justify-center text-zinc-300">
-                      <div className="flex flex-col items-center gap-4">
-                        <Loader2 className="w-10 h-10 animate-spin" />
-                        <p className="text-sm">Carregando slides…</p>
-                      </div>
-                    </div>
-                  ) : slidesHtml.length ? (
-                    <div className="min-w-full min-h-full px-6 py-4">
+                  <div
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: "top left",
+                      willChange: "transform",
+                    }}
+                  >
+                    {slidesHtml.length > 0 ? (
                       <div
-                        className="relative origin-top-left"
-                        style={{ width: totalCanvasWidth, height: SLIDE_H, transform: `scale(${zoom})` }}
+                        className="flex"
+                        style={{
+                          gap: GAP_X,
+                          height: SLIDE_H,
+                          width: contentW,
+                          marginTop: "34px",
+                          marginLeft: "60px",
+                          marginRight: "100px",
+                        }}
                       >
-                        <div className="absolute top-0 left-0 flex items-start" style={{ gap: GAP_X }}>
-                          {slidesHtml.map((html, idx) => (
-                            <div key={idx} className="relative shadow-2xl rounded-xl overflow-hidden bg-white border border-zinc-200" style={{ width: SLIDE_W, height: SLIDE_H }}>
-                              <iframe title={`Slide ${idx + 1}`} srcDoc={html} className="w-full h-full" sandbox="allow-scripts" />
-                            </div>
-                          ))}
-                        </div>
+                        {slidesHtml.map((html, idx) => (
+                          <div
+                            key={idx}
+                            className="relative shadow-2xl rounded-lg overflow-hidden bg-white border border-zinc-800/20"
+                            style={{ width: SLIDE_W, height: SLIDE_H, zIndex: 10000001 }}
+                          >
+                            <iframe
+                              title={`Slide ${idx + 1}`}
+                              srcDoc={html}
+                              className="w-full h-full pointer-events-none"
+                              sandbox="allow-scripts"
+                              style={{ zIndex: 10000002 }}
+                            />
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-zinc-400">Preview não disponível</div>
-                  )}
+                    ) : (
+                      !isLoadingPreview && (
+                        <div
+                          className="flex items-center justify-center text-zinc-500"
+                          style={{ width: SLIDE_W, height: SLIDE_H }}
+                        >
+                          <div className="text-center">
+                            <p className="text-sm font-medium">Preview não disponível</p>
+                            <p className="text-xs mt-1 text-zinc-600">Selecione um template para visualizar</p>
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            </section>
           </div>
 
-          <div className={`px-5 md:px-6 py-4 border-t ${theme.border} bg-black/90 backdrop-blur-sm sticky bottom-0`}>
-            <button onClick={handleGenerate} className={`w-full inline-flex items-center justify-center gap-2 font-semibold py-3 px-4 rounded-xl shadow-lg transition-all active:scale-[0.99] bg-white text-black hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-400/30`}>
+          {/* Footer */}
+          <div className="px-4 md:px-6 py-3 md:py-4 border-t border-zinc-800/50 bg-black/40 backdrop-blur-sm">
+            <button
+              onClick={handleGenerate}
+              className="w-full inline-flex items-center justify-center gap-2 font-semibold text-sm py-3 px-4 rounded-lg shadow-lg transition-all active:scale-[0.98] bg-white text-black hover:bg-zinc-100 focus:outline-none focus:ring-2 ring-white/20"
+            >
               <span>Gerar {selectedTemplate.name}</span>
             </button>
           </div>
