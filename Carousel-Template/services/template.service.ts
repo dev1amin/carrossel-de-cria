@@ -17,11 +17,13 @@ export class TemplateService {
     const slides: string[] = [];
     const errors: string[] = [];
 
-    console.log(`Fetching template ${templateId} from MinIO...`);
+    console.log(`🔍 Fetching template "${templateId}" from MinIO...`);
+    console.log(`📦 MinIO Config:`, { MINIO_ENDPOINT, MINIO_BUCKET, TOTAL_SLIDES });
+    console.log(`🎯 Template path will be: ${MINIO_ENDPOINT}/${MINIO_BUCKET}/template${templateId}/`);
 
     for (let i = 1; i <= TOTAL_SLIDES; i++) {
       const url = `${MINIO_ENDPOINT}/${MINIO_BUCKET}/template${templateId}/Slide ${i}.html`;
-      console.log(`Fetching slide ${i}:`, url);
+      console.log(`📥 Fetching slide ${i}:`, url);
 
       try {
         const response = await fetch(url, {

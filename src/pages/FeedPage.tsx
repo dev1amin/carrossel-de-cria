@@ -3,7 +3,6 @@ import Header from '../components/Header';
 import Feed from '../components/Feed';
 import Navigation from '../components/Navigation';
 import LoadingBar from '../components/LoadingBar';
-import { GenerationQueue } from '../../Carousel-Template';
 import Toast, { ToastMessage } from '../components/Toast';
 import { SortOption, Post } from '../types';
 import type { GenerationQueueItem } from '../../Carousel-Template';
@@ -14,9 +13,12 @@ import {
   templateRenderer, 
   generateCarousel, 
   AVAILABLE_TEMPLATES, 
-  CarouselViewer, 
-  type CarouselData 
+  CarouselEditorTabs, 
+  type CarouselTab,
+  type CarouselData
 } from '../../Carousel-Template';
+import { useEditorTabs } from '../contexts/EditorTabsContext';
+import { useGenerationQueue } from '../contexts/GenerationQueueContext';
 
 interface FeedPageProps {
   unviewedCount?: number;
@@ -25,14 +27,21 @@ interface FeedPageProps {
 const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeSort, setActiveSort] = useState<SortOption>('popular');
-  const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [isQueueExpanded, setIsQueueExpanded] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [testSlides, setTestSlides] = useState<string[] | null>(null);
-  const [currentCarouselData, setCurrentCarouselData] = useState<CarouselData | null>(null);
+  
+  // Usa o contexto compartilhado de abas
+  const { editorTabs, addEditorTab: addTab, closeEditorTab, closeAllEditorTabs, shouldShowEditor, setShouldShowEditor } = useEditorTabs();
+  
+  // Usa o contexto global da fila
+  const { addToQueue, removeFromQueue, generationQueue } = useGenerationQueue();
+
+  // Esconde o editor ao entrar na página
+  useEffect(() => {
+    setShouldShowEditor(false);
+  }, [setShouldShowEditor]);
 
   useEffect(() => {
     const loadFeed = async () => {
@@ -54,6 +63,19 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
     setSearchTerm(term);
   };
 
+  const addEditorTab = (carousel: { slides: string[]; carouselData: CarouselData; title: string; id?: string }) => {
+    const tabId = carousel.id || `tab-${Date.now()}`;
+    
+    const newTab: CarouselTab = {
+      id: tabId,
+      slides: carousel.slides,
+      carouselData: carousel.carouselData,
+      title: carousel.title,
+    };
+    
+    addTab(newTab);
+  };
+
   const handleTestEditor = async () => {
     try {
       setIsLoading(true);
@@ -66,8 +88,13 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       console.log('Rendering slides with test data...');
       const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 
-      setTestSlides(rendered);
-      setCurrentCarouselData(carouselData);
+      const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
+      addEditorTab({
+        id: `test-${templateId}`,
+        slides: rendered,
+        carouselData,
+        title: template?.name || 'Teste',
+      });
     } catch (error) {
       console.error('Failed to load test editor:', error);
       alert('Erro ao carregar editor de teste. Verifique o console.');
@@ -85,8 +112,8 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const handleGenerateCarousel = async (code: string, templateId: string) => {
-    console.log('🚀 FeedPage: handleGenerateCarousel iniciado', { code, templateId });
+  const handleGenerateCarousel = async (code: string, templateId: string, postId?: number) => {
+    console.log('🚀 FeedPage: handleGenerateCarousel iniciado', { code, templateId, postId });
     
     const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
     const queueItem: GenerationQueueItem = {
@@ -98,12 +125,15 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       createdAt: Date.now(),
     };
 
-    setGenerationQueue(prev => [...prev, queueItem]);
+    addToQueue(queueItem);
     console.log('✅ Item adicionado à fila:', queueItem.id);
 
     try {
-      console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}`);
-      const result = await generateCarousel(code, templateId);
+      // Obter JWT token do localStorage
+      const jwtToken = localStorage.getItem('access_token');
+      
+      console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}, postId: ${postId}, jwt: ${jwtToken ? 'presente' : 'ausente'}`);
+      const result = await generateCarousel(code, templateId, jwtToken || undefined, postId);
       console.log('✅ Carousel generated successfully:', result);
       console.log('✅ Tipo do result:', typeof result, 'É array?', Array.isArray(result));
       console.log('✅ Length do result:', Array.isArray(result) ? result.length : 'N/A');
@@ -112,7 +142,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (!result) {
         console.error('❌ Result é null ou undefined');
         addToast('Erro: resposta vazia do servidor', 'error');
-        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        removeFromQueue(queueItem.id);
         return;
       }
 
@@ -123,7 +153,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (resultArray.length === 0) {
         console.error('❌ Array de resultado vazio');
         addToast('Erro: nenhum dado retornado', 'error');
-        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        removeFromQueue(queueItem.id);
         return;
       }
 
@@ -134,7 +164,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (!carouselData || !carouselData.dados_gerais) {
         console.error('❌ Dados inválidos:', { carouselData });
         addToast('Erro: formato de dados inválido', 'error');
-        setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+        removeFromQueue(queueItem.id);
         return;
       }
 
@@ -187,14 +217,14 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       console.log('✅ Toast adicionado');
       
       console.log('⏳ Removendo item da fila...');
-      setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+      removeFromQueue(queueItem.id);
       console.log('✅ Item removido da fila');
       console.log('🎉 Processo completo!');
     } catch (error) {
       console.error('❌ ERRO em handleGenerateCarousel:', error);
       console.error('❌ Stack:', error instanceof Error ? error.stack : 'N/A');
       addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
-      setGenerationQueue(prev => prev.filter(i => i.id !== queueItem.id));
+      removeFromQueue(queueItem.id);
     }
   };
 
@@ -216,32 +246,26 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
 
   return (
     <div className="flex h-screen bg-black">
-      <Navigation unviewedCount={unviewedCount} />
+      <Navigation currentPage="feed" unviewedCount={unviewedCount} />
       <div className="flex-1 ml-16">
-        {testSlides && currentCarouselData && (
-          <CarouselViewer
-            slides={testSlides}
-            carouselData={currentCarouselData}
-            onClose={() => {
-              setTestSlides(null);
-              setCurrentCarouselData(null);
-            }}
+        {shouldShowEditor && (
+          <CarouselEditorTabs
+            tabs={editorTabs}
+            onCloseTab={closeEditorTab}
+            onCloseAll={closeAllEditorTabs}
+            onEditorsClosed={() => setShouldShowEditor(false)}
           />
         )}
-  <Toast toasts={toasts} onRemove={removeToast} />
-  <LoadingBar isLoading={isLoading} />
+        <Toast toasts={toasts} onRemove={removeToast} />
+        <LoadingBar isLoading={isLoading} />
         <Header
           onSearch={handleSearch}
           activeSort={activeSort}
           onSortChange={setActiveSort}
           onTestEditor={handleTestEditor}
         />
-        <GenerationQueue
-          items={generationQueue}
-          isExpanded={isQueueExpanded}
-          onToggleExpand={() => setIsQueueExpanded(!isQueueExpanded)}
-        />
-        <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-16' : ''}`}>
+        {/* Fila global removida daqui - agora está no App.tsx */}
+        <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-20' : ''}`}>
           <Feed
             posts={posts}
             searchTerm={searchTerm}

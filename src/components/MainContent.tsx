@@ -8,7 +8,8 @@ import LoadingBar from './LoadingBar';
 import Gallery from './Gallery';
 import Toast, { ToastMessage } from './Toast';
 import { 
-  CarouselViewer, 
+  CarouselEditorTabs,
+  type CarouselTab,
   GenerationQueue,
   templateService,
   templateRenderer,
@@ -17,6 +18,7 @@ import {
   type GenerationQueueItem,
   type CarouselData as CarouselDataType
 } from '../../Carousel-Template';
+import { useEditorTabs } from '../contexts/EditorTabsContext';
 import { getFeed } from '../services/feed';
 import { testCarouselData } from '../data/testCarouselData';
 import { CacheService, CACHE_KEYS } from '../services/cache';
@@ -24,11 +26,11 @@ import { CacheService, CACHE_KEYS } from '../services/cache';
 interface MainContentProps {
   searchTerm: string;
   activeSort: SortOption;
-  currentPage: 'feed' | 'settings' | 'gallery';
+  currentPage: 'feed' | 'settings' | 'gallery' | 'news';
   isLoading: boolean;
   onSearch: (term: string) => void;
   onSortChange: (sort: SortOption) => void;
-  onPageChange: (page: 'feed' | 'settings' | 'gallery') => void;
+  onPageChange: (page: 'feed' | 'settings' | 'gallery' | 'news') => void;
   setIsLoading: (loading: boolean) => void;
 }
 
@@ -42,8 +44,6 @@ interface GalleryCarousel {
   viewed?: boolean;
 }
 
-type CarouselData = CarouselDataType;
-
 const MainContent: React.FC<MainContentProps> = ({
   searchTerm,
   activeSort,
@@ -56,13 +56,14 @@ const MainContent: React.FC<MainContentProps> = ({
 }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [testSlides, setTestSlides] = useState<string[] | null>(null);
-  const [currentCarouselData, setCurrentCarouselData] = useState<CarouselData | null>(null);
   const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);
   const [isQueueExpanded, setIsQueueExpanded] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [galleryCarousels, setGalleryCarousels] = useState<GalleryCarousel[]>([]);
   const [unviewedCarousels, setUnviewedCarousels] = useState<Set<string>>(new Set());
+  
+  // Usa o contexto compartilhado de abas
+  const { editorTabs, addEditorTab: addTab, closeEditorTab, closeAllEditorTabs, shouldShowEditor, setShouldShowEditor } = useEditorTabs();
 
   const addToast = (message: string, type: 'success' | 'error') => {
     const toast: ToastMessage = {
@@ -75,6 +76,19 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const addEditorTab = (carousel: { slides: string[]; carouselData: CarouselDataType; title: string; id?: string }) => {
+    const tabId = carousel.id || `tab-${Date.now()}`;
+    
+    const newTab: CarouselTab = {
+      id: tabId,
+      slides: carousel.slides,
+      carouselData: carousel.carouselData,
+      title: carousel.title,
+    };
+    
+    addTab(newTab);
   };
 
   // Carrega galeria do cache ao montar o componente
@@ -92,8 +106,8 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, []);
 
-const handleGenerateCarousel = async (code: string, templateId: string) => {
-  console.log('🚀 handleGenerateCarousel chamado:', { code, templateId });
+const handleGenerateCarousel = async (code: string, templateId: string, postId?: number) => {
+  console.log('🚀 handleGenerateCarousel chamado:', { code, templateId, postId });
   console.log('🚀 Estado atual da galeria:', galleryCarousels.length, 'itens');
   
   const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
@@ -110,8 +124,11 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
   console.log('✅ Item adicionado à fila:', queueItem);
 
   try {
-    console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}`);
-    const result = await generateCarousel(code, templateId);
+    // Obter JWT token do localStorage
+    const jwtToken = localStorage.getItem('access_token');
+    
+    console.log(`⏳ Chamando generateCarousel para post: ${code} com template: ${templateId}, postId: ${postId}, jwt: ${jwtToken ? 'presente' : 'ausente'}`);
+    const result = await generateCarousel(code, templateId, jwtToken || undefined, postId);
     console.log('✅ Webhook retornou:', result);
     console.log('✅ Tipo do resultado:', typeof result, Array.isArray(result) ? 'é array' : 'não é array');
 
@@ -212,8 +229,13 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
       console.log('Rendering slides with test data...');
       const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 
-      setTestSlides(rendered);
-      setCurrentCarouselData(carouselData);
+      const template = AVAILABLE_TEMPLATES.find(t => t.id === templateId);
+      addEditorTab({
+        id: `test-${templateId}`,
+        slides: rendered,
+        carouselData,
+        title: template?.name || 'Teste',
+      });
     } catch (error) {
       console.error('Failed to load test editor:', error);
       alert('Erro ao carregar editor de teste. Verifique o console.');
@@ -265,14 +287,12 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
 
   return (
     <>
-      {testSlides && currentCarouselData && (
-        <CarouselViewer
-          slides={testSlides}
-          carouselData={currentCarouselData}
-          onClose={() => {
-            setTestSlides(null);
-            setCurrentCarouselData(null);
-          }}
+      {shouldShowEditor && (
+        <CarouselEditorTabs
+          tabs={editorTabs}
+          onCloseTab={closeEditorTab}
+          onCloseAll={closeAllEditorTabs}
+          onEditorsClosed={() => setShouldShowEditor(false)}
         />
       )}
       <Toast toasts={toasts} onRemove={removeToast} />
@@ -291,45 +311,49 @@ const handleGenerateCarousel = async (code: string, templateId: string) => {
               isExpanded={isQueueExpanded}
               onToggleExpand={() => setIsQueueExpanded(!isQueueExpanded)}
             />
-          <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-16' : ''}`}>
-            <Feed
-              posts={posts}
-              searchTerm={searchTerm}
-              activeSort={activeSort}
-              onGenerateCarousel={handleGenerateCarousel}
-            />
-          </main>
-        </>
-      )}
+            <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-16' : ''}`}>
+              <Feed
+                posts={posts}
+                searchTerm={searchTerm}
+                activeSort={activeSort}
+                onGenerateCarousel={handleGenerateCarousel}
+              />
+            </main>
+          </>
+        )}
 
-      {currentPage === 'gallery' && (
-        <Gallery
-          carousels={galleryCarousels}
-          onViewCarousel={(carousel) => {
-            setTestSlides(carousel.slides);
-            setCurrentCarouselData(carousel.carouselData);
+        {currentPage === 'gallery' && (
+          <Gallery
+            carousels={galleryCarousels}
+            onViewCarousel={(carousel) => {
+              addEditorTab({
+                id: `gallery-${carousel.id}`,
+                slides: carousel.slides,
+                carouselData: carousel.carouselData,
+                title: carousel.templateName,
+              });
+            }}
+          />
+        )}
+
+        {currentPage === 'settings' && (
+          <SettingsPage
+            onPageChange={onPageChange}
+            setIsLoading={setIsLoading}
+          />
+        )}
+
+        <Navigation
+          currentPage={currentPage}
+          onPageChange={(page: 'feed' | 'settings' | 'gallery' | 'news') => {
+            if (page === 'gallery') {
+              setUnviewedCarousels(new Set());
+            }
+            onPageChange(page);
           }}
+          unviewedCount={unviewedCarousels.size}
         />
-      )}
-
-      {currentPage === 'settings' && (
-        <SettingsPage
-          onPageChange={onPageChange}
-          setIsLoading={setIsLoading}
-        />
-      )}
-
-      <Navigation
-        currentPage={currentPage}
-        onPageChange={(page: 'feed' | 'settings' | 'gallery') => {
-          if (page === 'gallery') {
-            setUnviewedCarousels(new Set());
-          }
-          onPageChange(page);
-        }}
-        unviewedCount={unviewedCarousels.size}
-      />
-    </div>
+      </div>
     </>
   );
 };

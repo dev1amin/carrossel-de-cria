@@ -311,7 +311,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
       {/* Flex container for Navigation and Content */}
       <div className="flex flex-1 mt-14 overflow-hidden">
         {/* Navigation */}
-        <Navigation unviewedCount={0} />
+        <Navigation currentPage="settings" unviewedCount={0} />
         
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto">

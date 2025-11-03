@@ -1,14 +1,55 @@
 import { getCarouselConfig } from '../config';
 import { CarouselResponse } from '../types';
 
-export async function generateCarousel(code: string, templateId?: string): Promise<CarouselResponse[]> {
+interface GenerateCarouselParams {
+  code: string;
+  template?: string;
+  jwt_token?: string;
+  post_id?: number;
+  news_data?: {
+    id: string;
+    title: string;
+    description: string;
+    content: string;
+    url: string;
+    image: string;
+    publishedAt: string;
+    country: string;
+    lang: string;
+    niche: string;
+    type: 'news';
+  };
+}
+
+export async function generateCarousel(
+  code: string, 
+  templateId?: string, 
+  jwtToken?: string, 
+  postId?: number,
+  newsData?: GenerateCarouselParams['news_data']
+): Promise<CarouselResponse[]> {
   const config = getCarouselConfig();
   const webhookUrl = config.webhook.generateCarousel;
 
-  const requestBody: { code: string; template?: string } = { code };
+  const requestBody: GenerateCarouselParams = { code };
+  
   if (templateId) {
     requestBody.template = templateId;
   }
+  
+  if (jwtToken) {
+    requestBody.jwt_token = jwtToken;
+  }
+  
+  if (postId !== undefined) {
+    requestBody.post_id = postId;
+  }
+
+  if (newsData) {
+    requestBody.news_data = newsData;
+  }
+
+  console.log('📤 generateCarousel request:', requestBody);
 
   try {
     const response = await fetch(webhookUrl, {
@@ -24,6 +65,7 @@ export async function generateCarousel(code: string, templateId?: string): Promi
     }
 
     const data = await response.json();
+    console.log('📥 generateCarousel response:', data);
     return data;
   } catch (error) {
     console.error('Error generating carousel:', error);

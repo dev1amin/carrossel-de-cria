@@ -1,21 +1,38 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { GenerationQueueItem } from '../types';
 
 interface GenerationQueueProps {
   items: GenerationQueueItem[];
-  isExpanded: boolean;
-  onToggleExpand: () => void;
 }
 
-const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, onToggleExpand }) => {
-  console.log('🔔 GenerationQueue renderizado:', { itemsCount: items.length, isExpanded });
+const GenerationQueue: React.FC<GenerationQueueProps> = ({ items }) => {
+  // Estado de minimizado persiste no localStorage
+  const [isMinimized, setIsMinimized] = useState(() => {
+    try {
+      const saved = localStorage.getItem('queueMinimized');
+      return saved ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  // Persiste estado de minimizado
+  useEffect(() => {
+    localStorage.setItem('queueMinimized', JSON.stringify(isMinimized));
+  }, [isMinimized]);
+
+  console.log('🔔 GenerationQueue renderizado:', { itemsCount: items.length, isMinimized });
   
   if (items.length === 0) return null;
 
   const activeItems = items.filter(item => item.status === 'generating');
   const hasActiveItems = activeItems.length > 0;
+
+  const toggleMinimize = () => {
+    setIsMinimized((prev: boolean) => !prev);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -61,82 +78,98 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, isExpanded, on
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: -100, opacity: 0 }}
-      className="fixed top-14 left-0 right-0 bg-black backdrop-blur-md border-b border-zinc-800 shadow-2xl md:left-16"
-      style={{ zIndex: 60 }}
+      className="fixed left-0 right-0 bg-black/95 backdrop-blur-md border-b border-zinc-800 shadow-2xl"
+      style={{ 
+        zIndex: 70, // Acima da navegação (z-50), abaixo do header (z-100)
+        top: '56px', // 14 * 4 = 56px (altura do header)
+        left: '0', // Mobile: começa do início
+        marginLeft: window.innerWidth >= 768 ? '64px' : '0' // Desktop: 64px offset (largura da navegação)
+      }}
     >
-      <div className="container mx-auto px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <h3 className="text-white font-semibold text-lg">Fila de Geração</h3>
-            <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-full">
-              {items.length}
-            </span>
-            {hasActiveItems && (
-              <span className="text-blue-400 text-sm">
-                {activeItems.length} em progresso
+      {/* Container com flex para separar conteúdo (80%) e toggle (20%) */}
+      <div className="flex items-stretch">
+        {/* Conteúdo principal - 80% */}
+        <div className="flex-1" style={{ width: '80%' }}>
+          <div className="container mx-auto px-4 py-3">
+            <div className="flex items-center space-x-3">
+              <h3 className="text-white font-semibold text-lg">Fila de Geração</h3>
+              <span className="bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+                {items.length}
               </span>
-            )}
+              {hasActiveItems && (
+                <span className="text-blue-400 text-sm">
+                  {activeItems.length} em progresso
+                </span>
+              )}
+            </div>
+
+            <AnimatePresence>
+              {!isMinimized && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden mt-3"
+                >
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                    {items.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 20, opacity: 0 }}
+                        className={`flex items-center justify-between p-3 rounded-lg border ${getStatusColor(
+                          item.status
+                        )} transition-all`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          {getStatusIcon(item.status)}
+                          <div>
+                            <p className="text-white font-medium">{item.templateName}</p>
+                            <p className="text-gray-400 text-sm">Post: {item.postCode}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          <span className="text-sm font-medium text-white">
+                            {getStatusText(item.status)}
+                          </span>
+                          {item.status === 'generating' && (
+                            <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                              <motion.div
+                                className="h-full bg-gradient-to-r from-purple-600 to-pink-600"
+                                initial={{ width: '0%' }}
+                                animate={{ width: '100%' }}
+                                transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
+        </div>
+
+        {/* Toggle minimizar - 20% */}
+        <div 
+          className="flex items-center justify-center bg-zinc-900/50 border-l border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors"
+          style={{ width: '20%', minWidth: '60px', maxWidth: '100px' }}
+          onClick={toggleMinimize}
+        >
           <button
-            onClick={onToggleExpand}
-            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
-            aria-label={isExpanded ? "Minimizar fila" : "Expandir fila"}
+            className="flex items-center justify-center p-4 w-full h-full"
+            aria-label={isMinimized ? "Expandir fila" : "Minimizar fila"}
           >
-            {isExpanded ? (
-              <ChevronUp className="w-6 h-6 text-white" />
-            ) : (
+            {isMinimized ? (
               <ChevronDown className="w-6 h-6 text-white" />
+            ) : (
+              <ChevronUp className="w-6 h-6 text-white" />
             )}
           </button>
         </div>
-
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden mt-2"
-            >
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {items.map((item) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 20, opacity: 0 }}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${getStatusColor(
-                      item.status
-                    )} transition-all`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      {getStatusIcon(item.status)}
-                      <div>
-                        <p className="text-white font-medium">{item.templateName}</p>
-                        <p className="text-gray-400 text-sm">Post: {item.postCode}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="text-sm font-medium text-white">
-                        {getStatusText(item.status)}
-                      </span>
-                      {item.status === 'generating' && (
-                        <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
-                          <motion.div
-                            className="h-full bg-gradient-to-r from-purple-600 to-pink-600"
-                            initial={{ width: '0%' }}
-                            animate={{ width: '100%' }}
-                            transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     </motion.div>
   );

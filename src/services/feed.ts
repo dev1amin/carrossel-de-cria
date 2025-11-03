@@ -41,6 +41,7 @@ interface FeedItem {
 const convertFeedItemToPost = (item: FeedItem): Post => {
   const content = item.influencer_content;
   return {
+    id: content.id, // ID do post para enviar ao generateCarousel
     code: content.code,
     text: content.text,
     taken_at: new Date(content.published_at).getTime() / 1000, // Converter para timestamp Unix

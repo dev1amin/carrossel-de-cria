@@ -1,6 +1,7 @@
 export { default as CarouselGenerator } from './components/CarouselGenerator';
 
-export { CarouselViewer, TemplateSelectionModal, GenerationQueue } from './components';
+export { CarouselViewer, CarouselEditorTabs, TemplateSelectionModal, GenerationQueue } from './components';
+export type { CarouselTab } from './components/CarouselEditorTabs';
 
 export * from './hooks';
 

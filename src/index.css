@@ -80,3 +80,8 @@ video {
   transform: translateY(-5px);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
 }
+
+/* Zoom para slides do template */
+main.slide {
+  zoom: 0.3;
+}

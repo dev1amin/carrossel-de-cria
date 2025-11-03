@@ -7,7 +7,7 @@ import { formatNumber } from '../utils/formatters';
 interface PostCardProps {
   post: Post;
   index: number;
-  onGenerateCarousel?: (code: string, templateId: string) => void;
+  onGenerateCarousel?: (code: string, templateId: string, postId?: number) => void;
 }
 
 const PostCard: React.FC<PostCardProps> = ({ post, index, onGenerateCarousel }) => {
@@ -20,7 +20,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, index, onGenerateCarousel }) 
 
   const handleSelectTemplate = (templateId: string) => {
     if (onGenerateCarousel) {
-      onGenerateCarousel(post.code, templateId);
+      onGenerateCarousel(post.code, templateId, post.id);
     }
   };
   const formatTimeAgo = (timestamp: number) => {

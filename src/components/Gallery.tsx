@@ -1,8 +1,7 @@
 import { motion } from 'framer-motion';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, Edit, Image } from 'lucide-react';
-import Header from './Header';
-import { SortOption } from '../types';
+import SlideRenderer from './SlideRenderer';
 
 interface GalleryCarousel {
   id: string;
@@ -21,7 +20,7 @@ interface GalleryProps {
 
 interface GalleryItemProps {
   carousel: GalleryCarousel;
-  onViewCarousel: (carousel: GalleryCarousel) => void;
+  onEdit: (carousel: GalleryCarousel) => void;
   onDownload: (carousel: GalleryCarousel) => void;
 }
 
@@ -29,163 +28,169 @@ const EmptyState = () => {
   return (
     <div className="flex flex-col items-center justify-center h-[50vh] text-zinc-400">
       <Image className="w-16 h-16 mb-4 opacity-50" />
-      <p className="text-lg">Nenhum carrossel foi gerado ainda, pipipip</p>
+      <p className="text-lg">Nenhum carrossel foi gerado ainda</p>
     </div>
   );
 };
 
 const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel }) => {
-  const [activeSort, setActiveSort] = useState<SortOption>('latest');
-  const [unviewedCarousels, setUnviewedCarousels] = useState<Set<string>>(new Set());
-  
-  // Atualizar unviewedCarousels quando novos carrosséis forem adicionados
-  useEffect(() => {
-    const newUnviewed = new Set<string>();
-    carousels.forEach(carousel => {
-      if (!unviewedCarousels.has(carousel.id) && !carousel.viewed) {
-        newUnviewed.add(carousel.id);
-      }
-    });
-    if (newUnviewed.size > 0) {
-      setUnviewedCarousels(prev => new Set([...prev, ...newUnviewed]));
-    }
-  }, [carousels]);
-
-  const handleSearch = (term: string) => {
-    // Implementar busca se necessário
-    console.log('Search:', term);
-  };
-
-  const handleSortChange = (sort: SortOption) => {
-    setActiveSort(sort);
-    // Implementar ordenação se necessário
-  };
-
   const handleDownload = async (carousel: GalleryCarousel) => {
-    // Implemente a lógica de download aqui
+    // TODO: Implementar download real dos slides
     console.log('Download carousel:', carousel.id);
+    alert('Funcionalidade de download em desenvolvimento');
   };
 
   return (
-    <div className="min-h-screen bg-black">
-      <div className="relative">
-        <Header 
-          onSearch={handleSearch}
-          activeSort={activeSort}
-          onSortChange={handleSortChange}
-        />
-      </div>
-      
-      <main className="container mx-auto px-4 pt-20">
-        {carousels.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {carousels.map((carousel) => (
-              <GalleryItem
-                key={carousel.id}
-                carousel={carousel}
-                onViewCarousel={onViewCarousel}
-                onDownload={handleDownload}
-              />
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+    <main className="container mx-auto px-4 pt-4">
+      {carousels.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 justify-items-center">
+          {carousels.map((carousel) => (
+            <GalleryItem
+              key={carousel.id}
+              carousel={carousel}
+              onEdit={onViewCarousel}
+              onDownload={handleDownload}
+            />
+          ))}
+        </div>
+      )}
+    </main>
   );
 };
 
-const GalleryItem = ({ carousel, onViewCarousel, onDownload }: GalleryItemProps) => {
+const GalleryItem = ({ carousel, onEdit, onDownload }: GalleryItemProps) => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
-  const nextSlide = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Distância mínima de swipe (em px)
+  const minSwipeDistance = 50;
+
+  const nextSlide = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setCurrentSlide((prev) => (prev + 1) % carousel.slides.length);
   };
 
-  const prevSlide = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const prevSlide = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setCurrentSlide((prev) => (prev - 1 + carousel.slides.length) % carousel.slides.length);
   };
 
-  const handleItemClick = () => {
-    onViewCarousel(carousel);
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+
+    if (isLeftSwipe) {
+      nextSlide();
+    } else if (isRightSwipe) {
+      prevSlide();
+    }
   };
 
   return (
     <motion.div
-      className="relative rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      className="w-full max-w-[320px] bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
     >
-      {/* Carrossel */}
-      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '1080/1350' }}>
-        {/* Container para o slide com pointer-events desativados */}
-        <div className="w-full h-full pointer-events-none flex items-center justify-center">
-          <div 
-            dangerouslySetInnerHTML={{ __html: carousel.slides[currentSlide] }}
-            className="w-full h-full transform-gpu"
-            style={{
-              transform: 'scale(0.25)',
-              transformOrigin: 'center center',
-              position: 'absolute',
-              width: '400%',
-              height: '400%',
-            }}
+      {/* Carrossel navegável */}
+      <div 
+        className="relative w-full bg-black overflow-hidden cursor-grab active:cursor-grabbing select-none"
+        style={{ aspectRatio: '1080/1350' }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Slide atual */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+          <SlideRenderer
+            key={`${carousel.id}-slide-${currentSlide}`}
+            slideContent={carousel.slides[currentSlide]}
+            className="w-full h-full"
           />
         </div>
         
-        {/* Botões de navegação com z-index maior */}
-        <button
-          onClick={prevSlide}
-          className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/70 z-40"
-        >
-          <ChevronLeft className="w-6 h-6 text-white" />
-        </button>
-        
-        <button
-          onClick={nextSlide}
-          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/70 z-40"
-        >
-          <ChevronRight className="w-6 h-6 text-white" />
-        </button>
+        {/* Setas de navegação - apenas em desktop */}
+        {carousel.slides.length > 1 && (
+          <>
+            <button
+              onClick={prevSlide}
+              className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 backdrop-blur-sm rounded-full hover:bg-black/80 transition-all z-10 pointer-events-auto"
+              aria-label="Slide anterior"
+            >
+              <ChevronLeft className="w-5 h-5 text-white" />
+            </button>
+            
+            <button
+              onClick={nextSlide}
+              className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 backdrop-blur-sm rounded-full hover:bg-black/80 transition-all z-10 pointer-events-auto"
+              aria-label="Próximo slide"
+            >
+              <ChevronRight className="w-5 h-5 text-white" />
+            </button>
+          </>
+        )}
 
         {/* Indicador de slides */}
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 px-2 py-1 rounded-full text-white text-sm z-40">
-          {currentSlide + 1}/{carousel.slides.length}
-        </div>
-
-        {/* Overlay para clique no carrossel */}
-        <div 
-          className="absolute inset-0 cursor-pointer z-30"
-          onClick={handleItemClick}
-        />
+        {carousel.slides.length > 1 && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {carousel.slides.map((_, index) => (
+              <div
+                key={index}
+                className={`h-1.5 rounded-full transition-all ${
+                  index === currentSlide 
+                    ? 'w-6 bg-white' 
+                    : 'w-1.5 bg-white/40'
+                }`}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Informações e botões */}
-      <div className="p-4 space-y-4">
-        <div>
-          <h3 className="text-white font-medium">{carousel.templateName}</h3>
-          <p className="text-zinc-400 text-sm">
-            {new Date(carousel.createdAt).toLocaleDateString()}
+      {/* Botões de ação */}
+      <div className="p-3 border-t border-zinc-800">
+        {/* Info do carrossel */}
+        <div className="mb-3">
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {new Date(carousel.createdAt).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric'
+            })} • {carousel.slides.length} slides
           </p>
         </div>
 
+        {/* Botões */}
         <div className="flex gap-2">
           <button
-            onClick={() => onDownload(carousel)}
-            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2 rounded-md text-sm"
-          >
-            <Download className="w-4 h-4" />
-            Baixar
-          </button>
-          <button
-            onClick={() => onViewCarousel(carousel)}
-            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 py-2 rounded-md text-sm"
+            onClick={() => onEdit(carousel)}
+            className="flex-1 flex items-center justify-center gap-2 bg-white text-black font-medium py-2.5 px-4 rounded-lg hover:bg-zinc-200 transition-colors"
           >
             <Edit className="w-4 h-4" />
             Editar
+          </button>
+          <button
+            onClick={() => onDownload(carousel)}
+            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-zinc-700 transition-colors border border-zinc-700"
+          >
+            <Download className="w-4 h-4" />
+            Baixar
           </button>
         </div>
       </div>

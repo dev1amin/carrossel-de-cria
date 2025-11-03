@@ -14,7 +14,7 @@ interface FeedProps {
   posts: Post[];
   searchTerm: string;
   activeSort: SortOption;
-  onGenerateCarousel?: (code: string, templateId: string) => void;
+  onGenerateCarousel?: (code: string, templateId: string, postId?: number) => void;
 }
 
 type CarouselData = CarouselDataType;
@@ -30,9 +30,9 @@ const Feed: React.FC<FeedProps> = ({ posts, searchTerm, activeSort, onGenerateCa
   const dragY = useMotionValue(0);
   const controls = useAnimation();
 
-  const handleGenerateCarousel = async (code: string, templateId: string) => {
+  const handleGenerateCarousel = async (code: string, templateId: string, postId?: number) => {
     if (onGenerateCarouselProp) {
-      onGenerateCarouselProp(code, templateId);
+      onGenerateCarouselProp(code, templateId, postId);
       return;
     }
 

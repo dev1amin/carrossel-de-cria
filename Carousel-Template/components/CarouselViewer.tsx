@@ -337,7 +337,7 @@ const ensureImgCropWrapper = (doc: Document, img: HTMLImageElement): { wrapper: 
   let wrapper = img.parentElement;
   if (!wrapper || !wrapper.classList.contains('img-crop-wrapper')) {
     const w = doc.createElement('div');
-    w.className = 'img-crop-wrapper';
+    w.className = 'img-crop-wrapper media';
     w.style.display  = originalDisplay;
     w.style.position = 'relative';
     w.style.setProperty('overflow', 'hidden', 'important');
@@ -696,7 +696,22 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
         }
         return video;
       } else {
-        cont.style.setProperty('background-image', `url('${mediaUrl}')`, 'important');
+        // Preserva linear-gradient existente ao trocar a URL
+        // Lê do estilo computado para pegar gradients definidos no template original
+        const win = cont.ownerDocument?.defaultView || window;
+        const computedBg = win.getComputedStyle(cont).backgroundImage || '';
+        const currentBgImage = computedBg !== 'none' ? computedBg : '';
+        let newBgImage = `url('${mediaUrl}')`;
+        
+        // Se já tem linear-gradient, substitui apenas a url() mantendo o gradient
+        if (currentBgImage.includes('linear-gradient') && currentBgImage.includes('url(')) {
+          newBgImage = currentBgImage.replace(/url\([^)]+\)/g, `url('${mediaUrl}')`);
+        } else if (currentBgImage.includes('linear-gradient')) {
+          // Se tem gradient mas sem url, adiciona a url após o gradient
+          newBgImage = currentBgImage + `, url('${mediaUrl}')`;
+        }
+        
+        cont.style.setProperty('background-image', newBgImage, 'important');
         cont.style.setProperty('background-repeat', 'no-repeat', 'important');
         cont.style.setProperty('background-size', 'cover', 'important');
         cont.style.setProperty('background-position', '50% 50%', 'important');
@@ -751,9 +766,24 @@ const applyBackgroundImageImmediate = (slideIndex: number, mediaUrl: string, ifr
     queueMicrotask(() => { try { cleanupAltArtifacts(holder!); } catch {} });
     return video;
   } else {
+    // Preserva linear-gradient existente ao trocar a URL do body
+    // Lê do estilo computado para pegar gradients definidos no template original
+    const win = doc.defaultView || window;
+    const computedBg = win.getComputedStyle(doc.body).backgroundImage || '';
+    const currentBgImage = computedBg !== 'none' ? computedBg : '';
+    let newBgImage = `url('${mediaUrl}')`;
+    
+    // Se já tem linear-gradient, substitui apenas a url() mantendo o gradient
+    if (currentBgImage.includes('linear-gradient') && currentBgImage.includes('url(')) {
+      newBgImage = currentBgImage.replace(/url\([^)]+\)/g, `url('${mediaUrl}')`);
+    } else if (currentBgImage.includes('linear-gradient')) {
+      // Se tem gradient mas sem url, adiciona a url após o gradient
+      newBgImage = currentBgImage + `, url('${mediaUrl}')`;
+    }
+    
     doc.documentElement.style.setProperty('background-color', 'black', 'important');
     doc.body.style.setProperty('background-color', 'black', 'important');
-    doc.body.style.setProperty('background-image', `url('${mediaUrl}')`, 'important');
+    doc.body.style.setProperty('background-image', newBgImage, 'important');
     doc.body.style.setProperty('background-repeat', 'no-repeat', 'important');
     doc.body.style.setProperty('background-size', 'cover', 'important');
     doc.body.style.setProperty('background-position', '50% 50%', 'important');
@@ -773,6 +803,54 @@ const layoutReady = (doc: Document) => new Promise<void>(r => {
 
 /** ========= Componente ========= */
 const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, onClose }) => {
+  // Migração automática: se tem 'slides' mas não tem 'conteudos', faz a migração
+  const migratedData = React.useMemo(() => {
+    const data = carouselData as any;
+    
+    // Se já tem conteudos, retorna como está
+    if (data.conteudos && Array.isArray(data.conteudos)) {
+      return carouselData;
+    }
+    
+    // Se tem slides no carouselData (formato antigo), migra para conteudos
+    if (data.slides && Array.isArray(data.slides)) {
+      console.log('🔄 Migrando carouselData.slides para carouselData.conteudos');
+      return {
+        ...carouselData,
+        conteudos: data.slides,
+      };
+    }
+    
+    // Se não tem nem slides nem conteudos, retorna null (vai mostrar erro)
+    return null;
+  }, [carouselData]);
+
+  // Validação: garante que carouselData.conteudos existe (após migração)
+  if (!migratedData || !(migratedData as any).conteudos || !Array.isArray((migratedData as any).conteudos)) {
+    console.error('❌ CarouselViewer: carouselData.conteudos não encontrado ou inválido:', carouselData);
+    return (
+      <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
+        <div className="bg-neutral-900 p-8 rounded-lg max-w-md text-center">
+          <h2 className="text-white text-xl font-bold mb-4">Erro ao carregar carrossel</h2>
+          <p className="text-neutral-400 mb-6">
+            Os dados do carrossel estão em um formato incompatível com o editor.
+          </p>
+          <button
+            onClick={onClose}
+            className="bg-white text-black px-6 py-2 rounded-lg font-medium hover:bg-neutral-200 transition-colors"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Usa os dados migrados
+  const workingData = migratedData;
+  // Alias para compatibilidade com o resto do código
+  const carouselDataAlias = workingData;
+
   const slideWidth = 1080;
   const slideHeight = 1350;
   const gap = 40;
@@ -930,19 +1008,25 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       .img-crop-wrapper { cursor: pointer !important; }
     `);
 
-    result = result.replace(
+    return result.replace(
       /<body([^>]*)>/i,
       (m, attrs) =>
         /id=/.test(attrs)
-          ? m.replace(/>/, ` style="visibility:hidden">`)
-          : `<body${attrs} id="slide-${slideIndex}-background" data-editable="background" style="visibility:hidden">`
+          ? m
+          : `<body${attrs} id="slide-${slideIndex}-background" data-editable="background">`
     );
 
-    return result;
   };
 
   useEffect(() => {
     setRenderedSlides(slides.map((s, i) => injectEditableIds(stripAltGarbage(s), i)));
+    
+    // Limpa todas as seleções e reseta estados ao trocar de aba/slides
+    setSelectedElement({ slideIndex: 0, element: null });
+    setFocusedSlide(0);
+    setElementStyles({});
+    setOriginalStyles({});
+    selectedImageRefs.current = {};
   }, [slides]);
 
   useEffect(() => {
@@ -1147,7 +1231,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       try { cleanupAltArtifacts(doc.body); } catch {}
 
       try { cleanupAltArtifacts(doc.body); } catch {}
-      doc.body.style.visibility = 'visible';
+    //doc.body.style.visibility = 'visible';
 
       const onClickCapture = (ev: MouseEvent) => {
         const target = ev.target as HTMLElement | null;
@@ -1568,9 +1652,12 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
 
   /** ===== Render ===== */
   return (
-    <div className="fixed top-14 left-16 right-0 bottom-0 bg-neutral-900 flex" style={{ zIndex: 99 }}>
+    <div 
+      className="absolute inset-0 bg-neutral-900 flex" 
+      style={{ zIndex: 1 }}
+    >
       {/* Sidebar esquerda */}
-      <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col">
+      <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col shrink-0">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <LayersIcon className="w-4 h-4 text-neutral-400 mr-2" />
           <h3 className="text-white font-medium text-sm">Layers</h3>
@@ -1632,9 +1719,9 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       </div>
 
       {/* Área principal */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* TopBar */}
-        <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6">
+        <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center space-x-4">
             <h2 className="text-white font-semibold">Carousel Editor</h2>
             <div className="text-neutral-500 text-sm">{slides.length} slides</div>
@@ -1677,7 +1764,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
         {/* Canvas principal */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-hidden relative bg-neutral-800"
+          className="flex-1 overflow-hidden relative bg-neutral-800 min-h-0"
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           onWheel={(e) => {
             e.preventDefault();
@@ -1752,7 +1839,7 @@ const CarouselViewer: React.FC<CarouselViewerProps> = ({ slides, carouselData, o
       </div>
 
       {/* Sidebar direita */}
-      <div className="w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col">
+      <div className="w-80 bg-neutral-950 border-l border-neutral-800 flex flex-col shrink-0">
         <div className="h-14 border-b border-neutral-800 flex items-center px-4">
           <h3 className="text-white font-medium text-sm">Properties</h3>
         </div>

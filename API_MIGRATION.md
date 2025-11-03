@@ -8,7 +8,7 @@
   - `POST /auth/login` - Login
   - `POST /auth/register` - Registro (novo)
   - `POST /auth/refresh` - Refresh token (novo)
-  - `GET /users/profile` - Perfil do usuário
+  - `GET /user/profile` - Perfil do usuário
   - `POST /users/influencers` - Adicionar influenciador (novo)
   - `DELETE /users/influencers` - Remover influenciador (novo)
   - `GET /feed` - Obter feed
@@ -53,8 +53,8 @@ influencer_content.*_score → *Score
 
 ### 4. `/src/services/settings.ts`
 **Mudanças:**
-- ✅ `GET /users/profile` - Buscar perfil (antes era POST com token no body)
-- ✅ `PUT /users/profile` - Atualizar perfil
+- ✅ `GET /user/profile` - Buscar perfil (antes era POST com token no body)
+- ✅ `PUT /user/profile` - Atualizar perfil
 - ✅ Usa `getAuthHeaders()` para autenticação
 - ✅ Conversão automática do formato da API para `UserSettings`
 

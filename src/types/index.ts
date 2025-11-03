@@ -1,4 +1,5 @@
 export interface Post {
+  id?: number; // ID do post da API
   code: string;
   text: string;
   taken_at: number;
@@ -19,3 +20,6 @@ export interface Post {
 }
 
 export type SortOption = 'latest' | 'popular' | 'likes' | 'comments' | 'shares';
+
+// Re-export types from other modules
+export * from './generatedContent';
