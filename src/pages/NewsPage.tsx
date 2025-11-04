@@ -9,13 +9,13 @@ import Toast, { ToastMessage } from '../components/Toast';
 import { getNews } from '../services/news';
 import type { NewsItem, NewsFilters as NewsFiltersType, NewsPagination } from '../types/news';
 import type { SortOption } from '../types';
-import type { GenerationQueueItem } from '../../Carousel-Template';
+import type { GenerationQueueItem } from '../carousel';
 import { 
   templateService, 
   templateRenderer, 
   generateCarousel, 
   AVAILABLE_TEMPLATES
-} from '../../Carousel-Template';
+} from '../carousel';
 import { useGenerationQueue } from '../contexts/GenerationQueueContext';
 
 interface NewsPageProps {

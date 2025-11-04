@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { GenerationQueueItem } from '../types';
+import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, X, Eye } from 'lucide-react';
+import { GenerationQueueItem } from '../../types/carousel';
 
 interface GenerationQueueProps {
   items: GenerationQueueItem[];
+  onRemoveItem?: (id: string) => void;
+  onViewCarousel?: (item: GenerationQueueItem) => void;
 }
 
-const GenerationQueue: React.FC<GenerationQueueProps> = ({ items }) => {
+const GenerationQueue: React.FC<GenerationQueueProps> = ({ items, onRemoveItem, onViewCarousel }) => {
   // Estado de minimizado persiste no localStorage
   const [isMinimized, setIsMinimized] = useState(() => {
     try {
@@ -142,6 +144,37 @@ const GenerationQueue: React.FC<GenerationQueueProps> = ({ items }) => {
                                 transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
                               />
                             </div>
+                          )}
+                          {item.status === 'completed' && (
+                            <div className="flex items-center gap-2">
+                              {onViewCarousel && (
+                                <button
+                                  onClick={() => onViewCarousel(item)}
+                                  className="p-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                                  title="Visualizar carrossel"
+                                >
+                                  <Eye className="w-4 h-4 text-white" />
+                                </button>
+                              )}
+                              {onRemoveItem && (
+                                <button
+                                  onClick={() => onRemoveItem(item.id)}
+                                  className="p-1.5 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                                  title="Remover da fila"
+                                >
+                                  <X className="w-4 h-4 text-white" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {item.status === 'error' && onRemoveItem && (
+                            <button
+                              onClick={() => onRemoveItem(item.id)}
+                              className="p-1.5 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                              title="Remover da fila"
+                            >
+                              <X className="w-4 h-4 text-white" />
+                            </button>
                           )}
                         </div>
                       </motion.div>

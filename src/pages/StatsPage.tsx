@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart3, TrendingUp, Clock, CheckCircle, XCircle, Loader } from 'lucide-react';
 import Navigation from '../components/Navigation';
+import PageTitle from '../components/PageTitle';
 import { getGeneratedContentStats } from '../services/generatedContent';
 import type { GeneratedContentStats } from '../types/generatedContent';
 
@@ -79,6 +80,9 @@ const StatsPage: React.FC = () => {
     <div className="flex h-screen bg-black">
       <Navigation currentPage="settings" />
       <div className="flex-1 ml-16 overflow-y-auto">
+        <div className="pt-14">
+          <PageTitle title="Estatísticas" />
+        </div>
         <div className="container mx-auto px-6 py-8">
           {/* Header */}
           <div className="mb-8">

@@ -1,4 +1,4 @@
-import { getCarouselConfig } from '../config';
+import { getCarouselConfig } from '../../config/carousel';
 
 export class TemplateService {
   private cache: Map<string, string[]> = new Map();

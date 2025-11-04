@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import CarouselViewer from './CarouselViewer';
-import type { CarouselData } from '../types';
+import CarouselViewer from './viewer/CarouselViewer';
+import type { CarouselData } from '../../types/carousel';
 
 export interface CarouselTab {
   id: string;
@@ -116,11 +116,20 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
       style={{ 
         zIndex: 1000, 
         marginTop: '56px', 
-        marginLeft: window.innerWidth >= 768 ? '64px' : '0'
+        marginLeft: window.innerWidth >= 768 ? '64px' : '0',
+        pointerEvents: 'auto'
       }}
     >
       {/* Barra de abas */}
-      <div className="bg-neutral-950 border-b border-neutral-800 flex items-center overflow-x-auto" style={{ minHeight: '40px' }}>
+      <div 
+        className="bg-neutral-950 border-b border-neutral-800 flex items-center overflow-x-auto" 
+        style={{ 
+          minHeight: '40px',
+          zIndex: 1001,
+          position: 'relative',
+          pointerEvents: 'auto'
+        }}
+      >
         <div className="flex items-center">
           {tabs.map((tab) => (
             <button
@@ -131,6 +140,7 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
                   ? 'bg-neutral-900 text-white'
                   : 'bg-neutral-950 text-neutral-400 hover:bg-neutral-900 hover:text-white'
               }`}
+              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
             >
               <span className="text-sm font-medium truncate max-w-[150px]">
                 {tab.title}
@@ -141,6 +151,7 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
                   activeTabId === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                 }`}
                 aria-label="Fechar aba"
+                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -153,6 +164,7 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
           <button
             onClick={onCloseAll}
             className="ml-auto px-4 py-2 text-neutral-400 hover:text-white text-xs transition-colors"
+            style={{ pointerEvents: 'auto', cursor: 'pointer' }}
           >
             Fechar todas
           </button>
@@ -160,7 +172,7 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
       </div>
 
       {/* Conteúdo da aba ativa */}
-      <div className="flex-1 relative overflow-auto">
+      <div className="flex-1 relative overflow-auto" style={{ zIndex: 1 }}>
         {activeTab && isEditorOpen && (
           <CarouselViewer
             slides={activeTab.slides}

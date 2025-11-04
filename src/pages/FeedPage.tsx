@@ -3,9 +3,10 @@ import Header from '../components/Header';
 import Feed from '../components/Feed';
 import Navigation from '../components/Navigation';
 import LoadingBar from '../components/LoadingBar';
+import PageTitle from '../components/PageTitle';
 import Toast, { ToastMessage } from '../components/Toast';
 import { SortOption, Post } from '../types';
-import type { GenerationQueueItem } from '../../Carousel-Template';
+import type { GenerationQueueItem } from '../carousel';
 import { getFeed } from '../services/feed';
 import { testCarouselData } from '../data/testCarouselData';
 import { 
@@ -16,7 +17,7 @@ import {
   CarouselEditorTabs, 
   type CarouselTab,
   type CarouselData
-} from '../../Carousel-Template';
+} from '../carousel';
 import { useEditorTabs } from '../contexts/EditorTabsContext';
 import { useGenerationQueue } from '../contexts/GenerationQueueContext';
 
@@ -36,7 +37,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
   const { editorTabs, addEditorTab: addTab, closeEditorTab, closeAllEditorTabs, shouldShowEditor, setShouldShowEditor } = useEditorTabs();
   
   // Usa o contexto global da fila
-  const { addToQueue, removeFromQueue, generationQueue } = useGenerationQueue();
+  const { addToQueue, updateQueueItem, removeFromQueue, generationQueue } = useGenerationQueue();
 
   // Esconde o editor ao entrar na página
   useEffect(() => {
@@ -142,7 +143,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (!result) {
         console.error('❌ Result é null ou undefined');
         addToast('Erro: resposta vazia do servidor', 'error');
-        removeFromQueue(queueItem.id);
+        updateQueueItem(queueItem.id, { status: 'error', errorMessage: 'Resposta vazia do servidor' });
         return;
       }
 
@@ -153,7 +154,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (resultArray.length === 0) {
         console.error('❌ Array de resultado vazio');
         addToast('Erro: nenhum dado retornado', 'error');
-        removeFromQueue(queueItem.id);
+        updateQueueItem(queueItem.id, { status: 'error', errorMessage: 'Nenhum dado retornado' });
         return;
       }
 
@@ -164,7 +165,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
       if (!carouselData || !carouselData.dados_gerais) {
         console.error('❌ Dados inválidos:', { carouselData });
         addToast('Erro: formato de dados inválido', 'error');
-        removeFromQueue(queueItem.id);
+        updateQueueItem(queueItem.id, { status: 'error', errorMessage: 'Formato de dados inválido' });
         return;
       }
 
@@ -211,20 +212,28 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
         console.error('❌ Erro ao atualizar cache/dispatch da galeria:', err);
       }
 
-      // toast e remoção da fila
+      // toast e atualização do item na fila (marca como completed com os dados)
       console.log('⏳ Adicionando toast...');
       addToast('Carrossel criado e adicionado à galeria', 'success');
       console.log('✅ Toast adicionado');
       
-      console.log('⏳ Removendo item da fila...');
-      removeFromQueue(queueItem.id);
-      console.log('✅ Item removido da fila');
+      console.log('⏳ Atualizando item na fila para completed...');
+      updateQueueItem(queueItem.id, {
+        status: 'completed',
+        completedAt: Date.now(),
+        slides: rendered,
+        carouselData: carouselData,
+      });
+      console.log('✅ Item atualizado na fila como completed');
       console.log('🎉 Processo completo!');
     } catch (error) {
       console.error('❌ ERRO em handleGenerateCarousel:', error);
       console.error('❌ Stack:', error instanceof Error ? error.stack : 'N/A');
       addToast('Erro ao gerar carrossel. Tente novamente.', 'error');
-      removeFromQueue(queueItem.id);
+      updateQueueItem(queueItem.id, {
+        status: 'error',
+        errorMessage: error instanceof Error ? error.message : 'Erro desconhecido',
+      });
     }
   };
 
@@ -266,6 +275,7 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
         />
         {/* Fila global removida daqui - agora está no App.tsx */}
         <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-20' : ''}`}>
+          <PageTitle title="Feed" />
           <Feed
             posts={posts}
             searchTerm={searchTerm}

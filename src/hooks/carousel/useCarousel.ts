@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { CarouselData, GenerationQueueItem } from '../types';
-import { AVAILABLE_TEMPLATES } from '../types';
-import { generateCarousel, templateService, templateRenderer } from '../services';
+import { CarouselData, GenerationQueueItem } from '../../types/carousel';
+import { AVAILABLE_TEMPLATES } from '../../types/carousel';
+import { generateCarousel, templateService, templateRenderer } from '../../services/carousel';
 
 export const useCarousel = () => {
   const [generationQueue, setGenerationQueue] = useState<GenerationQueueItem[]>([]);

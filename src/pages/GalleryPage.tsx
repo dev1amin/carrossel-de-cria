@@ -2,16 +2,18 @@ import { useState, useEffect } from 'react';
 import Gallery from '../components/Gallery';
 import Navigation from '../components/Navigation';
 import Header from '../components/Header';
-import { CarouselEditorTabs, type CarouselTab } from '../../Carousel-Template';
-import type { CarouselData } from '../../Carousel-Template';
+import LoadingBar from '../components/LoadingBar';
+import PageTitle from '../components/PageTitle';
+import { CarouselEditorTabs, type CarouselTab } from '../carousel';
+import type { CarouselData } from '../carousel';
 import { CacheService, CACHE_KEYS } from '../services/cache';
 import { SortOption } from '../types';
 import { useEditorTabs } from '../contexts/EditorTabsContext';
 import { useGenerationQueue } from '../contexts/GenerationQueueContext';
 import { getGeneratedContent } from '../services/generatedContent';
 import type { GeneratedContent } from '../types/generatedContent';
-import { templateService } from '../../Carousel-Template/services/template.service';
-import { templateRenderer } from '../../Carousel-Template/services/templateRenderer.service';
+import { templateService } from '../services/carousel/template.service';
+import { templateRenderer } from '../services/carousel/templateRenderer.service';
 
 interface GalleryCarousel {
   id: string;
@@ -407,6 +409,7 @@ const GalleryPage = () => {
   return (
     <div className="min-h-screen bg-black">
       <Navigation currentPage="gallery" />
+      <LoadingBar isLoading={isLoadingFromAPI} />
       <Header
         onSearch={handleSearch}
         activeSort={activeSort}
@@ -414,6 +417,7 @@ const GalleryPage = () => {
       />
       
       <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-20' : ''}`}>
+        <PageTitle title="Galeria" />
         {shouldShowEditor && (
           <CarouselEditorTabs
             tabs={editorTabs}
@@ -426,8 +430,7 @@ const GalleryPage = () => {
         {isLoadingFromAPI && galleryCarousels.length === 0 ? (
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="flex flex-col items-center gap-4">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-              <p className="text-white/60">Carregando galeria...</p>
+              <p className="text-white/60"></p>
             </div>
           </div>
         ) : (

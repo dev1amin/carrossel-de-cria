@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { CarouselTab } from '../../Carousel-Template';
+import { CarouselTab } from '../carousel';
 
 interface EditorTabsContextType {
   editorTabs: CarouselTab[];

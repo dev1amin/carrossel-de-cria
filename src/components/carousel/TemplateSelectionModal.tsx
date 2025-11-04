@@ -7,8 +7,8 @@ import React, {
 import { createPortal } from "react-dom";
 import { X, Loader2, ZoomIn, ZoomOut, CircleSlash, PanelsTopLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { TemplateConfig, AVAILABLE_TEMPLATES } from "../types";
-import { templateService } from "../services";
+import { TemplateConfig, AVAILABLE_TEMPLATES } from "../../types/carousel";
+import { templateService } from "../../services/carousel";
 
 interface TemplateSelectionModalProps {
   isOpen: boolean;

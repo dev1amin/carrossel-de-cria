@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { GenerationQueueItem } from '../../Carousel-Template';
+import type { GenerationQueueItem } from '../carousel';
 
 interface GenerationQueueContextType {
   generationQueue: GenerationQueueItem[];

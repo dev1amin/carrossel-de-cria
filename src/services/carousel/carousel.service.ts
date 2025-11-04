@@ -1,5 +1,5 @@
-import { getCarouselConfig } from '../config';
-import { CarouselResponse } from '../types';
+import { getCarouselConfig } from '../../config/carousel';
+import { CarouselResponse } from '../../types/carousel';
 
 interface GenerateCarouselParams {
   code: string;

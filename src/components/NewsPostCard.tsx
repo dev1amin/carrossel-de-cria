@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ExternalLink, Sparkles, Newspaper } from 'lucide-react';
-import { TemplateSelectionModal } from '../../Carousel-Template';
+import { TemplateSelectionModal } from '../carousel';
 import type { NewsItem } from '../types/news';
 
 interface NewsPostCardProps {

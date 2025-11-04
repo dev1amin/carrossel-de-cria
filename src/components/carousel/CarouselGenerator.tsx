@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import CarouselViewer from './CarouselViewer';
+import CarouselViewer from './viewer/CarouselViewer';
 import TemplateSelectionModal from './TemplateSelectionModal';
 import GenerationQueue from './GenerationQueue';
-import { useCarousel } from '../hooks';
+import { useCarousel } from '../../hooks/carousel';
 
 export interface CarouselGeneratorProps {
   onGenerateClick: (postCode: string) => void;

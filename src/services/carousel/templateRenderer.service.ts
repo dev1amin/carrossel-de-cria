@@ -1,4 +1,4 @@
-import { CarouselData } from '../types';
+import { CarouselData } from '../../types/carousel';
 
 export class TemplateRenderer {
   private getCurrentMonthYear(): string {

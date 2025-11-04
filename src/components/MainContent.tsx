@@ -17,7 +17,7 @@ import {
   AVAILABLE_TEMPLATES,
   type GenerationQueueItem,
   type CarouselData as CarouselDataType
-} from '../../Carousel-Template';
+} from '../carousel';
 import { useEditorTabs } from '../contexts/EditorTabsContext';
 import { getFeed } from '../services/feed';
 import { testCarouselData } from '../data/testCarouselData';
@@ -308,8 +308,6 @@ const handleGenerateCarousel = async (code: string, templateId: string, postId?:
             />
             <GenerationQueue
               items={generationQueue}
-              isExpanded={isQueueExpanded}
-              onToggleExpand={() => setIsQueueExpanded(!isQueueExpanded)}
             />
             <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-16' : ''}`}>
               <Feed

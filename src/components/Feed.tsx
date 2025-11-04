@@ -8,7 +8,7 @@ import {
   generateCarousel,
   templateService,
   templateRenderer
-} from '../../Carousel-Template';
+} from '../carousel';
 
 interface FeedProps {
   posts: Post[];
