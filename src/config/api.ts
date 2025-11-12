@@ -15,4 +15,6 @@ export const API_ENDPOINTS = {
   // Generated Content
   generatedContent: `${API_BASE_URL}/generated-content`,
   generatedContentStats: `${API_BASE_URL}/generated-content/stats`,
+  // Business
+  business: `${API_BASE_URL}/business`,
 } as const;

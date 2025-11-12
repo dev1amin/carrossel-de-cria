@@ -78,3 +78,18 @@ export interface GeneratedContentQueryParams {
   media_type?: string;
   provider_type?: string;
 }
+
+export interface DeleteGeneratedContentResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface UpdateGeneratedContentRequest {
+  result: GeneratedContentResult;
+}
+
+export interface UpdateGeneratedContentResponse {
+  success: boolean;
+  message: string;
+  data: GeneratedContent;
+}

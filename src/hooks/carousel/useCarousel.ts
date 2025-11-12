@@ -33,6 +33,13 @@ export const useCarousel = () => {
         console.log(`Fetching template ${responseTemplateId}...`);
         const templateSlides = await templateService.fetchTemplate(responseTemplateId);
 
+        // Configura a compatibilidade do template no renderer
+        const templateConfig = AVAILABLE_TEMPLATES.find(t => t.id === responseTemplateId);
+        if (templateConfig) {
+          templateRenderer.setTemplateCompatibility(templateConfig.compatibility);
+          console.log(`Template compatibility set to: ${templateConfig.compatibility}`);
+        }
+
         console.log('Rendering slides with data...');
         const rendered = templateRenderer.renderAllSlides(templateSlides, carouselData);
 

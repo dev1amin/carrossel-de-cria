@@ -1,9 +1,13 @@
 import { API_ENDPOINTS } from '../config/api';
+import { authenticatedFetch } from '../utils/apiClient';
 import type {
   GeneratedContentListResponse,
   GeneratedContentResponse,
   GeneratedContentStatsResponse,
   GeneratedContentQueryParams,
+  DeleteGeneratedContentResponse,
+  UpdateGeneratedContentRequest,
+  UpdateGeneratedContentResponse,
 } from '../types/generatedContent';
 
 /**
@@ -30,7 +34,7 @@ export const getGeneratedContent = async (
       ? `${API_ENDPOINTS.generatedContent}?${queryParams.toString()}`
       : API_ENDPOINTS.generatedContent;
 
-    const response = await fetch(url, {
+    const response = await authenticatedFetch(url, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -39,9 +43,6 @@ export const getGeneratedContent = async (
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized. Please login again.');
-      }
       throw new Error(`Failed to fetch generated content: ${response.statusText}`);
     }
 
@@ -64,7 +65,7 @@ export const getGeneratedContentById = async (id: number): Promise<GeneratedCont
       throw new Error('No authentication token found');
     }
 
-    const response = await fetch(`${API_ENDPOINTS.generatedContent}/${id}`, {
+    const response = await authenticatedFetch(`${API_ENDPOINTS.generatedContent}/${id}`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -73,9 +74,6 @@ export const getGeneratedContentById = async (id: number): Promise<GeneratedCont
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized. Please login again.');
-      }
       if (response.status === 404) {
         throw new Error('Content not found or does not belong to user');
       }
@@ -101,7 +99,7 @@ export const getGeneratedContentStats = async (): Promise<GeneratedContentStatsR
       throw new Error('No authentication token found');
     }
 
-    const response = await fetch(API_ENDPOINTS.generatedContentStats, {
+    const response = await authenticatedFetch(API_ENDPOINTS.generatedContentStats, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -110,9 +108,6 @@ export const getGeneratedContentStats = async (): Promise<GeneratedContentStatsR
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized. Please login again.');
-      }
       throw new Error(`Failed to fetch stats: ${response.statusText}`);
     }
 
@@ -120,6 +115,95 @@ export const getGeneratedContentStats = async (): Promise<GeneratedContentStatsR
     return data;
   } catch (error) {
     console.error('Error fetching generated content stats:', error);
+    throw error;
+  }
+};
+
+/**
+ * Deleta um conteúdo gerado específico
+ */
+export const deleteGeneratedContent = async (id: number): Promise<DeleteGeneratedContentResponse> => {
+  try {
+    const token = localStorage.getItem('access_token');
+
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const response = await authenticatedFetch(`${API_ENDPOINTS.generatedContent}/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Content not found or does not belong to user');
+      }
+      if (response.status === 500) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete generated content');
+      }
+      throw new Error(`Failed to delete content: ${response.statusText}`);
+    }
+
+    const data: DeleteGeneratedContentResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error deleting generated content:', error);
+    throw error;
+  }
+};
+
+/**
+ * Atualiza o campo result de um conteúdo gerado
+ */
+export const updateGeneratedContent = async (
+  id: number,
+  updates: UpdateGeneratedContentRequest
+): Promise<UpdateGeneratedContentResponse> => {
+  try {
+    const token = localStorage.getItem('access_token');
+
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const response = await authenticatedFetch(`${API_ENDPOINTS.generatedContent}/${id}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      if (response.status === 400) {
+        const errorData = await response.json();
+        const errorMessage = errorData.details
+          ? errorData.details.map((d: any) => d.message).join(', ')
+          : errorData.error || 'Validation failed';
+        throw new Error(errorMessage);
+      }
+      if (response.status === 404) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Content not found or does not belong to user');
+      }
+      if (response.status === 500) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update generated content');
+      }
+      throw new Error(`Failed to update content: ${response.statusText}`);
+    }
+
+    const data: UpdateGeneratedContentResponse = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error updating generated content:', error);
     throw error;
   }
 };

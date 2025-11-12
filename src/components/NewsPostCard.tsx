@@ -83,6 +83,14 @@ const NewsPostCard: React.FC<NewsPostCardProps> = ({ news, index, onGenerateCaro
                   {news.lang.toUpperCase()}
                 </span>
               </div>
+              {news.recommend && (
+                <div className="absolute top-2 right-2">
+                  <div className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 backdrop-blur-sm rounded-full text-xs text-white font-bold flex items-center gap-1.5 shadow-lg">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Recomendado pela IA</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           

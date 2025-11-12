@@ -8,6 +8,8 @@ interface LayersSidebarProps {
   expandedLayers: Set<number>;
   focusedSlide: number;
   selectedElement: { slideIndex: number; element: ElementType };
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
   onToggleLayer: (index: number) => void;
   onElementClick: (slideIndex: number, element: ElementType) => void;
   onSlideClick: (index: number) => void;
@@ -19,15 +21,40 @@ export const LayersSidebar: React.FC<LayersSidebarProps> = ({
   expandedLayers,
   focusedSlide,
   selectedElement,
+  isMinimized = false,
+  onToggleMinimize,
   onToggleLayer,
   onElementClick,
   onSlideClick,
 }) => {
+  if (isMinimized) {
+    return (
+      <div className="w-12 bg-neutral-950 border-r border-neutral-800 flex flex-col items-center shrink-0">
+        <button
+          onClick={onToggleMinimize}
+          className="h-14 w-full flex items-center justify-center hover:bg-neutral-900 border-b border-neutral-800 transition-colors"
+          title="Expandir Layers"
+        >
+          <LayersIcon className="w-5 h-5 text-neutral-400" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-64 bg-neutral-950 border-r border-neutral-800 flex flex-col shrink-0">
-      <div className="h-14 border-b border-neutral-800 flex items-center px-4">
-        <LayersIcon className="w-4 h-4 text-neutral-400 mr-2" />
-        <h3 className="text-white font-medium text-sm">Layers</h3>
+      <div className="h-14 border-b border-neutral-800 flex items-center justify-between px-4">
+        <div className="flex items-center">
+          <LayersIcon className="w-4 h-4 text-neutral-400 mr-2" />
+          <h3 className="text-white font-medium text-sm">Layers</h3>
+        </div>
+        <button
+          onClick={onToggleMinimize}
+          className="p-1 hover:bg-neutral-800 rounded transition-colors"
+          title="Minimizar"
+        >
+          <ChevronRight className="w-4 h-4 text-neutral-400" />
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {slides.map((_, index) => {

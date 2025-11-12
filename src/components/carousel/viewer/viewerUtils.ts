@@ -138,7 +138,11 @@ export const getBgElements = (doc: Document) =>
   Array.from(doc.querySelectorAll<HTMLElement>('body,div,section,header,main,figure,article'))
     .filter(el => {
       const cs = doc.defaultView?.getComputedStyle(el);
-      return !!cs && cs.backgroundImage && cs.backgroundImage.includes('url(');
+      // Inclui elementos com url() OU linear-gradient() no background-image
+      return !!cs && cs.backgroundImage && (
+        cs.backgroundImage.includes('url(') || 
+        cs.backgroundImage.includes('linear-gradient(')
+      );
     });
 
 export const findLargestVisual = (doc: Document): { type: 'img' | 'bg' | 'vid', el: HTMLElement } | null => {
@@ -479,6 +483,8 @@ export const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     host.style.setProperty('overflow', 'hidden', 'important');
     host.style.setProperty('height', `${h}px`, 'important');
     host.setAttribute('data-cv-height', String(h));
+    
+    // Sincroniza o conteúdo com o container ao inicializar
     host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
       const isVid = el.tagName === 'VIDEO';
       (el as HTMLElement).style.setProperty('width', '100%', 'important');
@@ -490,6 +496,9 @@ export const attachResizePinchers = (doc: Document, host: HTMLElement) => {
         (el as any).style.inset = '0';
       }
     });
+    
+    // Força reflow
+    host.offsetHeight;
   };
   ensurePxHeight();
   ensureHostResizeObserver(host);
@@ -536,6 +545,8 @@ export const attachResizePinchers = (doc: Document, host: HTMLElement) => {
     next = Math.max(120, Math.min(4096, Math.round(next)));
     host.style.setProperty('height', `${next}px`, 'important');
     host.setAttribute('data-cv-height', String(next));
+    
+    // Sincroniza o conteúdo com o novo tamanho do container
     host.querySelectorAll<HTMLElement>(':scope > img[data-editable], :scope > video[data-editable]').forEach((el) => {
       const isVid = el.tagName === 'VIDEO';
       (el as HTMLElement).style.setProperty('width', '100%', 'important');
@@ -547,6 +558,10 @@ export const attachResizePinchers = (doc: Document, host: HTMLElement) => {
         (el as any).style.inset = '0';
       }
     });
+    
+    // Força reflow para garantir que as mudanças sejam aplicadas
+    host.offsetHeight;
+    
     update();
   };
 
@@ -634,6 +649,64 @@ export const normFill = (host: HTMLElement) => {
       (el as any).style.inset = '0';
     }
   });
+};
+
+/** ========= Sincronizar redimensionamento de container e conteúdo ========= */
+export const syncContainerWithContent = (container: HTMLElement, content: HTMLImageElement | HTMLVideoElement) => {
+  const isVideo = content.tagName === 'VIDEO';
+  
+  // Verificar se o container já tem um tamanho fixo definido (data-cv-height)
+  const hasFixedSize = container.hasAttribute('data-cv-height');
+  
+  // Garante que container e conteúdo tenham a mesma estrutura de posicionamento
+  container.style.position = container.style.position || 'relative';
+  container.style.overflow = 'hidden';
+  
+  if (isVideo) {
+    // Para vídeos: vídeo preenche o container
+    // Vídeo em modo absolute para preencher todo o container
+    content.style.setProperty('position', 'absolute', 'important');
+    (content.style as any).inset = '0';
+    content.style.setProperty('width', '100%', 'important');
+    content.style.setProperty('height', '100%', 'important');
+    content.style.setProperty('object-fit', 'cover', 'important');
+    
+    // Só ajusta tamanho do container se NÃO tiver tamanho fixo definido
+    if (!hasFixedSize) {
+      // Para vídeos, usa altura padrão de 450px (não 100%)
+      container.style.setProperty('width', '100%', 'important');
+      container.style.setProperty('height', '450px', 'important');
+      container.setAttribute('data-cv-height', '450');
+    }
+  } else {
+    // Para imagens: imagem preenche o container
+    const img = content as HTMLImageElement;
+    
+    // Aplica estilos da imagem
+    img.style.removeProperty('position'); // Imagens não precisam de absolute
+    img.style.setProperty('width', '100%', 'important');
+    img.style.setProperty('height', '100%', 'important');
+    img.style.setProperty('object-fit', 'cover', 'important');
+    
+    // Só ajusta altura do container se NÃO tiver tamanho fixo definido
+    if (!hasFixedSize) {
+      const applyImageHeight = () => {
+        const naturalHeight = img.naturalHeight || 450;
+        container.style.setProperty('width', '100%', 'important');
+        container.style.setProperty('height', `${naturalHeight}px`, 'important');
+        container.setAttribute('data-cv-height', String(naturalHeight));
+      };
+      
+      if (img.complete && img.naturalHeight > 0) {
+        applyImageHeight();
+      } else {
+        img.onload = applyImageHeight;
+      }
+    }
+  }
+  
+  // Força recálculo do layout
+  container.offsetHeight; // Trigger reflow
 };
 
 /** ========= APPLY BG / MEDIA ========= */

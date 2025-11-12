@@ -1,5 +1,6 @@
 import { API_ENDPOINTS } from '../config/api';
-import { UserSettings } from '../types/settings';
+import { authenticatedFetch } from '../utils/apiClient';
+import { UserSettings, Business, Influencer } from '../types/settings';
 import { CacheService, CACHE_KEYS } from './cache';
 import { getAuthHeaders } from './auth';
 
@@ -8,12 +9,11 @@ interface ProfileResponse {
   email: string;
   name: string;
   created_at: string;
-  business?: {
-    name?: string;
-    website?: string;
-    instagram_username?: string;
-    tone_of_voice?: string;
-  };
+  selected_business_id: string;
+  business: Business;
+  niche: string | null;
+  niches: string[];
+  influencers: Influencer[];
 }
 
 export const getUserSettings = async (): Promise<UserSettings> => {
@@ -23,7 +23,7 @@ export const getUserSettings = async (): Promise<UserSettings> => {
     return cachedSettings;
   }
 
-  const response = await fetch(API_ENDPOINTS.profile, {
+  const response = await authenticatedFetch(API_ENDPOINTS.profile, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
@@ -35,16 +35,17 @@ export const getUserSettings = async (): Promise<UserSettings> => {
 
   const data: ProfileResponse = await response.json();
   
-  // Converter para o formato UserSettings
+  // A resposta já está no formato correto
   const settings: UserSettings = {
     id: data.id,
     email: data.email,
     name: data.name,
-    business_name: data.business?.name || null,
-    business_website: data.business?.website || null,
-    business_instagram_username: data.business?.instagram_username || null,
-    current_feed_niche: '',
-    niches: [],
+    created_at: data.created_at,
+    selected_business_id: data.selected_business_id,
+    business: data.business,
+    niche: data.niche,
+    niches: data.niches || [],
+    influencers: data.influencers || [],
   };
   
   // Salvar no cache
@@ -54,17 +55,19 @@ export const getUserSettings = async (): Promise<UserSettings> => {
 };
 
 export const updateUserSettings = async (updates: Partial<UserSettings>): Promise<{ saved: boolean }> => {
-  const business: any = {};
-  
-  if (updates.business_name !== undefined) business.name = updates.business_name;
-  if (updates.business_website !== undefined) business.website = updates.business_website;
-  if (updates.business_instagram_username !== undefined) business.instagram_username = updates.business_instagram_username;
-
   const body: any = {};
-  if (updates.name) body.name = updates.name;
-  if (Object.keys(business).length > 0) body.business = business;
 
-  const response = await fetch(API_ENDPOINTS.profile, {
+  // Atualizar nome se fornecido
+  if (updates.name) {
+    body.name = updates.name;
+  }
+
+  // Atualizar business se fornecido
+  if (updates.business) {
+    body.business = updates.business;
+  }
+
+  const response = await authenticatedFetch(API_ENDPOINTS.profile, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify(body),
@@ -75,20 +78,58 @@ export const updateUserSettings = async (updates: Partial<UserSettings>): Promis
     throw new Error(error.error || 'Failed to update settings');
   }
 
-  // Atualizar o cache
-  const cachedSettings = CacheService.getItem<UserSettings>(CACHE_KEYS.SETTINGS);
-  if (cachedSettings) {
-    const updatedSettings = {
-      ...cachedSettings,
-      ...updates
-    };
-    CacheService.setItem(CACHE_KEYS.SETTINGS, updatedSettings);
-  }
+  // Limpar cache para forçar reload
+  CacheService.clearItem(CACHE_KEYS.SETTINGS);
 
   return { saved: true };
 };
 
-// Manter compatibilidade com o código antigo
+// Helper para atualizar campos individuais do business
+export const updateBusinessField = async (field: keyof Business, value: string | string[]): Promise<{ saved: boolean }> => {
+  const currentSettings = CacheService.getItem<UserSettings>(CACHE_KEYS.SETTINGS);
+  
+  if (!currentSettings?.business?.id) {
+    throw new Error('No business found');
+  }
+
+  const businessId = currentSettings.business.id;
+  
+  // Faz a requisição diretamente para o endpoint de business
+  const response = await authenticatedFetch(`${API_ENDPOINTS.business}/${businessId}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ [field]: value }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update business');
+  }
+
+  // Limpar cache para forçar reload
+  CacheService.clearItem(CACHE_KEYS.SETTINGS);
+
+  return { saved: true };
+};
+
+// Manter compatibilidade com o código antigo (deprecated)
 export const updateUserSetting = async (field: string, value: string): Promise<{ saved: boolean }> => {
-  return updateUserSettings({ [field]: value });
+  // Mapear campos antigos para nova estrutura
+  const fieldMapping: Record<string, keyof Business> = {
+    'business_name': 'name',
+    'business_website': 'website',
+    'business_instagram_username': 'instagram_username',
+  };
+
+  const businessField = fieldMapping[field];
+  if (businessField) {
+    return updateBusinessField(businessField, value);
+  }
+
+  // Se for um campo direto do user (name)
+  if (field === 'name') {
+    return updateUserSettings({ name: value });
+  }
+
+  throw new Error(`Unknown field: ${field}`);
 };

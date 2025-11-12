@@ -3,6 +3,7 @@ export interface LoginResponse {
   message: string;
   jwt_token: string;
   user: User;
+  needs_business_setup?: boolean;
 }
 
 export interface LoginCredentials {
@@ -15,6 +16,7 @@ export interface User {
   name: string;
   email: string;
   plan?: string;
+  needs_business_setup?: boolean;
 }
 
 export interface ValidateTokenResponse {

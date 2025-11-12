@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ZoomIn, ZoomOut, Download } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, Download, Save } from 'lucide-react';
 
 interface TopBarProps {
   slidesCount: number;
@@ -8,6 +8,9 @@ interface TopBarProps {
   onZoomOut: () => void;
   onDownload: () => void;
   onClose: () => void;
+  onSave?: () => void;
+  hasUnsavedChanges?: boolean;
+  isSaving?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -17,6 +20,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onZoomOut,
   onDownload,
   onClose,
+  onSave,
+  hasUnsavedChanges = false,
+  isSaving = false,
 }) => {
   return (
     <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-6 shrink-0">
@@ -43,6 +49,21 @@ export const TopBar: React.FC<TopBarProps> = ({
           <ZoomIn className="w-4 h-4" />
         </button>
         <div className="w-px h-6 bg-neutral-800 mx-2" />
+        {onSave && (
+          <button
+            onClick={onSave}
+            disabled={!hasUnsavedChanges || isSaving}
+            className={`px-4 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm font-medium ${
+              hasUnsavedChanges && !isSaving
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+            }`}
+            title={hasUnsavedChanges ? 'Save Changes' : 'No changes to save'}
+          >
+            <Save className="w-4 h-4" />
+            <span>{isSaving ? 'Salvando...' : 'Salvar'}</span>
+          </button>
+        )}
         <button
           onClick={onDownload}
           className="bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-1.5 rounded transition-colors flex items-center space-x-2 text-sm"

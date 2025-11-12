@@ -47,11 +47,24 @@ const FeedPage: React.FC<FeedPageProps> = ({ unviewedCount = 0 }) => {
   useEffect(() => {
     const loadFeed = async () => {
       setIsLoading(true);
+      setError(null);
       try {
+        console.log('📥 Carregando feed...');
         const feedData = await getFeed();
+        console.log('✅ Feed carregado:', feedData.length, 'posts');
         setPosts(feedData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load feed');
+        console.error('❌ Erro ao carregar feed:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load feed';
+        
+        // Mensagens mais amigáveis para erros específicos
+        if (errorMessage.includes('adicionar pelo menos 1 influenciador')) {
+          setError('Você precisa adicionar pelo menos 1 influenciador como interesse antes de gerar seu feed. Configure isso nas configurações do seu business.');
+        } else if (errorMessage.includes('Feed generation failed')) {
+          setError('Não foi possível gerar seu feed no momento. Tente novamente em alguns instantes.');
+        } else {
+          setError(errorMessage);
+        }
       } finally {
         setIsLoading(false);
       }

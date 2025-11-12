@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, LogOut, Edit2, Check, ChevronDown, Search, Lock, Plus } from 'lucide-react';
+import { ArrowLeft, LogOut, Edit2, Check, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Navigation from './Navigation';
-import { getUserSettings, updateUserSetting } from '../services/settings';
-import { UserSettings, Niche } from '../types/settings';
+import { getUserSettings, updateBusinessField } from '../services/settings';
+import { UserSettings } from '../types/settings';
 
 interface EditableField {
   name: string;
   value: string;
   isEditing: boolean;
-  apiField: string;
+  apiField: 'name' | 'website' | 'instagram_username' | 'main_objective' | 'mission_short' | 'writing_notes' | 
+    'tone_formality' | 'tone_emotion' | 'tone_rhythm' | 'language_code' | 'keywords_must' | 'keywords_avoid';
   validate?: (value: string) => string | null;
 }
 
@@ -29,36 +30,50 @@ const validateUrl = (url: string): string | null => {
 };
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading }) => {
-  const [isNicheDropdownOpen, setIsNicheDropdownOpen] = useState(false);
-  const [selectedNiche, setSelectedNiche] = useState('');
-  const [currentNicheId, setCurrentNicheId] = useState<string>('');
-  const [nicheSearch, setNicheSearch] = useState('');
   const [expandedSection, setExpandedSection] = useState<'business' | 'personal' | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showPurchasePopup, setShowPurchasePopup] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [fields, setFields] = useState<Record<string, EditableField>>({
     businessName: { 
       name: 'Business Name', 
       value: '', 
       isEditing: false,
-      apiField: 'business_name'
+      apiField: 'name'
     },
     instagram: { 
       name: 'Instagram', 
       value: '', 
       isEditing: false,
-      apiField: 'business_instagram_username'
+      apiField: 'instagram_username'
     },
     website: { 
       name: 'Website', 
       value: '', 
       isEditing: false,
-      apiField: 'business_website',
+      apiField: 'website',
       validate: validateUrl
     },
+    mainObjective: {
+      name: 'Main Objective',
+      value: '',
+      isEditing: false,
+      apiField: 'main_objective'
+    },
+    missionShort: {
+      name: 'Mission (Short)',
+      value: '',
+      isEditing: false,
+      apiField: 'mission_short'
+    },
+    writingNotes: {
+      name: 'Writing Notes',
+      value: '',
+      isEditing: false,
+      apiField: 'writing_notes'
+    }
   });
 
   const loadUserSettings = useCallback(async () => {
@@ -67,34 +82,97 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
       const settings = await getUserSettings();
       setUserSettings(settings);
       
-      if (settings.current_feed_niche) {
-        setCurrentNicheId(settings.current_feed_niche);
-        const currentNiche = settings.niches.find(niche => niche.id === settings.current_feed_niche);
-        if (currentNiche) {
-          setSelectedNiche(currentNiche.name);
-        }
-      }
+      // Store original values for comparison
+      const originals: Record<string, string> = {
+        name: settings.business?.name || '',
+        instagram_username: settings.business?.instagram_username || '',
+        website: settings.business?.website || '',
+        main_objective: settings.business?.main_objective || '',
+        mission_short: settings.business?.mission_short || '',
+        writing_notes: settings.business?.writing_notes || '',
+        tone_formality: settings.business?.tone_formality || 'neutral',
+        tone_emotion: settings.business?.tone_emotion || 'balanced',
+        tone_rhythm: settings.business?.tone_rhythm || 'fluid',
+        language_code: settings.business?.language_code || 'pt',
+        keywords_must: settings.business?.keywords_must ? settings.business.keywords_must.join(', ') : '',
+        keywords_avoid: settings.business?.keywords_avoid ? settings.business.keywords_avoid.join(', ') : '',
+      };
+      setOriginalValues(originals);
       
       setFields({
         businessName: { 
           name: 'Business Name', 
-          value: settings.business_name || '', 
+          value: settings.business?.name || '', 
           isEditing: false,
-          apiField: 'business_name'
+          apiField: 'name'
         },
         instagram: { 
           name: 'Instagram', 
-          value: settings.business_instagram_username || '', 
+          value: settings.business?.instagram_username || '', 
           isEditing: false,
-          apiField: 'business_instagram_username'
+          apiField: 'instagram_username'
         },
         website: { 
           name: 'Website', 
-          value: settings.business_website || '', 
+          value: settings.business?.website || '', 
           isEditing: false,
-          apiField: 'business_website',
+          apiField: 'website',
           validate: validateUrl
         },
+        mainObjective: {
+          name: 'Main Objective',
+          value: settings.business?.main_objective || '',
+          isEditing: false,
+          apiField: 'main_objective'
+        },
+        missionShort: {
+          name: 'Mission (Short)',
+          value: settings.business?.mission_short || '',
+          isEditing: false,
+          apiField: 'mission_short'
+        },
+        writingNotes: {
+          name: 'Writing Notes',
+          value: settings.business?.writing_notes || '',
+          isEditing: false,
+          apiField: 'writing_notes'
+        },
+        tone_formality: {
+          name: 'Tone Formality',
+          value: settings.business?.tone_formality || 'neutral',
+          isEditing: false,
+          apiField: 'tone_formality'
+        },
+        tone_emotion: {
+          name: 'Tone Emotion',
+          value: settings.business?.tone_emotion || 'balanced',
+          isEditing: false,
+          apiField: 'tone_emotion'
+        },
+        tone_rhythm: {
+          name: 'Tone Rhythm',
+          value: settings.business?.tone_rhythm || 'fluid',
+          isEditing: false,
+          apiField: 'tone_rhythm'
+        },
+        language_code: {
+          name: 'Language',
+          value: settings.business?.language_code || 'pt',
+          isEditing: false,
+          apiField: 'language_code'
+        },
+        keywords_must: {
+          name: 'Keywords (Must)',
+          value: settings.business?.keywords_must ? settings.business.keywords_must.join(', ') : '',
+          isEditing: false,
+          apiField: 'keywords_must'
+        },
+        keywords_avoid: {
+          name: 'Keywords (Avoid)',
+          value: settings.business?.keywords_avoid ? settings.business.keywords_avoid.join(', ') : '',
+          isEditing: false,
+          apiField: 'keywords_avoid'
+        }
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
@@ -107,16 +185,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
   useEffect(() => {
     loadUserSettings();
   }, [loadUserSettings]);
-
-  const sortedNiches = userSettings?.niches.sort((a, b) => {
-    if (a.access && !b.access) return -1;
-    if (!a.access && b.access) return 1;
-    return a.name.localeCompare(b.name);
-  }) || [];
-
-  const filteredNiches = sortedNiches.filter(niche => 
-    niche.name.toLowerCase().includes(nicheSearch.toLowerCase())
-  );
 
   const toggleEdit = (fieldKey: string) => {
     setFields(prev => ({
@@ -132,6 +200,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
   const handleSaveField = async (fieldKey: string) => {
     const field = fields[fieldKey];
     
+    // Check if value actually changed
+    if (field.value === originalValues[field.apiField]) {
+      // No change, just toggle edit mode
+      toggleEdit(fieldKey);
+      return;
+    }
+    
     if (field.validate) {
       const error = field.validate(field.value);
       if (error) {
@@ -142,20 +217,79 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
 
     setIsLoading(true);
     try {
-      const value = field.value;
-      if (field.apiField === 'business_website' && value && !value.startsWith('http')) {
-        field.value = `https://${value}`;
+      let value: string | string[] = field.value;
+      
+      // Transformar campos específicos
+      if (field.apiField === 'website' && value && !value.startsWith('http')) {
+        value = `https://${value}`;
       }
       
-      await updateUserSetting(field.apiField, field.value);
+      // Converter arrays de keywords de string para array
+      if (field.apiField === 'keywords_must' || field.apiField === 'keywords_avoid') {
+        value = value 
+          ? value.split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+      }
+      
+      // Validar enums
+      if (field.apiField === 'tone_formality') {
+        if (!['formal', 'neutral', 'informal'].includes(value as string)) {
+          setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Must be: formal, neutral, or informal' }));
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      if (field.apiField === 'tone_emotion') {
+        if (!['rational', 'balanced', 'emotional'].includes(value as string)) {
+          setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Must be: rational, balanced, or emotional' }));
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      if (field.apiField === 'tone_rhythm') {
+        if (!['direct', 'fluid', 'narrative'].includes(value as string)) {
+          setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Must be: direct, fluid, or narrative' }));
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      if (field.apiField === 'language_code') {
+        if (!['pt', 'en', 'es', 'fr'].includes(value as string)) {
+          setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Must be: pt, en, es, or fr' }));
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Validar limites de caracteres
+      if (field.apiField === 'mission_short' && (value as string).length > 500) {
+        setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Maximum 500 characters' }));
+        setIsLoading(false);
+        return;
+      }
+      
+      if (field.apiField === 'writing_notes' && (value as string).length > 2000) {
+        setValidationErrors(prev => ({ ...prev, [fieldKey]: 'Maximum 2000 characters' }));
+        setIsLoading(false);
+        return;
+      }
+      
+      await updateBusinessField(field.apiField, value);
+      
+      // Update original value after successful save
+      const updatedValue = Array.isArray(value) ? value.join(', ') : value;
+      setOriginalValues(prev => ({
+        ...prev,
+        [field.apiField]: updatedValue
+      }));
+      
       toggleEdit(fieldKey);
       
-      if (userSettings) {
-        setUserSettings({
-          ...userSettings,
-          [field.apiField]: field.value
-        });
-      }
+      // Recarregar settings para atualizar o cache
+      await loadUserSettings();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update setting');
     } finally {
@@ -172,38 +306,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
       }
     }));
     setValidationErrors(prev => ({ ...prev, [fieldKey]: '' }));
-  };
-
-  const handleNicheSelect = async (niche: Niche) => {
-    if (!niche.access) {
-      setShowPurchasePopup(true);
-      setTimeout(() => setShowPurchasePopup(false), 3000);
-      return;
-    }
-
-    if (niche.id === currentNicheId) {
-      setIsNicheDropdownOpen(false);
-      setNicheSearch('');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      await updateUserSetting('current_feed_niche', niche.id);
-      setSelectedNiche(niche.name);
-      setCurrentNicheId(niche.id);
-      setIsNicheDropdownOpen(false);
-      setNicheSearch('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update niche');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCreateNewNiche = () => {
-    setShowPurchasePopup(true);
-    setTimeout(() => setShowPurchasePopup(false), 3000);
   };
 
   const handleLogout = () => {
@@ -244,12 +346,149 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
                 />
               )}
               {validationError && (
-                <p className="text-red-500 text-sm">{validationError}</p>
+                <p className="text-white text-sm">{validationError}</p>
               )}
             </div>
           ) : (
             <div className="text-white mt-1">
               {field.value || <span className="text-gray-500">Not set</span>}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => field.isEditing ? handleSaveField(fieldKey) : toggleEdit(fieldKey)}
+          className="ml-4 text-gray-400 hover:text-white transition-colors"
+        >
+          {field.isEditing ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <Edit2 className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+    );
+  };
+
+  const renderSelectField = (
+    fieldKey: keyof typeof fields,
+    label: string,
+    options: { label: string; value: string }[]
+  ) => {
+    const field = fields[fieldKey];
+    if (!field) return null;
+
+    return (
+      <div className="flex items-start justify-between py-2">
+        <div className="flex-1">
+          <div className="text-sm text-gray-400">{label}</div>
+          {field.isEditing ? (
+            <select
+              value={field.value}
+              onChange={(e) => updateField(fieldKey, e.target.value)}
+              className="w-full bg-black text-white border border-white rounded px-2 py-1 mt-1 focus:outline-none focus:ring-2 focus:ring-white"
+              autoFocus
+            >
+              {options.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-black">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="text-white mt-1">
+              {options.find((opt) => opt.value === field.value)?.label || field.value}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => field.isEditing ? handleSaveField(fieldKey) : toggleEdit(fieldKey)}
+          className="ml-4 text-gray-400 hover:text-white transition-colors"
+        >
+          {field.isEditing ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <Edit2 className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+    );
+  };
+
+  // Component for array fields (keywords)
+  const ArrayFieldEditor: React.FC<{
+    fieldKey: keyof typeof fields;
+    label: string;
+  }> = ({ fieldKey, label }) => {
+    const field = fields[fieldKey];
+    const [inputValue, setInputValue] = React.useState('');
+    
+    if (!field) return null;
+
+    const arrayValue = field.value ? field.value.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+
+    const addItem = () => {
+      if (inputValue.trim()) {
+        const newArray = [...arrayValue, inputValue.trim()];
+        updateField(fieldKey, newArray.join(', '));
+        setInputValue('');
+      }
+    };
+
+    const removeItem = (index: number) => {
+      const newArray = arrayValue.filter((_: string, i: number) => i !== index);
+      updateField(fieldKey, newArray.join(', '));
+    };
+
+    return (
+      <div className="flex items-start justify-between py-2">
+        <div className="flex-1">
+          <div className="text-sm text-gray-400">{label}</div>
+          {field.isEditing ? (
+            <div className="space-y-2 mt-1">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addItem()}
+                  placeholder="Add keyword..."
+                  className="flex-1 bg-black text-white border border-white rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-white"
+                />
+                <button
+                  onClick={addItem}
+                  className="px-3 py-1 bg-white text-black rounded hover:bg-gray-200 font-medium"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {arrayValue.map((item: string, index: number) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-sm"
+                  >
+                    {item}
+                    <button
+                      onClick={() => removeItem(index)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 mt-1">
+              {arrayValue.length > 0 ? (
+                arrayValue.map((item: string, index: number) => (
+                  <span key={index} className="px-2 py-1 bg-gray-700 rounded text-sm">
+                    {item}
+                  </span>
+                ))
+              ) : (
+                <span className="text-gray-500">None</span>
+              )}
             </div>
           )}
         </div>
@@ -285,8 +524,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
             </button>
             <h1 className="text-xl font-semibold ml-4">Settings</h1>
           </div>
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4">
-            <p className="text-red-500">{error}</p>
+          <div className="bg-white/10 border border-white rounded-lg p-4">
+            <p className="text-white">{error}</p>
           </div>
         </div>
       </div>
@@ -327,97 +566,6 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
               <h1 className="text-xl font-semibold ml-4">Settings</h1>
             </div>
 
-            {/* Purchase Popup */}
-            <AnimatePresence>
-              {showPurchasePopup && (
-                <motion.div
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="fixed top-4 right-4 bg-white text-black px-6 py-4 rounded-lg shadow-lg z-50"
-                >
-                  You'll be able to purchase it soon...
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Niche Section */}
-            <section className="mb-8">
-              <h3 className="text-sm font-medium text-gray-400 mb-1">Spying Niche</h3>
-              <div className="relative">
-                <button
-                  onClick={() => setIsNicheDropdownOpen(!isNicheDropdownOpen)}
-                  className="w-full flex items-start justify-between bg-transparent py-2"
-                >
-                  <div>
-                    <h1 className="text-2xl font-bold">{selectedNiche || 'Select a niche'}</h1>
-                  </div>
-                  <ChevronDown className={`w-5 h-5 transition-transform ${isNicheDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                <AnimatePresence>
-                  {isNicheDropdownOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg overflow-hidden z-50"
-                    >
-                      <div className="p-2">
-                        <div className="relative mb-2">
-                          <input
-                            type="text"
-                            value={nicheSearch}
-                            onChange={(e) => setNicheSearch(e.target.value)}
-                            placeholder="Search niches..."
-                            className="w-full bg-gray-100 text-gray-900 pl-8 pr-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300"
-                          />
-                          <Search className="absolute left-2 top-2.5 w-4 h-4 text-gray-400" />
-                        </div>
-                        <div className="max-h-60 overflow-y-auto">
-                          {filteredNiches.map((niche) => (
-                            <button
-                              key={niche.id}
-                              onClick={() => handleNicheSelect(niche)}
-                              className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${
-                                currentNicheId === niche.id
-                                  ? 'bg-gray-100 font-bold'
-                                  : 'hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center">
-                                {niche.access ? (
-                                  <Check className="w-4 h-4 text-gray-600 mr-2" />
-                                ) : (
-                                  <Lock className="w-4 h-4 text-gray-400 mr-2" />
-                                )}
-                                <span className="text-gray-900">{niche.name}</span>
-                              </div>
-                              {!niche.access && (
-                                <span className="text-sm font-medium text-gray-900">${niche.price}</span>
-                              )}
-                            </button>
-                          ))}
-                          
-                          {/* Create New Niche Button */}
-                          <button
-                            onClick={handleCreateNewNiche}
-                            className="w-full text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors hover:bg-gray-50 border-t border-gray-200"
-                          >
-                            <div className="flex items-center">
-                              <Plus className="w-4 h-4 text-gray-600 mr-2" />
-                              <span className="text-gray-900">Create New Niche</span>
-                            </div>
-                            <span className="text-sm font-medium text-gray-900">$7</span>
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </section>
-
             {/* Business Info Section */}
             <div className="border-t border-white/10">
               <button
@@ -444,6 +592,39 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
                       {renderField('businessName')}
                       {renderField('instagram')}
                       {renderField('website')}
+                      {renderField('mainObjective')}
+                      {renderField('missionShort', true)}
+                      {renderField('writingNotes', true)}
+                      
+                      {/* Tone Settings */}
+                      <div className="pt-4">
+                        <h3 className="text-sm font-medium text-gray-400 mb-3">Tone & Style</h3>
+                        {renderSelectField('tone_formality', 'Formality', [
+                          { label: 'Formal', value: 'formal' },
+                          { label: 'Neutral', value: 'neutral' },
+                          { label: 'Informal', value: 'informal' },
+                        ])}
+                        {renderSelectField('tone_emotion', 'Emotion', [
+                          { label: 'Rational', value: 'rational' },
+                          { label: 'Balanced', value: 'balanced' },
+                          { label: 'Emotional', value: 'emotional' },
+                        ])}
+                        {renderSelectField('tone_rhythm', 'Rhythm', [
+                          { label: 'Direct', value: 'direct' },
+                          { label: 'Fluid', value: 'fluid' },
+                          { label: 'Narrative', value: 'narrative' },
+                        ])}
+                        {renderSelectField('language_code', 'Language', [
+                          { label: 'Português', value: 'pt' },
+                          { label: 'English', value: 'en' },
+                          { label: 'Español', value: 'es' },
+                          { label: 'Français', value: 'fr' },
+                        ])}
+                      </div>
+                      
+                      {/* Keywords */}
+                      <ArrayFieldEditor fieldKey="keywords_must" label="Keywords (Must Include)" />
+                      <ArrayFieldEditor fieldKey="keywords_avoid" label="Keywords (Avoid)" />
                     </div>
                   </motion.div>
                 )}
@@ -483,7 +664,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
                       </div>
                       <button 
                         onClick={handleLogout}
-                        className="w-full flex items-center py-2 text-red-500"
+                        className="w-full flex items-center py-2 text-white hover:text-gray-400 transition-colors"
                       >
                         <LogOut className="w-5 h-5 mr-2" />
                         <span>Log out</span>
@@ -493,6 +674,41 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ onPageChange, setIsLoading 
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Niches Section (Read-only display) */}
+            {userSettings && userSettings.niches && userSettings.niches.length > 0 && (
+              <div className="border-t border-white/10 py-4">
+                <h3 className="text-lg font-semibold mb-3">Your Niches</h3>
+                <div className="flex flex-wrap gap-2">
+                  {userSettings.niches.map((niche, index) => (
+                    <span key={index} className="px-3 py-1 bg-gray-800 rounded-full text-sm text-gray-300">
+                      {niche}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Influencers Section (Read-only display) */}
+            {userSettings && userSettings.influencers && userSettings.influencers.length > 0 && (
+              <div className="border-t border-white/10 py-4 mb-8">
+                <h3 className="text-lg font-semibold mb-3">Following Influencers</h3>
+                <div className="space-y-2">
+                  {userSettings.influencers.map((influencer, index) => (
+                    <div key={index} className="flex items-center justify-between text-gray-300">
+                      <div className="flex items-center">
+                        <span className="w-2 h-2 bg-white rounded-full mr-3"></span>
+                        <div>
+                          <div className="font-medium">{influencer.display_name}</div>
+                          <div className="text-sm text-gray-500">@{influencer.instagram_username}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs text-gray-500">Added {new Date(influencer.added_at).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

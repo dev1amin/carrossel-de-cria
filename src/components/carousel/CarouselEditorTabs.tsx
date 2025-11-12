@@ -8,6 +8,7 @@ export interface CarouselTab {
   slides: string[];
   carouselData: CarouselData;
   title: string;
+  generatedContentId?: number; // ID do GeneratedContent na API
 }
 
 interface CarouselEditorTabsProps {
@@ -15,9 +16,10 @@ interface CarouselEditorTabsProps {
   onCloseTab: (tabId: string) => void;
   onCloseAll: () => void;
   onEditorsClosed?: () => void; // Callback quando todos os editores são fechados
+  onSaveSuccess?: () => void; // Callback quando salva com sucesso
 }
 
-const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTab, onCloseAll, onEditorsClosed }) => {
+const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTab, onCloseAll, onEditorsClosed, onSaveSuccess }) => {
   const [activeTabId, setActiveTabId] = useState<string>(tabs[0]?.id || '');
   // Estado para controlar quais abas têm o editor aberto
   const [openEditors, setOpenEditors] = useState<Set<string>>(new Set(tabs.map(t => t.id)));
@@ -178,6 +180,8 @@ const CarouselEditorTabs: React.FC<CarouselEditorTabsProps> = ({ tabs, onCloseTa
             slides={activeTab.slides}
             carouselData={activeTab.carouselData}
             onClose={handleCloseEditor}
+            generatedContentId={activeTab.generatedContentId}
+            onSaveSuccess={onSaveSuccess}
           />
         )}
       </div>

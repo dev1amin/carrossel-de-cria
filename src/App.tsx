@@ -11,17 +11,36 @@ import NewsPage from './pages/NewsPage';
 import GalleryPage from './pages/GalleryPage';
 import StatsPage from './pages/StatsPage';
 import SettingsPageContainer from './pages/SettingsPageContainer';
+import CreateCarouselPage from './pages/CreateCarouselPage';
+import CreateBusinessPage from './pages/CreateBusinessPage';
+import ChatBotPage from './pages/ChatBotPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Componente interno para usar o hook da fila
 function AppContent() {
   const { generationQueue, removeFromQueue } = useGenerationQueue();
-  const { addEditorTab, shouldShowEditor, setShouldShowEditor } = useEditorTabs();
+  const { 
+    editorTabs, 
+    addEditorTab, 
+    closeEditorTab, 
+    closeAllEditorTabs, 
+    shouldShowEditor, 
+    setShouldShowEditor 
+  } = useEditorTabs();
 
   const handleViewCarousel = (item: GenerationQueueItem) => {
+    console.log('👁️ handleViewCarousel chamado:', { 
+      id: item.id, 
+      hasSlides: !!item.slides, 
+      hasCarouselData: !!item.carouselData,
+      slidesLength: item.slides?.length,
+      item 
+    });
+
     if (!item.slides || !item.carouselData) {
-      console.warn('Item da fila não tem dados de carrossel:', item);
+      console.error('❌ Item da fila não tem dados de carrossel:', item);
+      alert('Erro: Dados do carrossel não encontrados. Tente gerar novamente.');
       return;
     }
 
@@ -30,10 +49,26 @@ function AppContent() {
       slides: item.slides,
       carouselData: item.carouselData,
       title: item.templateName,
+      generatedContentId: item.generatedContentId, // Passa o ID se existir
     };
 
+    console.log('✅ Abrindo editor GLOBAL na mesma página:', {
+      id: newTab.id,
+      title: newTab.title,
+      slidesLength: newTab.slides.length,
+      hasCarouselData: !!newTab.carouselData,
+      generatedContentId: newTab.generatedContentId,
+      conteudosLength: (newTab.carouselData as any)?.conteudos?.length,
+      dadosGerais: (newTab.carouselData as any)?.dados_gerais,
+      firstContent: (newTab.carouselData as any)?.conteudos?.[0],
+    });
+    
     addEditorTab(newTab);
     setShouldShowEditor(true);
+  };
+
+  const handleEditorsClosed = () => {
+    setShouldShowEditor(false);
   };
 
   return (
@@ -44,10 +79,23 @@ function AppContent() {
         onRemoveItem={removeFromQueue}
         onViewCarousel={handleViewCarousel}
       />
+
+      {/* Editor global - renderizado sobre qualquer página */}
+      {shouldShowEditor && editorTabs.length > 0 && (
+        <CarouselEditorTabs
+          tabs={editorTabs}
+          onCloseTab={closeEditorTab}
+          onCloseAll={closeAllEditorTabs}
+          onEditorsClosed={handleEditorsClosed}
+        />
+      )}
       
       <Routes>
         {/* Rota de Login */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Rota de Setup de Business */}
+        <Route path="/setup-business" element={<CreateBusinessPage />} />
 
         {/* Rota Raiz */}
         <Route path="/" element={<Navigate to="/feed" replace />} />
@@ -57,6 +105,8 @@ function AppContent() {
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
           <Route path="/news" element={<NewsPage />} />
+          <Route path="/create-carousel" element={<CreateCarouselPage />} />
+          <Route path="/chatbot" element={<ChatBotPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPageContainer />} />
         </Route>

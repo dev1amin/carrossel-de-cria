@@ -29,6 +29,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         onLoginSuccess();
       }
       
+      // Verifica se precisa fazer setup de business
+      if (response.needs_business_setup) {
+        console.log('🏢 Usuário precisa configurar business, redirecionando...');
+        navigate('/setup-business');
+        return;
+      }
+      
       console.log('Navigating to home page');
       navigate('/');
     } catch (err) {

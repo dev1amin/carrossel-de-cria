@@ -23,6 +23,7 @@ export interface CarouselData {
     imagem_fundo5?: string;
     imagem_fundo6?: string;
   }>;
+  styles?: Record<string, any>; // Estilos salvos por slide: { "0": { "title": {...}, "subtitle": {...} }, "1": {...} }
 }
 
 export interface CarouselResponse extends CarouselData {}
@@ -32,19 +33,26 @@ export interface CarouselResponse extends CarouselData {}
 export type ElementType = 'title' | 'subtitle' | 'background' | null;
 
 export interface ElementStyles {
-  fontSize: string;
-  fontWeight: string;
-  textAlign: string;
-  color: string;
+  fontSize?: string;
+  fontWeight?: string;
+  textAlign?: string;
+  color?: string;
+  objectPosition?: string; // Para imagens e vídeos
+  backgroundPositionX?: string; // Para backgrounds CSS
+  backgroundPositionY?: string; // Para backgrounds CSS
 }
 
 // ==================== Template Types ====================
+
+export type TemplateCompatibility = 'video-image' | 'image-only' | 'text-only';
 
 export interface TemplateConfig {
   id: string;
   name: string;
   thumbnail: string;
   description: string;
+  compatibility: TemplateCompatibility;
+  compatibilityLabel: string;
 }
 
 export const AVAILABLE_TEMPLATES: TemplateConfig[] = [
@@ -52,37 +60,49 @@ export const AVAILABLE_TEMPLATES: TemplateConfig[] = [
     id: '1',
     name: 'Template 1',
     thumbnail: 'https://images.pexels.com/photos/7319337/pexels-photo-7319337.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Modern and clean design'
+    description: 'Modern and clean design',
+    compatibility: 'image-only',
+    compatibilityLabel: 'Apenas Imagem'
   },
   {
     id: '2',
     name: 'Template 2',
     thumbnail: 'https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Bold and vibrant layout'
+    description: 'Bold and vibrant layout',
+    compatibility: 'video-image',
+    compatibilityLabel: 'Vídeo + Imagem'
   },
   {
     id: '3',
     name: 'Template 3',
     thumbnail: 'https://images.pexels.com/photos/6372413/pexels-photo-6372413.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Elegant and professional'
+    description: 'Elegant and professional',
+    compatibility: 'video-image',
+    compatibilityLabel: 'Vídeo + Imagem'
   },
   {
     id: '4',
     name: 'Template 4',
     thumbnail: 'https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Minimalist style'
+    description: 'Minimalist style',
+    compatibility: 'video-image',
+    compatibilityLabel: 'Vídeo + Imagem'
   },
   {
     id: '5',
     name: 'Template 5',
     thumbnail: 'https://images.pexels.com/photos/3184339/pexels-photo-3184339.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Dynamic and energetic'
+    description: 'Dynamic and energetic',
+    compatibility: 'text-only',
+    compatibilityLabel: 'Apenas Texto'
   },
   {
     id: '6',
     name: 'Template 6',
     thumbnail: 'https://images.pexels.com/photos/3184360/pexels-photo-3184360.jpeg?auto=compress&cs=tinysrgb&w=400',
-    description: 'Creative and artistic'
+    description: 'Creative and artistic',
+    compatibility: 'video-image',
+    compatibilityLabel: 'Vídeo + Imagem'
   }
 ];
 
@@ -102,6 +122,7 @@ export interface GenerationQueueItem {
   // Dados do carrossel quando completado
   slides?: string[];
   carouselData?: any;
+  generatedContentId?: number; // ID do GeneratedContent na API
 }
 
 // ==================== Carousel Tab Types ====================
@@ -111,6 +132,7 @@ export interface CarouselTab {
   slides: string[];
   carouselData: CarouselData;
   title: string;
+  generatedContentId?: number; // ID do GeneratedContent na API
 }
 
 // ==================== Viewer Props ====================
@@ -119,6 +141,8 @@ export interface CarouselViewerProps {
   slides: string[];
   carouselData: CarouselData;
   onClose: () => void;
+  generatedContentId?: number; // ID do GeneratedContent na API
+  onSaveSuccess?: () => void; // Callback chamado após salvar com sucesso
 }
 
 // ==================== Image/Video Drag States ====================

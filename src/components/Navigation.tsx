@@ -1,15 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 
 interface NavigationProps {
-  currentPage?: 'feed' | 'settings' | 'gallery' | 'news';
-  onPageChange?: (page: 'feed' | 'settings' | 'gallery' | 'news') => void;
+  currentPage?: 'feed' | 'settings' | 'gallery' | 'news' | 'chatbot';
+  onPageChange?: (page: 'feed' | 'settings' | 'gallery' | 'news' | 'chatbot') => void;
   unviewedCount?: number;
 }
 
 const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange, unviewedCount = 0 }) => {
   const navigate = useNavigate();
 
-  const handlePageChange = (page: 'feed' | 'settings' | 'gallery' | 'news') => {
+  const handlePageChange = (page: 'feed' | 'settings' | 'gallery' | 'news' | 'chatbot') => {
     if (onPageChange) {
       onPageChange(page);
     }
@@ -24,6 +24,9 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange, unvi
         break;
       case 'news':
         navigate('/news');
+        break;
+      case 'chatbot':
+        navigate('/chatbot');
         break;
       case 'settings':
         navigate('/settings');
@@ -86,6 +89,33 @@ const Navigation: React.FC<NavigationProps> = ({ currentPage, onPageChange, unvi
             <path d="M18 14h-8" />
             <path d="M15 18h-5" />
             <path d="M10 6h8v4h-8V6Z" />
+          </svg>
+        </button>
+
+        {/* Create Carousel / ChatBot */}
+        <button
+          onClick={() => navigate('/create-carousel')}
+          className={`p-3 rounded-lg transition-colors ${
+            currentPage === 'chatbot'
+              ? 'bg-white/10 text-white'
+              : 'text-white/60 hover:text-white/90 hover:bg-white/5'
+          }`}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-plus-circle w-6 h-6"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 12h8" />
+            <path d="M12 8v8" />
           </svg>
         </button>
 

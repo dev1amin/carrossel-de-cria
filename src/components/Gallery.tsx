@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Edit, Image } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Edit, Image, Trash2 } from 'lucide-react';
 import SlideRenderer from './SlideRenderer';
+import { deleteGeneratedContent } from '../services/generatedContent';
 
 interface GalleryCarousel {
   id: string;
@@ -11,17 +12,20 @@ interface GalleryCarousel {
   slides: string[];
   carouselData: any;
   viewed?: boolean;
+  generatedContentId?: number; // ID do GeneratedContent na API
 }
 
 interface GalleryProps {
   carousels: GalleryCarousel[];
   onViewCarousel: (carousel: GalleryCarousel) => void;
+  onDeleteCarousel?: (carouselId: string) => void;
 }
 
 interface GalleryItemProps {
   carousel: GalleryCarousel;
   onEdit: (carousel: GalleryCarousel) => void;
   onDownload: (carousel: GalleryCarousel) => void;
+  onDelete?: (carousel: GalleryCarousel) => void;
 }
 
 const EmptyState = () => {
@@ -33,11 +37,34 @@ const EmptyState = () => {
   );
 };
 
-const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel }) => {
+const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel, onDeleteCarousel }) => {
   const handleDownload = async (carousel: GalleryCarousel) => {
     // TODO: Implementar download real dos slides
     console.log('Download carousel:', carousel.id);
     alert('Funcionalidade de download em desenvolvimento');
+  };
+
+  const handleDelete = async (carousel: GalleryCarousel) => {
+    if (!carousel.generatedContentId) {
+      alert('Não é possível deletar: ID do conteúdo não encontrado.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Tem certeza que deseja deletar este carrossel? Esta ação não pode ser desfeita.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deleteGeneratedContent(carousel.generatedContentId);
+      if (onDeleteCarousel) {
+        onDeleteCarousel(carousel.id);
+      }
+    } catch (error) {
+      console.error('Erro ao deletar carrossel:', error);
+      alert('Erro ao deletar carrossel: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
+    }
   };
 
   return (
@@ -52,6 +79,7 @@ const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel }) => {
               carousel={carousel}
               onEdit={onViewCarousel}
               onDownload={handleDownload}
+              onDelete={handleDelete}
             />
           ))}
         </div>
@@ -60,10 +88,18 @@ const Gallery: React.FC<GalleryProps> = ({ carousels, onViewCarousel }) => {
   );
 };
 
-const GalleryItem = ({ carousel, onEdit, onDownload }: GalleryItemProps) => {
+const GalleryItem = ({ carousel, onEdit, onDownload, onDelete }: GalleryItemProps) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Log dos estilos para debug
+  console.log(`🎨 [GalleryItem] Carrossel ${carousel.id} - Slide ${currentSlide}:`, {
+    allStyles: carousel.carouselData?.styles,
+    currentSlideStyles: carousel.carouselData?.styles?.[String(currentSlide)],
+    backgroundStyles: carousel.carouselData?.styles?.[String(currentSlide)]?.background
+  });
 
   // Distância mínima de swipe (em px)
   const minSwipeDistance = 50;
@@ -121,6 +157,8 @@ const GalleryItem = ({ carousel, onEdit, onDownload }: GalleryItemProps) => {
           <SlideRenderer
             key={`${carousel.id}-slide-${currentSlide}`}
             slideContent={carousel.slides[currentSlide]}
+            slideIndex={currentSlide}
+            styles={carousel.carouselData?.styles || {}}
             className="w-full h-full"
           />
         </div>
@@ -187,11 +225,27 @@ const GalleryItem = ({ carousel, onEdit, onDownload }: GalleryItemProps) => {
           </button>
           <button
             onClick={() => onDownload(carousel)}
-            className="flex-1 flex items-center justify-center gap-2 bg-zinc-800 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-zinc-700 transition-colors border border-zinc-700"
+            className="flex items-center justify-center gap-2 bg-zinc-800 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-zinc-700 transition-colors border border-zinc-700"
           >
             <Download className="w-4 h-4" />
-            Baixar
           </button>
+          {onDelete && carousel.generatedContentId && (
+            <button
+              onClick={async () => {
+                setIsDeleting(true);
+                try {
+                  await onDelete(carousel);
+                } finally {
+                  setIsDeleting(false);
+                }
+              }}
+              disabled={isDeleting}
+              className="flex items-center justify-center gap-2 bg-red-600 text-white font-medium py-2.5 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Deletar carrossel"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </motion.div>

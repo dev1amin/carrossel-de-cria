@@ -4,6 +4,7 @@ import { CarouselTab } from '../carousel';
 interface EditorTabsContextType {
   editorTabs: CarouselTab[];
   addEditorTab: (tab: CarouselTab) => void;
+  updateEditorTab: (tabId: string, tab: CarouselTab) => void;
   closeEditorTab: (tabId: string) => void;
   closeAllEditorTabs: () => void;
   shouldShowEditor: boolean;
@@ -39,10 +40,16 @@ export const EditorTabsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const existingTab = editorTabs.find(t => t.id === tab.id);
     
     if (existingTab) {
-      // Se já existe, ativa essa aba
-      console.log('✅ Aba já existe, ativando:', tab.id);
+      // Se já existe, atualiza os dados da aba
+      console.log('🔄 Aba já existe, atualizando dados:', tab.id);
+      setEditorTabs(prev => prev.map(t => t.id === tab.id ? tab : t));
       setShouldShowEditor(true);
-      window.dispatchEvent(new CustomEvent('activateTab', { detail: tab.id }));
+      
+      // Aguarda o próximo ciclo de renderização para ativar
+      requestAnimationFrame(() => {
+        console.log('🎯 Ativando aba existente:', tab.id);
+        window.dispatchEvent(new CustomEvent('activateTab', { detail: tab.id }));
+      });
       return;
     }
     
@@ -51,12 +58,19 @@ export const EditorTabsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setEditorTabs(prev => [...prev, tab]);
     setShouldShowEditor(true);
     
-    // Ativa a nova aba automaticamente após um pequeno delay
-    // para garantir que o componente foi renderizado
-    setTimeout(() => {
-      console.log('🎯 Ativando nova aba:', tab.id);
-      window.dispatchEvent(new CustomEvent('activateTab', { detail: tab.id }));
-    }, 0);
+    // IMPORTANTE: Aguarda o React finalizar a renderização usando requestAnimationFrame
+    // Isso garante que a nova aba foi adicionada ao DOM antes de ativar
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        console.log('🎯 Ativando nova aba após renderização:', tab.id);
+        window.dispatchEvent(new CustomEvent('activateTab', { detail: tab.id }));
+      });
+    });
+  };
+
+  const updateEditorTab = (tabId: string, tab: CarouselTab) => {
+    console.log('🔄 Atualizando aba:', tabId);
+    setEditorTabs(prev => prev.map(t => t.id === tabId ? tab : t));
   };
 
   const closeEditorTab = (tabId: string) => {
@@ -72,7 +86,8 @@ export const EditorTabsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <EditorTabsContext.Provider 
       value={{ 
         editorTabs, 
-        addEditorTab, 
+        addEditorTab,
+        updateEditorTab,
         closeEditorTab, 
         closeAllEditorTabs,
         shouldShowEditor,

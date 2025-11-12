@@ -8,7 +8,8 @@ import { createPortal } from "react-dom";
 import { X, Loader2, ZoomIn, ZoomOut, CircleSlash, PanelsTopLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TemplateConfig, AVAILABLE_TEMPLATES } from "../../types/carousel";
-import { templateService } from "../../services/carousel";
+import { templateService, templateRenderer } from "../../services/carousel";
+import { TEMPLATE_PREVIEW_DATA } from "../../data/templatePreviews";
 
 interface TemplateSelectionModalProps {
   isOpen: boolean;
@@ -118,16 +119,33 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
     modalRootRef.current = existing as HTMLElement;
   }, []);
 
-  // Fetch slides
+  // Fetch slides com dados de preview
   useEffect(() => {
     if (!isOpen || !selectedTemplate) return;
     let cancelled = false;
     (async () => {
       setIsLoadingPreview(true);
       try {
+        // Busca os slides do template
         const slides = await templateService.fetchTemplate(selectedTemplate.id);
-        if (!cancelled) setSlidesHtml(Array.isArray(slides) ? slides : []);
-      } catch {
+        
+        if (!cancelled && Array.isArray(slides)) {
+          // Verifica se existe dados de preview para este template
+          const previewData = TEMPLATE_PREVIEW_DATA[selectedTemplate.id];
+          
+          if (previewData) {
+            // Renderiza os slides com os dados de preview
+            const renderedSlides = templateRenderer.renderAllSlides(slides, previewData);
+            setSlidesHtml(renderedSlides);
+          } else {
+            // Se não houver dados de preview, usa os slides vazios
+            setSlidesHtml(slides);
+          }
+        } else if (!cancelled) {
+          setSlidesHtml([]);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar preview do template:', error);
         if (!cancelled) setSlidesHtml([]);
       } finally {
         if (!cancelled) setIsLoadingPreview(false);
@@ -444,6 +462,18 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                           <p className="text-xs text-zinc-400 line-clamp-2">
                             {template.description}
                           </p>
+                          {/* Badge de compatibilidade */}
+                          <div className="mt-2">
+                            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                              template.compatibility === 'video-image' 
+                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                                : template.compatibility === 'text-only'
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}>
+                              {template.compatibilityLabel}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </button>

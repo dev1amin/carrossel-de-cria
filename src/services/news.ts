@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api';
+import { authenticatedFetch } from '../utils/apiClient';
 import type { NewsResponse, NewsQueryParams } from '../types/news';
 
 const NEWS_ENDPOINT = `${API_BASE_URL}/news`;
@@ -24,7 +25,7 @@ export const getNews = async (params?: NewsQueryParams): Promise<NewsResponse> =
       ? `${NEWS_ENDPOINT}?${queryParams.toString()}`
       : NEWS_ENDPOINT;
 
-    const response = await fetch(url, {
+    const response = await authenticatedFetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -33,9 +34,6 @@ export const getNews = async (params?: NewsQueryParams): Promise<NewsResponse> =
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Unauthorized. Please login again.');
-      }
       throw new Error(`Failed to fetch news: ${response.statusText}`);
     }
 

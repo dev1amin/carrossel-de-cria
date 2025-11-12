@@ -10,7 +10,7 @@ import { CacheService, CACHE_KEYS } from '../services/cache';
 import { SortOption } from '../types';
 import { useEditorTabs } from '../contexts/EditorTabsContext';
 import { useGenerationQueue } from '../contexts/GenerationQueueContext';
-import { getGeneratedContent } from '../services/generatedContent';
+import { getGeneratedContent, getGeneratedContentById } from '../services/generatedContent';
 import type { GeneratedContent } from '../types/generatedContent';
 import { templateService } from '../services/carousel/template.service';
 import { templateRenderer } from '../services/carousel/templateRenderer.service';
@@ -23,6 +23,7 @@ interface GalleryCarousel {
   slides: string[];
   carouselData: CarouselData;
   viewed?: boolean;
+  generatedContentId?: number; // ID do GeneratedContent na API
 }
 
 const GalleryPage = () => {
@@ -201,6 +202,7 @@ const GalleryPage = () => {
       // Se tem 'conteudos', é o novo formato
       if (result.conteudos && Array.isArray(result.conteudos)) {
         console.log(`✅ Encontrados ${result.conteudos.length} slides no formato 'conteudos'`);
+        console.log(`🎨 [API] Estilos vindos da API:`, result.styles);
         
         // Extrai o template ID dos dados gerais
         const templateId = result.dados_gerais?.template || '2';
@@ -216,7 +218,11 @@ const GalleryPage = () => {
         carouselData = {
           conteudos: result.conteudos, // Mantém 'conteudos' para o CarouselViewer
           dados_gerais: result.dados_gerais || {}, // dados_gerais já contém template
+          styles: result.styles || {}, // IMPORTANTE: Inclui os estilos salvos
         };
+        
+        console.log(`🎨 [API] carouselData criado:`, carouselData);
+        console.log(`🎨 [API] carouselData.styles:`, carouselData.styles);
       } 
       // Formato antigo com 'slides' direto
       else if (result.slides && Array.isArray(result.slides)) {
@@ -242,12 +248,14 @@ const GalleryPage = () => {
         slides: slides,
         carouselData: carouselData as CarouselData,
         viewed: false,
+        generatedContentId: apiContent.id, // Adiciona o ID da API
       };
 
       console.log('✅ Carrossel convertido:', {
         id: carousel.id,
         slides_count: carousel.slides.length,
-        templateName: carousel.templateName
+        templateName: carousel.templateName,
+        carouselData_styles: carousel.carouselData?.styles
       });
 
       return carousel;
@@ -383,63 +391,123 @@ const GalleryPage = () => {
     console.log('Search gallery:', term);
   };
 
-  const addEditorTab = (carousel: GalleryCarousel) => {
+  const addEditorTab = async (carousel: GalleryCarousel) => {
     const tabId = `gallery-${carousel.id}`;
     
     console.log('🎨 Abrindo carrossel no editor:', {
       id: carousel.id,
-      slides_count: carousel.slides.length,
-      first_slide_preview: carousel.slides[0]?.substring(0, 150) + '...',
-      has_conteudos: !!(carousel.carouselData as any)?.conteudos,
-      conteudos_count: (carousel.carouselData as any)?.conteudos?.length,
-      template: (carousel.carouselData as any)?.dados_gerais?.template, // ← VERIFICA O TEMPLATE
-      dados_gerais: (carousel.carouselData as any)?.dados_gerais
+      generatedContentId: carousel.generatedContentId,
     });
+    
+    // Se tem generatedContentId, buscar dados frescos da API
+    let carouselData = carousel.carouselData;
+    let slides = carousel.slides;
+    
+    if (carousel.generatedContentId) {
+      try {
+        console.log('🔄 Buscando dados atualizados da API...');
+        const freshData = await getGeneratedContentById(carousel.generatedContentId);
+        
+        if (freshData.success && freshData.data.result) {
+          const apiData = freshData.data.result as any;
+          
+          // Atualizar carouselData com dados da API
+          if (apiData.conteudos && apiData.dados_gerais) {
+            carouselData = {
+              conteudos: apiData.conteudos,
+              dados_gerais: apiData.dados_gerais,
+              styles: apiData.styles || {}, // IMPORTANTE: Inclui os estilos salvos
+            } as CarouselData;
+            
+            // Renderizar slides atualizados
+            const templateId = apiData.dados_gerais.template || '2';
+            slides = await renderSlidesWithTemplate(
+              apiData.conteudos,
+              apiData.dados_gerais,
+              templateId
+            );
+            
+            console.log('✅ Dados atualizados carregados da API');
+            console.log('📐 Estilos carregados:', apiData.styles);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro ao buscar dados atualizados:', error);
+        // Continua com os dados do cache se falhar
+      }
+    }
     
     const newTab: CarouselTab = {
       id: tabId,
-      slides: carousel.slides,
-      carouselData: carousel.carouselData,
+      slides: slides,
+      carouselData: carouselData,
       title: carousel.templateName,
+      generatedContentId: carousel.generatedContentId,
     };
     
     addTab(newTab);
   };
 
+  const handleDeleteCarousel = (carouselId: string) => {
+    // Remove o carrossel da lista
+    setGalleryCarousels(prev => prev.filter(c => c.id !== carouselId));
+    
+    // Atualiza o cache
+    const updatedCarousels = galleryCarousels.filter(c => c.id !== carouselId);
+    CacheService.setItem(CACHE_KEYS.GALLERY, updatedCarousels, 60 * 60 * 1000); // 1 hora
+    
+    // Fecha a aba do editor se estiver aberta
+    closeEditorTab(`gallery-${carouselId}`);
+  };
+
+  const handleSaveSuccess = () => {
+    console.log('🔄 Carrossel salvo, recarregando galeria...');
+    
+    // Limpar cache da galeria para forçar reload da API
+    CacheService.clearItem(CACHE_KEYS.GALLERY);
+    
+    // Recarregar carrosséis da API
+    loadGalleryFromAPI();
+  };
+
   return (
-    <div className="min-h-screen bg-black">
+    <div className="flex h-screen bg-black">
       <Navigation currentPage="gallery" />
-      <LoadingBar isLoading={isLoadingFromAPI} />
-      <Header
-        onSearch={handleSearch}
-        activeSort={activeSort}
-        onSortChange={setActiveSort}
-      />
-      
-      <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-20' : ''}`}>
-        <PageTitle title="Galeria" />
-        {shouldShowEditor && (
-          <CarouselEditorTabs
-            tabs={editorTabs}
-            onCloseTab={closeEditorTab}
-            onCloseAll={closeAllEditorTabs}
-            onEditorsClosed={() => setShouldShowEditor(false)}
-          />
-        )}
+      <div className="flex-1 ml-16">
+        <LoadingBar isLoading={isLoadingFromAPI} />
+        <Header
+          onSearch={handleSearch}
+          activeSort={activeSort}
+          onSortChange={setActiveSort}
+        />
         
-        {isLoadingFromAPI && galleryCarousels.length === 0 ? (
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="flex flex-col items-center gap-4">
-              <p className="text-white/60"></p>
+        <main className={`pt-14 ${generationQueue.length > 0 ? 'mt-20' : ''}`}>
+          <PageTitle title="Galeria" />
+          {shouldShowEditor && (
+            <CarouselEditorTabs
+              tabs={editorTabs}
+              onCloseTab={closeEditorTab}
+              onCloseAll={closeAllEditorTabs}
+              onEditorsClosed={() => setShouldShowEditor(false)}
+              onSaveSuccess={handleSaveSuccess}
+            />
+          )}
+          
+          {isLoadingFromAPI && galleryCarousels.length === 0 ? (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="flex flex-col items-center gap-4">
+                <p className="text-white/60"></p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <Gallery
-            carousels={galleryCarousels}
-            onViewCarousel={addEditorTab}
-          />
-        )}
-      </main>
+          ) : (
+            <Gallery
+              carousels={galleryCarousels}
+              onViewCarousel={addEditorTab}
+              onDeleteCarousel={handleDeleteCarousel}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 };

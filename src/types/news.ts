@@ -9,6 +9,7 @@ export interface NewsItem {
   image: string;
   country: string;
   lang: string;
+  recommend?: boolean; // Recomendado pela IA
   niches: {
     id: string;
     name: string;

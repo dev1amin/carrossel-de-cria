@@ -1,4 +1,5 @@
 import { API_ENDPOINTS } from '../config/api';
+import { authenticatedFetch } from '../utils/apiClient';
 import { Post } from '../types';
 import { CacheService, CACHE_KEYS } from './cache';
 import { getAuthHeaders } from './auth';
@@ -71,13 +72,32 @@ export const getFeed = async (forceUpdate: boolean = false): Promise<Post[]> => 
     }
   }
 
-  const response = await fetch(API_ENDPOINTS.feed, {
+  const response = await authenticatedFetch(API_ENDPOINTS.feed, {
     method: 'GET',
     headers: getAuthHeaders(),
   });
 
+  // Se retornar 404 ou erro de "No feeds found", cria um novo feed automaticamente
   if (!response.ok) {
     const error = await response.json();
+    
+    // Verifica se é erro de feed não encontrado
+    if (error.error && error.error.includes('No feeds found')) {
+      console.log('📭 Nenhum feed encontrado. Criando feed automaticamente...');
+      
+      try {
+        // Tenta criar um novo feed
+        const posts = await createFeed();
+        console.log('✅ Feed criado com sucesso!');
+        return posts;
+      } catch (createError: any) {
+        console.error('❌ Erro ao criar feed automaticamente:', createError);
+        // Se falhar ao criar, joga o erro original
+        throw new Error(createError.message || 'Failed to create feed');
+      }
+    }
+    
+    // Se for outro tipo de erro, joga normalmente
     throw new Error(error.error || 'Failed to fetch feed');
   }
 
@@ -93,7 +113,7 @@ export const getFeed = async (forceUpdate: boolean = false): Promise<Post[]> => 
 };
 
 export const createFeed = async (): Promise<Post[]> => {
-  const response = await fetch(API_ENDPOINTS.feed, {
+  const response = await authenticatedFetch(API_ENDPOINTS.feed, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({}),
@@ -116,7 +136,7 @@ export const createFeed = async (): Promise<Post[]> => {
 };
 
 export const saveContent = async (contentId: number): Promise<void> => {
-  const response = await fetch(API_ENDPOINTS.feedSave, {
+  const response = await authenticatedFetch(API_ENDPOINTS.feedSave, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({ content_id: contentId }),
@@ -132,7 +152,7 @@ export const saveContent = async (contentId: number): Promise<void> => {
 };
 
 export const unsaveContent = async (contentId: number): Promise<void> => {
-  const response = await fetch(API_ENDPOINTS.feedSave, {
+  const response = await authenticatedFetch(API_ENDPOINTS.feedSave, {
     method: 'DELETE',
     headers: getAuthHeaders(),
     body: JSON.stringify({ content_id: contentId }),
